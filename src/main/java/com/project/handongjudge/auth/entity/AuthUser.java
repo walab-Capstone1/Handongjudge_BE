@@ -1,6 +1,7 @@
 package com.project.handongjudge.auth.entity;
 
 import com.project.handongjudge.user.entity.User;
+import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -10,8 +11,9 @@ import java.util.Collections;
 import java.util.Map;
 
 @RequiredArgsConstructor
-public class Auth implements OAuth2User {
+public class AuthUser implements OAuth2User {
     private final OAuth2User oauth2User;
+    @Getter
     private final User user;
 
     @Override
@@ -29,7 +31,6 @@ public class Auth implements OAuth2User {
         return user.getEmail();
     }
 
-    public User getUser() {
-        return user;
-    }
+
+
 }

@@ -2,6 +2,7 @@ package com.project.handongjudge.common.util;
 
 import io.jsonwebtoken.*;
 import io.jsonwebtoken.security.Keys;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Component;
@@ -9,7 +10,8 @@ import java.security.Key;
 import java.util.Date;
 
 @Component
-public class JavaUtil {
+@Slf4j
+public class JwtUtil {
 
     @Value("${jwt.secret}")
     private String jwtSecret;
@@ -54,6 +56,18 @@ public class JavaUtil {
         return claims.getSubject();
     }
 
+    public String getIDFromToken(String token) {
+        Claims claims = Jwts.parserBuilder()
+                .setSigningKey(getSigningKey())
+                .build()
+                .parseClaimsJws(token)
+                .getBody();
+
+        return claims.getSubject();
+    }
+
+
+
     public boolean validateToken(String authToken) {
         try {
             Jwts.parserBuilder()
@@ -62,6 +76,7 @@ public class JavaUtil {
                     .parseClaimsJws(authToken);
             return true;
         } catch (JwtException | IllegalArgumentException e) {
+            log.error("JWT token validation failed: ", e);
             return false;
         }
     }

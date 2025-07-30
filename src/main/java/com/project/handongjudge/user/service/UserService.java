@@ -61,7 +61,17 @@ public class UserService {
         return UserDto.from(user);
     }
 
+
+    // 새 메서드 (ID로 조회)
+    public UserDto getUserInfoById(String userId) {
+        Long userIdLong = Long.parseLong(userId);
+        User user = userRepository.findById(userIdLong)
+                .orElseThrow(() -> new RuntimeException("User not found with ID: " + userId));
+        return UserDto.from(user);
+    }
+
     public boolean existsByEmail(String email) {
         return userRepository.existsByEmail(email);
     }
+
 }
