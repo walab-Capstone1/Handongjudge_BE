@@ -63,7 +63,7 @@ public class SecurityConfig extends WebSecurityConfigurerAdapter {
                         AuthUser authUser = (AuthUser) authentication.getPrincipal();
                         User user = authUser.getUser();
 
-                        String token = jwtUtil.generateToken(String.valueOf(user.getId()));
+                        String token = jwtUtil.generateToken(String.valueOf(user.getId())); // token = id
 
                         // auth/callback으로 리다이렉트
                         response.sendRedirect("http://localhost:3000/auth/callback?token=" + token);
@@ -129,15 +129,15 @@ public class SecurityConfig extends WebSecurityConfigurerAdapter {
                 String jwt = getJwtFromRequest(request);
 
                 if (StringUtils.hasText(jwt) && jwtUtil.validateToken(jwt)) {
-                    String email = jwtUtil.getEmailFromToken(jwt);
+                    String id = jwtUtil.getIDFromToken(jwt);
 
-                    var userOptional = userService.findByEmail(email);
+                    var userOptional = userService.findByEmail(id);
                     if (userOptional.isPresent()) {
                         var user = userOptional.get();
 
                         UsernamePasswordAuthenticationToken authentication =
                                 new UsernamePasswordAuthenticationToken(
-                                        email,
+                                        id,
                                         null,
                                         Collections.singletonList(new SimpleGrantedAuthority("ROLE_" + user.getRole().name()))
                                 );
