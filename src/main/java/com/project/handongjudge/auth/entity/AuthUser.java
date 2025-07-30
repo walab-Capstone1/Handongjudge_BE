@@ -9,7 +9,9 @@ import org.springframework.security.oauth2.core.user.OAuth2User;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Map;
+import lombok.extern.slf4j.Slf4j;
 
+@Slf4j
 @RequiredArgsConstructor
 public class AuthUser implements OAuth2User {
     private final OAuth2User oauth2User;
@@ -26,11 +28,18 @@ public class AuthUser implements OAuth2User {
         return Collections.singletonList(new SimpleGrantedAuthority("ROLE_" + user.getRole().name()));
     }
 
+//    @Override
+//    public String getName() {
+//        return user.getEmail();
+//    }
+
     @Override
     public String getName() {
-        return user.getEmail();
+        // 사용자 ID를 principal name으로 사용 (항상 존재하고 유니크함)
+        String userId = user.getId().toString();
+        log.debug("Using user ID as principal name: {}", userId);
+        return userId;
     }
-
 
 
 }
