@@ -1,0 +1,63 @@
+server:
+  port: ${PORT:8080}
+
+spring:
+  # .env import
+  config:
+    import: optional:file:.env[.properties]
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql : true
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+    driver-class-name: org.mariadb.jdbc.Driver
+  thymeleaf:
+    cache: false
+    prefix: classpath:/templates/
+    suffix: .html
+  h2:
+    console:
+      enabled: true
+
+  security:
+    oauth2:
+      client:
+        registration:
+          google:
+            client-id: ${GOOGLE_CLIENT_ID}
+            client-secret: ${GOOGLE_CLIENT_SECRET}
+            scope:
+              - email
+              - profile
+          github:
+            client-id: ${GITHUB_CLIENT_ID:your-github-client-id}
+            client-secret: ${GITHUB_CLIENT_SECRET:your-github-client-secret}
+            scope:
+              - user:email
+              - read:user
+
+jwt:
+  secret: ${JWT_SECRET_KEY}
+  access-token:
+    expiration: 900000 # 15분
+  refresh-token:
+    expiration: 604800000 # 7일
+
+
+app:
+  oauth2:
+    authorized-redirect-uris:
+      - http://localhost:3000/auth/callback  # 프론트엔드 콜백 페이지
+
+logging:
+  level:
+    com.project.handongjudge: DEBUG
+    org.springframework.security: DEBUG
+    org.hibernate.SQL: DEBUG
+    org.hibernate.type.descriptor.sql.BasicBinder: TRACE
+    org.hibernate.type.descriptor.sql.BasicExtractor: TRACE  # 결과값도 보여줌
+
