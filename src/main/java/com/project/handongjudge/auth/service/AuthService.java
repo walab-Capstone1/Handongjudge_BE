@@ -2,6 +2,7 @@ package com.project.handongjudge.auth.service;
 
 import com.project.handongjudge.user.entity.User;
 import com.project.handongjudge.user.service.UserService;
+import com.project.handongjudge.user.dto.UserDto;
 import com.project.handongjudge.auth.dto.AuthRequestDto;
 import com.project.handongjudge.auth.dto.AuthResponseDto;
 import com.project.handongjudge.common.util.JwtUtil;
@@ -32,11 +33,19 @@ public class AuthService {
                 )
         );
 
-        String token = jwtUtil.generateToken(authentication);
+        String identifier = authentication.getName();
+        String accessToken = jwtUtil.generateAccessToken(authentication);
+        String refreshToken = jwtUtil.generateRefreshToken(identifier);
+        
+        // 사용자 정보 조회 (이메일로 조회)
+        User user = userService.findByEmail(identifier).orElseThrow(() -> 
+            new RuntimeException("사용자를 찾을 수 없습니다."));
 
         return AuthResponseDto.builder()
-                .accessToken(token)
+                .accessToken(accessToken)
+                .refreshToken(refreshToken)
                 .tokenType("Bearer")
+                .user(UserDto.from(user))
                 .build();
     }
 
@@ -51,11 +60,49 @@ public class AuthService {
                 registerRequest.getPassword(),
                 registerRequest.getName()
         );
-        String token = jwtUtil.generateToken(user.getEmail());
+        
+        String accessToken = jwtUtil.generateAccessToken(String.valueOf(user.getId()));
+        String refreshToken = jwtUtil.generateRefreshToken(String.valueOf(user.getId()));
 
         return AuthResponseDto.builder()
-                .accessToken(token)
+                .accessToken(accessToken)
+                .refreshToken(refreshToken)
                 .tokenType("Bearer")
+                .user(UserDto.from(user))
+                .build();
+    }
+
+    public AuthResponseDto refreshToken(AuthRequestDto.RefreshTokenRequest refreshTokenRequest) {
+        String refreshToken = refreshTokenRequest.getRefreshToken();
+        
+        // Refresh Token 유효성 검사
+        if (!jwtUtil.validateRefreshToken(refreshToken)) {
+            throw new RuntimeException("유효하지 않은 Refresh Token입니다.");
+        }
+        
+        // Refresh Token에서 사용자 ID 추출
+        String identifier = jwtUtil.getIDFromToken(refreshToken);
+        
+        // 새로운 Access Token 생성
+        String newAccessToken = jwtUtil.generateAccessToken(identifier);
+        
+        // 사용자 정보 조회 (ID로 조회)
+        User user;
+        try {
+            Long userId = Long.parseLong(identifier);
+            user = userService.findById(userId).orElseThrow(() -> 
+                new RuntimeException("사용자를 찾을 수 없습니다."));
+        } catch (NumberFormatException e) {
+            // ID가 숫자가 아닌 경우 이메일로 시도
+            user = userService.findByEmail(identifier).orElseThrow(() -> 
+                new RuntimeException("사용자를 찾을 수 없습니다."));
+        }
+        
+        return AuthResponseDto.builder()
+                .accessToken(newAccessToken)
+                .refreshToken(refreshToken) // 기존 Refresh Token 유지
+                .tokenType("Bearer")
+                .user(UserDto.from(user))
                 .build();
     }
 }

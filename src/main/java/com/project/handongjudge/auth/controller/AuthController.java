@@ -44,7 +44,10 @@ public class AuthController {
             response.put("success", true);
             response.put("message", "로그인 성공");
             response.put("accessToken", authResponse.getAccessToken());
+            response.put("refreshToken", authResponse.getRefreshToken());
             response.put("tokenType", authResponse.getTokenType());
+            response.put("user", authResponse.getUser());
+            log.info("Login successful for email: {}", loginRequest.getEmail());
             return ResponseEntity.ok(response);
         } catch (AuthenticationException e) {
             log.error("Login failed for email: {}", loginRequest.getEmail(), e);
@@ -63,7 +66,9 @@ public class AuthController {
             response.put("success", true);
             response.put("message", "회원가입 성공");
             response.put("accessToken", authResponse.getAccessToken());
+            response.put("refreshToken", authResponse.getRefreshToken());
             response.put("tokenType", authResponse.getTokenType());
+            response.put("user", authResponse.getUser());
             return ResponseEntity.ok(response);
         } catch (RuntimeException e) {
             log.error("Registration failed for email: {}", registerRequest.getEmail(), e);
@@ -90,30 +95,28 @@ public class AuthController {
         return ResponseEntity.ok(responseMap);
     }
 
-    // 프론트엔드 호환용 사용자 정보 조회 API 추가
-    @GetMapping("/me")
-    public ResponseEntity<Map<String, Object>> getCurrentUser(Authentication authentication) {
-        String email = authentication.getName();
-        UserDto user = userService.getUserInfo(email);
 
-        Map<String, Object> response = new HashMap<>();
-        response.put("success", true);
-        response.put("message", "사용자 정보 조회 성공");
-        response.put("data", user);
 
-        return ResponseEntity.ok(response);
-    }
-
-    // 토큰 갱신 API (현재는 JWT만 사용하므로 단순 구현)
+    // 토큰 갱신 API
     @PostMapping("/refresh")
-    public ResponseEntity<Map<String, Object>> refreshToken(@RequestBody Map<String, String> request) {
+    public ResponseEntity<Map<String, Object>> refreshToken(@Valid @RequestBody AuthRequestDto.RefreshTokenRequest refreshTokenRequest) {
         Map<String, Object> response = new HashMap<>();
 
-        // JWT는 Refresh Token을 별도로 구현하지 않았으므로 에러 응답
-        response.put("success", false);
-        response.put("message", "리프레시 토큰 기능이 구현되지 않았습니다. 다시 로그인해주세요.");
-
-        return ResponseEntity.badRequest().body(response);
+        try {
+            AuthResponseDto authResponse = authService.refreshToken(refreshTokenRequest);
+            response.put("success", true);
+            response.put("message", "토큰 갱신 성공");
+            response.put("accessToken", authResponse.getAccessToken());
+            response.put("refreshToken", authResponse.getRefreshToken());
+            response.put("tokenType", authResponse.getTokenType());
+            response.put("user", authResponse.getUser());
+            return ResponseEntity.ok(response);
+        } catch (RuntimeException e) {
+            log.error("Token refresh failed", e);
+            response.put("success", false);
+            response.put("message", e.getMessage());
+            return ResponseEntity.badRequest().body(response);
+        }
     }
 
     // 소셜 로그인 정보 제공 API

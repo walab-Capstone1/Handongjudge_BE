@@ -62,10 +62,22 @@ public class UserService {
     }
 
 
-    // 새 메서드 (ID로 조회)
+    // ID로 사용자 조회
+    public Optional<User> findById(Long id) {
+        return userRepository.findById(id);
+    }
+
+    // ID로 사용자 정보 조회
     public UserDto getUserInfoById(String userId) {
         Long userIdLong = Long.parseLong(userId);
         User user = userRepository.findById(userIdLong)
+                .orElseThrow(() -> new RuntimeException("User not found with ID: " + userId));
+        return UserDto.from(user);
+    }
+
+    // ID로 사용자 정보 조회 (Long 타입)
+    public UserDto getUserInfoById(Long userId) {
+        User user = userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("User not found with ID: " + userId));
         return UserDto.from(user);
     }

@@ -63,10 +63,12 @@ public class SecurityConfig extends WebSecurityConfigurerAdapter {
                         AuthUser authUser = (AuthUser) authentication.getPrincipal();
                         User user = authUser.getUser();
 
-                        String token = jwtUtil.generateToken(String.valueOf(user.getId())); // token = id
+                        // ID 기반으로 토큰 생성 (OAuth 사용자용)
+                        String accessToken = jwtUtil.generateAccessToken(String.valueOf(user.getId()));
+                        String refreshToken = jwtUtil.generateRefreshToken(String.valueOf(user.getId()));
 
                         // auth/callback으로 리다이렉트
-                        response.sendRedirect("http://localhost:3000/auth/callback?token=" + token);
+                        response.sendRedirect("http://localhost:3000/auth/callback?accessToken=" + accessToken + "&refreshToken=" + refreshToken);
 
                     } catch (Exception e) {
                         //log.error("OAuth2 login success handler failed", e);
@@ -129,15 +131,21 @@ public class SecurityConfig extends WebSecurityConfigurerAdapter {
                 String jwt = getJwtFromRequest(request);
 
                 if (StringUtils.hasText(jwt) && jwtUtil.validateToken(jwt)) {
-                    String id = jwtUtil.getIDFromToken(jwt);
+                    String identifier = jwtUtil.getIDFromToken(jwt);
 
-                    var userOptional = userService.findByEmail(id);
+                    // 먼저 ID로 시도
+                    var userOptional = userService.findById(Long.parseLong(identifier));
+                    if (!userOptional.isPresent()) {
+                        // ID로 실패하면 이메일로 시도
+                        userOptional = userService.findByEmail(identifier);
+                    }
+                    
                     if (userOptional.isPresent()) {
                         var user = userOptional.get();
 
                         UsernamePasswordAuthenticationToken authentication =
                                 new UsernamePasswordAuthenticationToken(
-                                        id,
+                                        identifier,
                                         null,
                                         Collections.singletonList(new SimpleGrantedAuthority("ROLE_" + user.getRole().name()))
                                 );
