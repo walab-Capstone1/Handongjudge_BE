@@ -9,6 +9,15 @@ import org.springframework.stereotype.Component;
 import java.security.Key;
 import java.util.Date;
 
+/**
+ * JWT 토큰 생성 및 검증 유틸리티
+ * 
+ * 주요 기능:
+ * - Access Token 생성 및 검증
+ * - Refresh Token 생성 및 검증
+ * - 토큰에서 사용자 정보 추출
+ * - 토큰 타입 구분 (access/refresh)
+ */
 @Component
 @Slf4j
 public class JwtUtil {
@@ -22,60 +31,68 @@ public class JwtUtil {
     @Value("${jwt.refresh-token.expiration}")
     private Long refreshTokenExpirationMs;
 
+    /**
+     * JWT 서명 키 생성
+     * 
+     * @return HMAC-SHA512 서명 키
+     */
     private Key getSigningKey() {
         return Keys.hmacShaKeyFor(jwtSecret.getBytes());
     }
 
+    /**
+     * Authentication 객체로부터 Access Token 생성
+     * 
+     * @param authentication Spring Security 인증 객체
+     * @return JWT Access Token
+     */
     public String generateAccessToken(Authentication authentication) {
         String identifier = authentication.getName();
-        Date expiryDate = new Date(System.currentTimeMillis() + accessTokenExpirationMs);
-
-        return Jwts.builder()
-                .setSubject(identifier)
-                .setIssuedAt(new Date())
-                .setExpiration(expiryDate)
-                .claim("type", "access")
-                .signWith(getSigningKey(), SignatureAlgorithm.HS512)
-                .compact();
+        return generateAccessToken(identifier);
     }
 
+    /**
+     * 사용자 식별자로부터 Access Token 생성
+     * 
+     * @param identifier 사용자 ID 또는 이메일
+     * @return JWT Access Token
+     */
     public String generateAccessToken(String identifier) {
         Date expiryDate = new Date(System.currentTimeMillis() + accessTokenExpirationMs);
 
         return Jwts.builder()
-                .setSubject(identifier)
-                .setIssuedAt(new Date())
-                .setExpiration(expiryDate)
-                .claim("type", "access")
+                .setSubject(identifier)           // 사용자 식별자 (ID 또는 이메일)
+                .setIssuedAt(new Date())         // 토큰 발행일
+                .setExpiration(expiryDate)       // 토큰 만료일
+                .claim("type", "access")         // 토큰 타입 구분
                 .signWith(getSigningKey(), SignatureAlgorithm.HS512)
                 .compact();
     }
 
+    /**
+     * 사용자 식별자로부터 Refresh Token 생성
+     * 
+     * @param identifier 사용자 ID 또는 이메일
+     * @return JWT Refresh Token
+     */
     public String generateRefreshToken(String identifier) {
         Date expiryDate = new Date(System.currentTimeMillis() + refreshTokenExpirationMs);
 
         return Jwts.builder()
-                .setSubject(identifier)
-                .setIssuedAt(new Date())
-                .setExpiration(expiryDate)
-                .claim("type", "refresh")
+                .setSubject(identifier)           // 사용자 식별자 (ID 또는 이메일)
+                .setIssuedAt(new Date())         // 토큰 발행일
+                .setExpiration(expiryDate)       // 토큰 만료일
+                .claim("type", "refresh")        // 토큰 타입 구분
                 .signWith(getSigningKey(), SignatureAlgorithm.HS512)
                 .compact();
     }
 
-
-
-    // 기존 메서드들 (하위 호환성을 위해 유지)
-    public String generateToken(Authentication authentication) {
-        return generateAccessToken(authentication);
-    }
-
-    public String generateToken(String email) {
-        return generateAccessToken(email);
-    }
-
-
-
+    /**
+     * JWT 토큰에서 사용자 ID 추출
+     * 
+     * @param token JWT 토큰
+     * @return 사용자 ID (문자열)
+     */
     public String getIDFromToken(String token) {
         Claims claims = Jwts.parserBuilder()
                 .setSigningKey(getSigningKey())
@@ -86,8 +103,24 @@ public class JwtUtil {
         return claims.getSubject();
     }
 
+    /**
+     * JWT 토큰에서 사용자 ID 추출 (Long 타입)
+     * 
+     * @param token JWT 토큰
+     * @return 사용자 ID (Long)
+     * @throws NumberFormatException ID가 숫자가 아닌 경우
+     */
+    public Long getUserIdFromToken(String token) {
+        String userIdStr = getIDFromToken(token);
+        return Long.parseLong(userIdStr);
+    }
 
-
+    /**
+     * JWT 토큰 유효성 검사
+     * 
+     * @param authToken JWT 토큰
+     * @return 토큰 유효성 여부
+     */
     public boolean validateToken(String authToken) {
         try {
             Jwts.parserBuilder()
@@ -101,6 +134,12 @@ public class JwtUtil {
         }
     }
 
+    /**
+     * Refresh Token 유효성 검사
+     * 
+     * @param refreshToken JWT Refresh Token
+     * @return Refresh Token 유효성 여부
+     */
     public boolean validateRefreshToken(String refreshToken) {
         try {
             Claims claims = Jwts.parserBuilder()
@@ -118,6 +157,12 @@ public class JwtUtil {
         }
     }
 
+    /**
+     * JWT 토큰에서 토큰 타입 추출
+     * 
+     * @param token JWT 토큰
+     * @return 토큰 타입 (access/refresh)
+     */
     public String getTokenType(String token) {
         try {
             Claims claims = Jwts.parserBuilder()
@@ -131,5 +176,31 @@ public class JwtUtil {
             log.error("Failed to get token type: ", e);
             return null;
         }
+    }
+
+    // ===== 하위 호환성을 위한 메서드들 =====
+    
+    /**
+     * 하위 호환성을 위한 메서드 - Access Token 생성으로 위임
+     * 
+     * @param authentication Spring Security 인증 객체
+     * @return JWT Access Token
+     * @deprecated generateAccessToken() 사용 권장
+     */
+    @Deprecated
+    public String generateToken(Authentication authentication) {
+        return generateAccessToken(authentication);
+    }
+
+    /**
+     * 하위 호환성을 위한 메서드 - Access Token 생성으로 위임
+     * 
+     * @param email 사용자 이메일
+     * @return JWT Access Token
+     * @deprecated generateAccessToken() 사용 권장
+     */
+    @Deprecated
+    public String generateToken(String email) {
+        return generateAccessToken(email);
     }
 }
