@@ -11,7 +11,7 @@ import java.util.Date;
 
 /**
  * JWT 토큰 생성 및 검증 유틸리티
- * 
+ *
  * 주요 기능:
  * - Access Token 생성 및 검증
  * - Refresh Token 생성 및 검증
@@ -33,7 +33,7 @@ public class JwtUtil {
 
     /**
      * JWT 서명 키 생성
-     * 
+     *
      * @return HMAC-SHA512 서명 키
      */
     private Key getSigningKey() {
@@ -42,7 +42,7 @@ public class JwtUtil {
 
     /**
      * Authentication 객체로부터 Access Token 생성
-     * 
+     *
      * @param authentication Spring Security 인증 객체
      * @return JWT Access Token
      */
@@ -53,7 +53,7 @@ public class JwtUtil {
 
     /**
      * 사용자 식별자로부터 Access Token 생성
-     * 
+     *
      * @param identifier 사용자 ID 또는 이메일
      * @return JWT Access Token
      */
@@ -65,13 +65,14 @@ public class JwtUtil {
                 .setIssuedAt(new Date())         // 토큰 발행일
                 .setExpiration(expiryDate)       // 토큰 만료일
                 .claim("type", "access")         // 토큰 타입 구분
+                .claim("role", "USER")           // 기본 역할 (나중에 사용자별로 설정 가능)
                 .signWith(getSigningKey(), SignatureAlgorithm.HS512)
                 .compact();
     }
 
     /**
      * 사용자 식별자로부터 Refresh Token 생성
-     * 
+     *
      * @param identifier 사용자 ID 또는 이메일
      * @return JWT Refresh Token
      */
@@ -89,7 +90,7 @@ public class JwtUtil {
 
     /**
      * JWT 토큰에서 사용자 ID 추출
-     * 
+     *
      * @param token JWT 토큰
      * @return 사용자 ID (문자열)
      */
@@ -104,8 +105,28 @@ public class JwtUtil {
     }
 
     /**
+     * JWT 토큰에서 사용자 역할 추출
+     *
+     * @param token JWT 토큰
+     * @return 사용자 역할 (문자열)
+     */
+    public String getRoleFromToken(String token) {
+        try {
+            Claims claims = Jwts.parserBuilder()
+                    .setSigningKey(getSigningKey())
+                    .build()
+                    .parseClaimsJws(token)
+                    .getBody();
+            return claims.get("role", String.class);
+        } catch (Exception e) {
+            log.warn("Failed to extract role from token: {}", e.getMessage());
+            return "USER"; // 기본 역할
+        }
+    }
+
+    /**
      * JWT 토큰에서 사용자 ID 추출 (Long 타입)
-     * 
+     *
      * @param token JWT 토큰
      * @return 사용자 ID (Long)
      * @throws NumberFormatException ID가 숫자가 아닌 경우
@@ -117,7 +138,7 @@ public class JwtUtil {
 
     /**
      * JWT 토큰 유효성 검사
-     * 
+     *
      * @param authToken JWT 토큰
      * @return 토큰 유효성 여부
      */
@@ -136,7 +157,7 @@ public class JwtUtil {
 
     /**
      * Refresh Token 유효성 검사
-     * 
+     *
      * @param refreshToken JWT Refresh Token
      * @return Refresh Token 유효성 여부
      */
@@ -147,7 +168,7 @@ public class JwtUtil {
                     .build()
                     .parseClaimsJws(refreshToken)
                     .getBody();
-            
+
             // refresh 토큰인지 확인
             String tokenType = claims.get("type", String.class);
             return "refresh".equals(tokenType);
@@ -159,7 +180,7 @@ public class JwtUtil {
 
     /**
      * JWT 토큰에서 토큰 타입 추출
-     * 
+     *
      * @param token JWT 토큰
      * @return 토큰 타입 (access/refresh)
      */
@@ -170,7 +191,7 @@ public class JwtUtil {
                     .build()
                     .parseClaimsJws(token)
                     .getBody();
-            
+
             return claims.get("type", String.class);
         } catch (JwtException | IllegalArgumentException e) {
             log.error("Failed to get token type: ", e);
@@ -179,10 +200,10 @@ public class JwtUtil {
     }
 
     // ===== 하위 호환성을 위한 메서드들 =====
-    
+
     /**
      * 하위 호환성을 위한 메서드 - Access Token 생성으로 위임
-     * 
+     *
      * @param authentication Spring Security 인증 객체
      * @return JWT Access Token
      * @deprecated generateAccessToken() 사용 권장
@@ -194,7 +215,7 @@ public class JwtUtil {
 
     /**
      * 하위 호환성을 위한 메서드 - Access Token 생성으로 위임
-     * 
+     *
      * @param email 사용자 이메일
      * @return JWT Access Token
      * @deprecated generateAccessToken() 사용 권장
