@@ -1,8 +1,8 @@
-package com.project.handongjudge.common.config;
+package com.project.handongjudge.auth.config;
 
 import com.project.handongjudge.auth.entity.AuthUser;
 import com.project.handongjudge.auth.service.CustomOAuth2UserService;
-import com.project.handongjudge.common.util.JwtUtil;
+import com.project.handongjudge.auth.util.JwtUtil;
 import com.project.handongjudge.user.entity.User;
 import com.project.handongjudge.user.service.UserService;
 import lombok.RequiredArgsConstructor;
@@ -17,7 +17,6 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import javax.servlet.FilterChain;
@@ -66,12 +65,13 @@ public class SecurityConfig extends WebSecurityConfigurerAdapter {
                 // CSRF 비활성화 (JWT 사용으로 인해)
                 .csrf().disable()
                 // 세션 정책 설정 (STATELESS - JWT 사용)
-                .sessionManagement().sessionCreationPolicy(SessionCreationPolicy.STATELESS)
+                .sessionManagement()
+                    .sessionCreationPolicy(SessionCreationPolicy.STATELESS)
                 .and()
                 // 요청 권한 설정
                 .authorizeRequests()
-                .antMatchers("/api/**", "/oauth2/**", "/h2-console/**").permitAll()
-                .anyRequest().authenticated()
+                    .antMatchers("/api/**", "/oauth2/**", "/h2-console/**").permitAll()
+                    .anyRequest().authenticated()
                 .and()
                 // OAuth2 로그인 설정
                 .oauth2Login()

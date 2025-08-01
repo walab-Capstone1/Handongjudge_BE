@@ -1,4 +1,4 @@
-package com.project.handongjudge.common.util;
+package com.project.handongjudge.auth.util;
 
 import lombok.AccessLevel;
 import lombok.NoArgsConstructor;

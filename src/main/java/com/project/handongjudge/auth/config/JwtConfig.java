@@ -1,4 +1,4 @@
-package com.project.handongjudge.common.config;
+package com.project.handongjudge.auth.config;
 
 import lombok.Getter;
 import lombok.Setter;

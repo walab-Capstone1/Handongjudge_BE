@@ -5,7 +5,7 @@ import com.project.handongjudge.user.service.UserService;
 import com.project.handongjudge.user.dto.UserDto;
 import com.project.handongjudge.auth.dto.AuthRequestDto;
 import com.project.handongjudge.auth.dto.AuthResponseDto;
-import com.project.handongjudge.common.util.JwtUtil;
+import com.project.handongjudge.auth.util.JwtUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.authentication.AuthenticationManager;

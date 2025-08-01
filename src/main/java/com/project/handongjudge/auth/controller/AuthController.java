@@ -1,7 +1,7 @@
 package com.project.handongjudge.auth.controller;
 
 import com.project.handongjudge.auth.service.AuthService;
-import com.project.handongjudge.common.util.JwtUtil;
+import com.project.handongjudge.auth.util.JwtUtil;
 import com.project.handongjudge.auth.dto.AuthRequestDto;
 import com.project.handongjudge.auth.dto.AuthResponseDto;
 import com.project.handongjudge.user.service.UserService;
@@ -17,7 +17,6 @@ import org.springframework.web.bind.annotation.*;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import javax.validation.Valid;
-import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
 
