@@ -16,24 +16,23 @@ import org.springframework.security.web.authentication.logout.SecurityContextLog
 import org.springframework.web.bind.annotation.*;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
+import javax.servlet.http.Cookie;
 import javax.validation.Valid;
 import java.util.HashMap;
 import java.util.Map;
 
 /**
  * 인증 관련 API 컨트롤러
- * 
- * 주요 기능:
- * - 일반 로그인/회원가입
- * - OAuth2 소셜 로그인
- * - JWT 토큰 갱신
- * - 로그아웃
+ *
+ * 새로운 토큰 관리 방식:
+ * - Access Token: 응답 본문에 포함 (프론트엔드 메모리에 저장)
+ * - Refresh Token: httpOnly secure 쿠키에 저장
  */
 @RestController
 @RequestMapping("/api/auth")
 @RequiredArgsConstructor
 @Slf4j
-@CrossOrigin(origins = {"${FRONTEND_URL:http://localhost:3000}"})
+@CrossOrigin(origins = {"${FRONTEND_URL:http://localhost:3000}"}, allowCredentials = "true")
 public class AuthController {
 
     private final AuthService authService;
@@ -43,16 +42,28 @@ public class AuthController {
     @Value("${FRONTEND_URL:http://localhost:3000}")
     private String frontendUrl;
 
+    @Value("${jwt.refresh-token.cookie-name:refreshToken}")
+    private String refreshTokenCookieName;
+
+    @Value("${jwt.refresh-token.cookie-domain:localhost}")
+    private String refreshTokenCookieDomain;
+
     /**
      * 일반 로그인 API
-     * 
+     *
      * @param loginRequest 로그인 요청 정보 (이메일, 비밀번호)
-     * @return 로그인 성공 시 JWT 토큰과 사용자 정보 반환
+     * @param response HTTP 응답 (쿠키 설정용)
+     * @return 로그인 성공 시 Access Token과 사용자 정보 반환
      */
     @PostMapping("/login")
-    public ResponseEntity<Map<String, Object>> login(@Valid @RequestBody AuthRequestDto.LoginRequest loginRequest) {
+    public ResponseEntity<Map<String, Object>> login(@Valid @RequestBody AuthRequestDto.LoginRequest loginRequest,
+                                                     HttpServletResponse response) {
         try {
             AuthResponseDto authResponse = authService.login(loginRequest);
+
+            // Refresh Token을 httpOnly secure 쿠키로 설정
+            setRefreshTokenCookie(response, authResponse.getRefreshToken());
+
             return createSuccessResponse("로그인 성공", authResponse);
         } catch (AuthenticationException e) {
             log.error("Login failed for email: {}", loginRequest.getEmail(), e);
@@ -62,14 +73,20 @@ public class AuthController {
 
     /**
      * 회원가입 API
-     * 
+     *
      * @param registerRequest 회원가입 요청 정보 (이메일, 비밀번호, 이름)
-     * @return 회원가입 성공 시 JWT 토큰과 사용자 정보 반환
+     * @param response HTTP 응답 (쿠키 설정용)
+     * @return 회원가입 성공 시 Access Token과 사용자 정보 반환
      */
     @PostMapping("/register")
-    public ResponseEntity<Map<String, Object>> register(@Valid @RequestBody AuthRequestDto.RegisterRequest registerRequest) {
+    public ResponseEntity<Map<String, Object>> register(@Valid @RequestBody AuthRequestDto.RegisterRequest registerRequest,
+                                                        HttpServletResponse response) {
         try {
             AuthResponseDto authResponse = authService.register(registerRequest);
+
+            // Refresh Token을 httpOnly secure 쿠키로 설정
+            setRefreshTokenCookie(response, authResponse.getRefreshToken());
+
             return createSuccessResponse("회원가입 성공", authResponse);
         } catch (RuntimeException e) {
             log.error("Registration failed for email: {}", registerRequest.getEmail(), e);
@@ -79,7 +96,7 @@ public class AuthController {
 
     /**
      * 로그아웃 API
-     * 
+     *
      * @param request HTTP 요청
      * @param response HTTP 응답
      * @param authentication 인증 정보
@@ -92,6 +109,9 @@ public class AuthController {
             new SecurityContextLogoutHandler().logout(request, response, authentication);
         }
 
+        // Refresh Token 쿠키 제거
+        clearRefreshTokenCookie(response);
+
         Map<String, Object> responseMap = new HashMap<>();
         responseMap.put("success", true);
         responseMap.put("message", "로그아웃 성공");
@@ -101,14 +121,25 @@ public class AuthController {
 
     /**
      * JWT 토큰 갱신 API
-     * 
-     * @param refreshTokenRequest 리프레시 토큰 요청
-     * @return 새로운 액세스 토큰과 사용자 정보 반환
+     *
+     * @param request HTTP 요청 (쿠키에서 Refresh Token 추출)
+     * @param response HTTP 응답 (새로운 쿠키 설정용)
+     * @return 새로운 Access Token과 사용자 정보 반환
      */
     @PostMapping("/refresh")
-    public ResponseEntity<Map<String, Object>> refreshToken(@Valid @RequestBody AuthRequestDto.RefreshTokenRequest refreshTokenRequest) {
+    public ResponseEntity<Map<String, Object>> refreshToken(HttpServletRequest request, HttpServletResponse response) {
         try {
-            AuthResponseDto authResponse = authService.refreshToken(refreshTokenRequest);
+            // 쿠키에서 Refresh Token 추출
+            String refreshToken = getRefreshTokenFromCookie(request);
+            if (refreshToken == null) {
+                return createErrorResponse("Refresh Token이 없습니다.");
+            }
+
+            AuthResponseDto authResponse = authService.refreshToken(refreshToken);
+
+            // 새로운 Refresh Token을 쿠키로 설정
+            setRefreshTokenCookie(response, authResponse.getRefreshToken());
+
             return createSuccessResponse("토큰 갱신 성공", authResponse);
         } catch (RuntimeException e) {
             log.error("Token refresh failed", e);
@@ -117,22 +148,50 @@ public class AuthController {
     }
 
     /**
+     * 인증 상태 확인 API
+     *
+     * @param request HTTP 요청
+     * @return 현재 인증된 사용자 정보
+     */
+    @GetMapping("/verify")
+    public ResponseEntity<Map<String, Object>> verifyAuth(HttpServletRequest request) {
+        try {
+            String accessToken = getAccessTokenFromRequest(request);
+            if (accessToken == null || !jwtUtil.validateToken(accessToken)) {
+                return createErrorResponse("유효하지 않은 Access Token입니다.");
+            }
+
+            String userId = jwtUtil.getIDFromToken(accessToken);
+            UserDto user = userService.getUserInfoById(Long.parseLong(userId));
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("message", "인증 확인 성공");
+            response.put("user", user);
+            response.put("accessToken", accessToken);
+
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            log.error("Auth verification failed", e);
+            return createErrorResponse("인증 확인에 실패했습니다.");
+        }
+    }
+
+    /**
      * OAuth2 소셜 로그인 API
-     * 
-     * 토큰이 제공된 경우: OAuth2 콜백 처리 (사용자 인증 완료)
-     * 토큰이 없는 경우: OAuth2 로그인 URL 제공
-     * 
+     *
      * @param request OAuth2 요청 정보 (provider, token)
+     * @param response HTTP 응답 (쿠키 설정용)
      * @return OAuth2 로그인 URL 또는 인증된 사용자 정보
      */
     @PostMapping("/social-login")
-    public ResponseEntity<Map<String, Object>> socialLogin(@RequestBody Map<String, String> request) {
+    public ResponseEntity<Map<String, Object>> socialLogin(@RequestBody Map<String, String> request,
+                                                           HttpServletResponse response) {
         String provider = request.get("provider");
         String token = request.get("token");
 
-        // 토큰이 있으면 OAuth 콜백 처리, 없으면 로그인 URL 제공
         if (token != null && !token.isEmpty()) {
-            return handleOAuthCallback(provider, token);
+            return handleOAuthCallback(provider, token, response);
         } else {
             return provideOAuthLoginUrl(provider);
         }
@@ -140,35 +199,29 @@ public class AuthController {
 
     /**
      * OAuth2 콜백 처리
-     * 
-     * @param provider OAuth 제공자 (google, github 등)
-     * @param token OAuth2 액세스 토큰
-     * @return 인증된 사용자 정보와 JWT 토큰
      */
-    private ResponseEntity<Map<String, Object>> handleOAuthCallback(String provider, String token) {
+    private ResponseEntity<Map<String, Object>> handleOAuthCallback(String provider, String token, HttpServletResponse response) {
         try {
-            // 토큰 유효성 검사
             if (!jwtUtil.validateToken(token)) {
                 return createErrorResponse("유효하지 않은 토큰입니다.");
             }
 
-            // 토큰에서 사용자 ID 추출
             String userId = jwtUtil.getIDFromToken(token);
             log.info("OAuth callback processing - provider: {}, userId: {}", provider, userId);
-            
-            // 사용자 정보 조회
-            UserDto user = userService.getUserInfoById(userId);
 
-            // 성공 응답 (프론트엔드 APIService 형식에 맞춤)
-            Map<String, Object> response = new HashMap<>();
-            response.put("success", true);
-            response.put("message", "소셜 로그인 성공");
-            response.put("user", user);
-            response.put("accessToken", token);
-            response.put("refreshToken", null); // OAuth는 보통 refresh token 없음
-            response.put("tokenType", "Bearer");
+            UserDto user = userService.getUserInfoById(Long.parseLong(userId));
 
-            return ResponseEntity.ok(response);
+            // OAuth의 경우 Refresh Token도 생성하여 쿠키에 설정
+            String refreshToken = jwtUtil.generateRefreshToken(userId);
+            setRefreshTokenCookie(response, refreshToken);
+
+            Map<String, Object> responseMap = new HashMap<>();
+            responseMap.put("success", true);
+            responseMap.put("message", "소셜 로그인 성공");
+            responseMap.put("user", user);
+            responseMap.put("accessToken", token);
+
+            return ResponseEntity.ok(responseMap);
 
         } catch (Exception e) {
             log.error("OAuth callback processing failed for provider: {}", provider, e);
@@ -178,9 +231,6 @@ public class AuthController {
 
     /**
      * OAuth2 로그인 URL 제공
-     * 
-     * @param provider OAuth 제공자 (google, github 등)
-     * @return OAuth2 로그인 URL
      */
     private ResponseEntity<Map<String, Object>> provideOAuthLoginUrl(String provider) {
         String loginUrl = "/oauth2/authorization/" + provider.toLowerCase();
@@ -195,9 +245,6 @@ public class AuthController {
 
     /**
      * 비밀번호 재설정 요청 API (구현 예정)
-     * 
-     * @param request 비밀번호 재설정 요청 정보
-     * @return 구현 예정 메시지
      */
     @PostMapping("/forgot-password")
     public ResponseEntity<Map<String, Object>> forgotPassword(@RequestBody Map<String, String> request) {
@@ -206,9 +253,6 @@ public class AuthController {
 
     /**
      * 비밀번호 재설정 API (구현 예정)
-     * 
-     * @param request 비밀번호 재설정 정보
-     * @return 구현 예정 메시지
      */
     @PostMapping("/reset-password")
     public ResponseEntity<Map<String, Object>> resetPassword(@RequestBody Map<String, String> request) {
@@ -217,8 +261,6 @@ public class AuthController {
 
     /**
      * Google OAuth2 로그인 URL 제공
-     * 
-     * @return Google OAuth2 로그인 URL
      */
     @GetMapping("/oauth2/google")
     public ResponseEntity<Map<String, Object>> getGoogleLoginUrl() {
@@ -230,8 +272,6 @@ public class AuthController {
 
     /**
      * GitHub OAuth2 로그인 URL 제공
-     * 
-     * @return GitHub OAuth2 로그인 URL
      */
     @GetMapping("/oauth2/github")
     public ResponseEntity<Map<String, Object>> getGithubLoginUrl() {
@@ -241,29 +281,76 @@ public class AuthController {
         return ResponseEntity.ok(response);
     }
 
+    // ===== 헬퍼 메서드들 =====
+
+    /**
+     * Refresh Token을 httpOnly secure 쿠키로 설정
+     */
+    private void setRefreshTokenCookie(HttpServletResponse response, String refreshToken) {
+        Cookie cookie = new Cookie(refreshTokenCookieName, refreshToken);
+        cookie.setHttpOnly(true);
+        cookie.setSecure(true); // HTTPS에서만 전송
+        cookie.setPath("/");
+        cookie.setDomain(refreshTokenCookieDomain);
+        cookie.setMaxAge(7 * 24 * 60 * 60); // 7일
+        response.addCookie(cookie);
+    }
+
+    /**
+     * Refresh Token 쿠키 제거
+     */
+    private void clearRefreshTokenCookie(HttpServletResponse response) {
+        Cookie cookie = new Cookie(refreshTokenCookieName, null);
+        cookie.setHttpOnly(true);
+        cookie.setSecure(true);
+        cookie.setPath("/");
+        cookie.setDomain(refreshTokenCookieDomain);
+        cookie.setMaxAge(0);
+        response.addCookie(cookie);
+    }
+
+    /**
+     * 쿠키에서 Refresh Token 추출
+     */
+    private String getRefreshTokenFromCookie(HttpServletRequest request) {
+        Cookie[] cookies = request.getCookies();
+        if (cookies != null) {
+            for (Cookie cookie : cookies) {
+                if (refreshTokenCookieName.equals(cookie.getName())) {
+                    return cookie.getValue();
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * HTTP 요청에서 Access Token 추출
+     */
+    private String getAccessTokenFromRequest(HttpServletRequest request) {
+        String bearerToken = request.getHeader("Authorization");
+        if (bearerToken != null && bearerToken.startsWith("Bearer ")) {
+            return bearerToken.substring(7);
+        }
+        return null;
+    }
+
     /**
      * 성공 응답 생성 헬퍼 메서드
-     * 
-     * @param message 성공 메시지
-     * @param authResponse 인증 응답 데이터
-     * @return 성공 응답
      */
     private ResponseEntity<Map<String, Object>> createSuccessResponse(String message, AuthResponseDto authResponse) {
         Map<String, Object> response = new HashMap<>();
         response.put("success", true);
         response.put("message", message);
         response.put("accessToken", authResponse.getAccessToken());
-        response.put("refreshToken", authResponse.getRefreshToken());
         response.put("tokenType", authResponse.getTokenType());
         response.put("user", authResponse.getUser());
+        // Refresh Token은 쿠키에만 설정하므로 응답에 포함하지 않음
         return ResponseEntity.ok(response);
     }
 
     /**
      * 에러 응답 생성 헬퍼 메서드
-     * 
-     * @param message 에러 메시지
-     * @return 에러 응답
      */
     private ResponseEntity<Map<String, Object>> createErrorResponse(String message) {
         Map<String, Object> response = new HashMap<>();

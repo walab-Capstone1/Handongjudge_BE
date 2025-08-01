@@ -3,21 +3,27 @@ package com.project.handongjudge.user.service;
 import com.project.handongjudge.user.entity.User;
 import com.project.handongjudge.user.repository.UserRepository;
 import com.project.handongjudge.user.dto.UserDto;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.util.Optional;
 
 @Service
-@RequiredArgsConstructor
 @Slf4j
 @Transactional(readOnly = true)
 public class UserService {
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+
+    @Autowired
+    public UserService(UserRepository userRepository, @Lazy PasswordEncoder passwordEncoder) {
+        this.userRepository = userRepository;
+        this.passwordEncoder = passwordEncoder;
+    }
 
     public Optional<User> findByEmail(String email) {
         return userRepository.findByEmail(email);
@@ -61,7 +67,6 @@ public class UserService {
         return UserDto.from(user);
     }
 
-
     // ID로 사용자 조회
     public Optional<User> findById(Long id) {
         return userRepository.findById(id);
@@ -85,5 +90,4 @@ public class UserService {
     public boolean existsByEmail(String email) {
         return userRepository.existsByEmail(email);
     }
-
 }

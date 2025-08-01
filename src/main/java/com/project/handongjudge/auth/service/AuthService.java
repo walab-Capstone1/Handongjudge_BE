@@ -17,11 +17,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * 인증 서비스
- * 
- * 주요 기능:
- * - 일반 로그인/회원가입 처리
- * - JWT 토큰 생성 및 갱신
- * - 사용자 인증 상태 관리
+ *
+ * 새로운 토큰 관리 방식:
+ * - Access Token: 응답 본문에 포함 (프론트엔드 메모리에 저장)
+ * - Refresh Token: httpOnly secure 쿠키에 저장
  */
 @Service
 @RequiredArgsConstructor
@@ -35,7 +34,7 @@ public class AuthService {
 
     /**
      * 일반 로그인 처리
-     * 
+     *
      * @param loginRequest 로그인 요청 정보
      * @return 인증 응답 (JWT 토큰 + 사용자 정보)
      * @throws AuthenticationException 인증 실패 시
@@ -52,7 +51,7 @@ public class AuthService {
         // 인증 성공 후 사용자 정보 조회 (이메일로 조회)
         User user = userService.findByEmail(loginRequest.getEmail())
                 .orElseThrow(() -> new RuntimeException("사용자를 찾을 수 없습니다."));
-        
+
         // JWT 토큰 생성 (사용자 ID 사용)
         String accessToken = jwtUtil.generateAccessToken(String.valueOf(user.getId()));
         String refreshToken = jwtUtil.generateRefreshToken(String.valueOf(user.getId()));
@@ -67,7 +66,7 @@ public class AuthService {
 
     /**
      * 회원가입 처리
-     * 
+     *
      * @param registerRequest 회원가입 요청 정보
      * @return 인증 응답 (JWT 토큰 + 사용자 정보)
      */
@@ -84,7 +83,7 @@ public class AuthService {
                 registerRequest.getPassword(),
                 registerRequest.getName()
         );
-        
+
         // JWT 토큰 생성 (사용자 ID 사용)
         String accessToken = jwtUtil.generateAccessToken(String.valueOf(user.getId()));
         String refreshToken = jwtUtil.generateRefreshToken(String.valueOf(user.getId()));
@@ -99,34 +98,35 @@ public class AuthService {
 
     /**
      * JWT 토큰 갱신 처리
-     * 
-     * @param refreshTokenRequest 리프레시 토큰 요청
+     *
+     * @param refreshToken 쿠키에서 추출한 Refresh Token
      * @return 새로운 액세스 토큰과 사용자 정보
      */
-    public AuthResponseDto refreshToken(AuthRequestDto.RefreshTokenRequest refreshTokenRequest) {
-        String refreshToken = refreshTokenRequest.getRefreshToken();
-        
+    public AuthResponseDto refreshToken(String refreshToken) {
         // Refresh Token 유효성 검사
         if (!jwtUtil.validateRefreshToken(refreshToken)) {
             throw new RuntimeException("유효하지 않은 Refresh Token입니다.");
         }
-        
+
         // Refresh Token에서 사용자 ID 추출
         String userId = jwtUtil.getIDFromToken(refreshToken);
-        
+
         // 사용자 ID 유효성 검사
         Long userIdLong = validateAndParseUserId(userId);
-        
+
         // 새로운 Access Token 생성 (사용자 ID 사용)
         String newAccessToken = jwtUtil.generateAccessToken(userId);
-        
+
+        // 새로운 Refresh Token 생성 (보안 강화)
+        String newRefreshToken = jwtUtil.generateRefreshToken(userId);
+
         // 사용자 정보 조회 (ID로만 조회)
         User user = userService.findById(userIdLong)
                 .orElseThrow(() -> new RuntimeException("사용자를 찾을 수 없습니다."));
-        
+
         return AuthResponseDto.builder()
                 .accessToken(newAccessToken)
-                .refreshToken(refreshToken) // 기존 Refresh Token 유지
+                .refreshToken(newRefreshToken) // 새로운 Refresh Token 반환
                 .tokenType("Bearer")
                 .user(UserDto.from(user))
                 .build();
@@ -134,7 +134,7 @@ public class AuthService {
 
     /**
      * 사용자 ID 유효성 검사 및 파싱
-     * 
+     *
      * @param userId 사용자 ID 문자열
      * @return 파싱된 사용자 ID (Long)
      * @throws RuntimeException 유효하지 않은 ID인 경우
