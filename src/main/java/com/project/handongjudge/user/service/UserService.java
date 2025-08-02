@@ -1,14 +1,18 @@
 package com.project.handongjudge.user.service;
 
-import com.project.handongjudge.user.entity.User;
-import com.project.handongjudge.user.repository.UserRepository;
+import com.project.handongjudge.user.dto.DashboardCourseDto;
 import com.project.handongjudge.user.dto.UserDto;
+import com.project.handongjudge.user.entity.User;
+import com.project.handongjudge.user.repository.EnrollmentRepository;
+import com.project.handongjudge.user.repository.UserRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import java.util.List;
 import java.util.Optional;
 
 @Service
@@ -17,11 +21,15 @@ import java.util.Optional;
 public class UserService {
 
     private final UserRepository userRepository;
+    private final EnrollmentRepository enrollmentRepository;
     private final PasswordEncoder passwordEncoder;
 
     @Autowired
-    public UserService(UserRepository userRepository, @Lazy PasswordEncoder passwordEncoder) {
+    public UserService(UserRepository userRepository,
+                       EnrollmentRepository enrollmentRepository,
+                       @Lazy PasswordEncoder passwordEncoder) {
         this.userRepository = userRepository;
+        this.enrollmentRepository = enrollmentRepository;
         this.passwordEncoder = passwordEncoder;
     }
 
@@ -67,12 +75,10 @@ public class UserService {
         return UserDto.from(user);
     }
 
-    // ID로 사용자 조회
     public Optional<User> findById(Long id) {
         return userRepository.findById(id);
     }
 
-    // ID로 사용자 정보 조회
     public UserDto getUserInfoById(String userId) {
         Long userIdLong = Long.parseLong(userId);
         User user = userRepository.findById(userIdLong)
@@ -80,7 +86,6 @@ public class UserService {
         return UserDto.from(user);
     }
 
-    // ID로 사용자 정보 조회 (Long 타입)
     public UserDto getUserInfoById(Long userId) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("User not found with ID: " + userId));
@@ -89,5 +94,12 @@ public class UserService {
 
     public boolean existsByEmail(String email) {
         return userRepository.existsByEmail(email);
+    }
+
+    /**
+     * 🔥 로그인한 사용자의 대시보드에 보여줄 수강 중인 과목들 조회
+     */
+    public List<DashboardCourseDto> getDashboardCourses(Long userId) {
+        return enrollmentRepository.findDashboardCoursesByUserId(userId);
     }
 }
