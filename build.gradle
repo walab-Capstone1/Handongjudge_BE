@@ -39,6 +39,8 @@ dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-webflux'
 	testImplementation 'io.projectreactor:reactor-test'
 
+	//스웨거
+
 	// Dev
 	developmentOnly 'org.springframework.boot:spring-boot-devtools'
 
@@ -60,7 +62,7 @@ dependencies {
 	testCompileOnly 'org.projectlombok:lombok'
 	testAnnotationProcessor 'org.projectlombok:lombok'
 
-
+	implementation 'org.springdoc:springdoc-openapi-ui:1.6.15'
 
 }
 
