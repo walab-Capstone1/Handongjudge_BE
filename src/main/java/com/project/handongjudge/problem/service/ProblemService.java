@@ -34,10 +34,26 @@ public class ProblemService {
                 .description(description)
                 .domjudgeProblemId(domjudgeProblemId)
                 .createdAt(LocalDateTime.now())
-                .build();
+                .build();   
 
         problemRepository.save(problem);
         return problem.getId();
+    }
+
+    public List<Problem> getProblemsByAssignmentId(Long assignmentId) {
+        List<Problem> problems = problemRepository.findByAssignmentId(assignmentId);
+        return problems;
+    }
+
+    public ProblemResponse getProblem(Long problemId) {
+        Problem problem = problemRepository.findById(problemId)
+                .orElseThrow(() -> new IllegalArgumentException("Problem not found"));
+        return ProblemResponse.builder()
+                .id(problem.getId())
+                .title(problem.getTitle())
+                .description(problem.getDescription())
+                .createdAt(problem.getCreatedAt())
+                .build();
     }
 
 }

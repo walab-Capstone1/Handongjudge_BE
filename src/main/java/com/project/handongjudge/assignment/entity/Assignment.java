@@ -1,5 +1,6 @@
 package com.project.handongjudge.assignment.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.project.handongjudge.section.entity.Section;
 import lombok.*;
 import javax.persistence.*;
@@ -31,6 +32,7 @@ public class Assignment {
     private LocalDateTime startDate;
     private LocalDateTime endDate;
 
+    @JsonIgnore
     @OneToMany(mappedBy = "assignment", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<AssignmentProblem> assignmentProblems;
 

@@ -6,6 +6,14 @@ spring:
   config:
     import: optional:file:.env[.properties]
 
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+    deserialization:
+      fail-on-unknown-properties: false
+    default-property-inclusion: non_null
+    time-zone: Asia/Seoul
+
   jpa:
     hibernate:
       ddl-auto: update
@@ -47,6 +55,11 @@ jwt:
   refresh-token:
     expiration: 604800000 # 7일
 
+domjudge:
+  api:
+    url: ${DOMJUDGE_URL:http://localhost:12345}
+  username: ${DOMJUDGE_ID:admin}
+  password: ${DOMJUDGE_PW:vhLJKHIoP2rG5S6F}
 
 app:
   oauth2:

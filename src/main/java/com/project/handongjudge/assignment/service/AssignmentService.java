@@ -15,6 +15,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.project.handongjudge.assignment.dto.AssignmentProblemsResponse;
+import com.project.handongjudge.problem.dto.ProblemDto;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -94,8 +96,33 @@ public class AssignmentService {
                 .collect(Collectors.toList());
     }
 
-    public AssignmentResponse getAssignment(Long id) {
-        Assignment assignment = assignmentRepository.findById(id)
+    public AssignmentProblemsResponse getAssignmentProblems(Long assignmentId) {
+        List<Problem> problems = problemRepository.findByAssignmentId(assignmentId);
+
+        // Entity를 DTO로 변환
+        List<ProblemDto> problemDtos = problems.stream()
+                .map(this::convertToProblemDto)
+                .collect(Collectors.toList());
+
+        return AssignmentProblemsResponse.builder()
+                .id(assignmentId)
+                .problems(problemDtos)
+                .build();
+    }
+
+    private ProblemDto convertToProblemDto(Problem problem) {
+        return ProblemDto.builder()
+                .id(problem.getId())
+                .title(problem.getTitle())
+                .description(problem.getDescription())
+                .difficulty(problem.getDifficulty())
+                .domjudgeProblemId(problem.getDomjudgeProblemId())
+                .createdAt(problem.getCreatedAt())
+                .build();
+    }
+
+    public AssignmentResponse getAssignmentInfo(Long assignmentId) {
+        Assignment assignment = assignmentRepository.findById(assignmentId)
                 .orElseThrow(() -> new IllegalArgumentException("Assignment not found"));
         return toResponse(assignment);
     }
