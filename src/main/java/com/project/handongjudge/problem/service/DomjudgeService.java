@@ -14,6 +14,7 @@ import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.multipart.MultipartFile;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 
 import java.io.File;
 import java.io.IOException;
@@ -28,14 +29,22 @@ import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class DomjudgeService {
+    @Value("${domjudge.api.url}")
+    private String DOMJUDGE_API_URL;
 
-    private static final String DOMJUDGE_API_URL = "http://localhost:12345";
-    private static final String DOMJUDGE_USERNAME = "admin";
-    private static final String DOMJUDGE_PASSWORD = "vhLJKHIoP2rG5S6F";
+    @Value("${domjudge.username}")
+    private String DOMJUDGE_USERNAME;
+
+    @Value("${domjudge.password}")
+    private String DOMJUDGE_PASSWORD;
+    // private static final String DOMJUDGE_API_URL = "http://localhost:12345";
+    // private static final String DOMJUDGE_USERNAME = "admin";
+    // private static final String DOMJUDGE_PASSWORD = "vhLJKHIoP2rG5S6F";
     private final ObjectMapper objectMapper;
 
     private final RestTemplate restTemplate;
@@ -130,6 +139,7 @@ public class DomjudgeService {
         body.add("zip", new MultipartInputStreamFileResource(
                 zipFile.getInputStream(), zipFile.getOriginalFilename()
         ));
+        //body.add("problem", zipFile.getOriginalFilename());
 
         HttpEntity<MultiValueMap<String, Object>> requestEntity = new HttpEntity<>(body, headers);
 

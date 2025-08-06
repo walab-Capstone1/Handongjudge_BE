@@ -9,7 +9,6 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.io.IOException;
-import java.util.List;
 
 @RestController
 @RequiredArgsConstructor
@@ -22,5 +21,10 @@ public class ProblemController {
     public ResponseEntity<Long> createProblem(@ModelAttribute ProblemCreateRequest request) throws IOException {
         Long problemId = problemService.createProblem(request);
         return ResponseEntity.ok(problemId);
+    }
+
+    @GetMapping("/{problemId}")
+    public ResponseEntity<ProblemResponse> getProblem(@PathVariable Long problemId) {
+        return ResponseEntity.ok(problemService.getProblem(problemId));
     }
 }

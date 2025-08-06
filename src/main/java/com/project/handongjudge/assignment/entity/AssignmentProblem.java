@@ -1,5 +1,6 @@
 package com.project.handongjudge.assignment.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.project.handongjudge.problem.entity.Problem;
 import lombok.*;
 
@@ -15,10 +16,12 @@ public class AssignmentProblem {
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @JsonIgnore
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "assignment_id")
     private Assignment assignment;
 
+    @JsonIgnore
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "problem_id")
     private Problem problem;
