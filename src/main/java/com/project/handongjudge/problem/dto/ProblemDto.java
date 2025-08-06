@@ -12,6 +12,6 @@ public class ProblemDto {
     private String title;
     private String description;
     private String difficulty;
-    private Long domjudgeProblemId;
+    private String domjudgeProblemId;
     private LocalDateTime createdAt;
 } 
