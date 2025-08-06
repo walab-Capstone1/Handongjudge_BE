@@ -57,10 +57,7 @@ public class SecurityConfig extends WebSecurityConfigurerAdapter {
         return new BCryptPasswordEncoder();
     }
 
-    @Bean
-    public ObjectMapper objectMapper() {
-        return new ObjectMapper();
-    }
+
     @Bean
     public RestTemplate restTemplate() {
         return new RestTemplate();

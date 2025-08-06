@@ -64,6 +64,9 @@ dependencies {
 
 	implementation 'org.springdoc:springdoc-openapi-ui:1.6.15'
 
+	//jackson-datatype-jsr310 의존성
+	implementation 'com.fasterxml.jackson.datatype:jackson-datatype-jsr310'
+
 }
 
 tasks.named('test') {
