@@ -8,8 +8,10 @@ import com.project.handongjudge.problem.entity.Problem;
 import com.project.handongjudge.problem.repository.ProblemRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -21,19 +23,22 @@ public class ProblemService {
     private final DomjudgeService domjudgeService;
 
     public Long createProblem(ProblemCreateRequest request) throws IOException {
-        // DOMjudge에 문제 zip 업로드
-        Long domjudgeProblemId = domjudgeService.uploadProblemToDomjudge(
-                request.getTitle(), request.getZipFile()
-        );
+        String title = request.getTitle();
+        String description = request.getDescription();
+        MultipartFile zipFile = request.getZipFile();
 
-        // 내부 DB에 저장
+        Long domjudgeProblemId = domjudgeService.uploadProblemToDomjudge(zipFile);
+
         Problem problem = Problem.builder()
-                .title(request.getTitle())
-                .description(request.getDescription())
+                .title(title)
+                .description(description)
                 .domjudgeProblemId(domjudgeProblemId)
+                .createdAt(LocalDateTime.now())
                 .build();
 
-        return problemRepository.save(problem).getId();
+        problemRepository.save(problem);
+        return problem.getId();
     }
+
 }
 
