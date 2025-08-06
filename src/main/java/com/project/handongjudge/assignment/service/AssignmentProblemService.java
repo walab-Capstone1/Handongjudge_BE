@@ -34,10 +34,10 @@ public class AssignmentProblemService {
 
         // DOMjudge Contest에 문제 등록
         Long contestId = assignment.getSection().getId(); // sectionId == contestId
-        Long domjudgeProblemId = problem.getDomjudgeProblemId();
+        String domjudgeProblemId = problem.getDomjudgeProblemId();
 
         // A~Z 중 label 자동 생성도 가능 (예시: A, B, C...)
         String label = "A";
-        domjudgeService.addProblemToContest(contestId, domjudgeProblemId, label);
+        domjudgeService.addProblemToContest(contestId, domjudgeProblemId);
     }
 }

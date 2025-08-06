@@ -15,6 +15,7 @@ public class AssignmentProblem {
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @Setter
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "assignment_id")
     private Assignment assignment;

@@ -27,7 +27,7 @@ public class ProblemService {
         String description = request.getDescription();
         MultipartFile zipFile = request.getZipFile();
 
-        Long domjudgeProblemId = domjudgeService.uploadProblemToDomjudge(zipFile);
+        String domjudgeProblemId = domjudgeService.uploadProblemToDomjudge(zipFile);
 
         Problem problem = Problem.builder()
                 .title(title)

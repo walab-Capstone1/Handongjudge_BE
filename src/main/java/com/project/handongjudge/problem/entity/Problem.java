@@ -24,7 +24,8 @@ public class Problem {
 
     private String difficulty;
 
-    private Long domjudgeProblemId;
+    @Column(name = "domjudge_problem_id")
+    private String domjudgeProblemId;
 
     private LocalDateTime createdAt;
 
