@@ -1,5 +1,6 @@
 package com.project.handongjudge.auth.config;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.project.handongjudge.auth.entity.AuthUser;
 import com.project.handongjudge.auth.service.CustomOAuth2UserService;
 import com.project.handongjudge.auth.service.CustomUserDetailsService;
@@ -19,6 +20,7 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.web.client.RestTemplate;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -55,6 +57,14 @@ public class SecurityConfig extends WebSecurityConfigurerAdapter {
         return new BCryptPasswordEncoder();
     }
 
+    @Bean
+    public ObjectMapper objectMapper() {
+        return new ObjectMapper();
+    }
+    @Bean
+    public RestTemplate restTemplate() {
+        return new RestTemplate();
+    }
     /**
      * HTTP 보안 설정
      *

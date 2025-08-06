@@ -1,6 +1,6 @@
 package com.project.handongjudge.user.entity;
 
-import com.project.handongjudge.course.entity.Section;
+import com.project.handongjudge.section.entity.Section;
 import lombok.*;
 
 import javax.persistence.*;
