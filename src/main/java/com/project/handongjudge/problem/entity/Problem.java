@@ -24,6 +24,8 @@ public class Problem {
 
     private String difficulty;
 
+    private Long domjudgeProblemId;
+
     private LocalDateTime createdAt;
 
     @OneToMany(mappedBy = "problem", cascade = CascadeType.ALL, orphanRemoval = true)
