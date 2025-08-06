@@ -1,5 +1,6 @@
 package com.project.handongjudge.assignment.entity;
 
+import com.project.handongjudge.section.entity.Section;
 import lombok.*;
 import javax.persistence.*;
 import java.time.LocalDateTime;
@@ -16,7 +17,9 @@ public class Assignment {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    private Long sectionId;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "section_id")
+    private Section section;
 
     private String assignmentNumber;
 
@@ -26,7 +29,6 @@ public class Assignment {
     private String description;
 
     private LocalDateTime startDate;
-
     private LocalDateTime endDate;
 
     @OneToMany(mappedBy = "assignment", cascade = CascadeType.ALL, orphanRemoval = true)

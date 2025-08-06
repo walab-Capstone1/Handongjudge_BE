@@ -8,6 +8,8 @@ import com.project.handongjudge.assignment.repository.AssignmentRepository;
 import com.project.handongjudge.assignment.repository.AssignmentProblemRepository;
 import com.project.handongjudge.problem.entity.Problem;
 import com.project.handongjudge.problem.repository.ProblemRepository;
+import com.project.handongjudge.section.entity.Section;
+import com.project.handongjudge.section.repository.SectionRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -22,11 +24,14 @@ public class AssignmentService {
     private final AssignmentRepository assignmentRepository;
     private final AssignmentProblemRepository assignmentProblemRepository;
     private final ProblemRepository problemRepository;
+    private final SectionRepository sectionRepository;
 
     public AssignmentResponse createAssignment(Long sectionId, AssignmentRequest request, Long userId) {
+        Section section = sectionRepository.findById(sectionId)
+                .orElseThrow(() -> new IllegalArgumentException("Section not found"));
         // 1. 과제 엔티티 생성
         Assignment assignment = Assignment.builder()
-                .sectionId(sectionId)
+                .section(section)
                 .assignmentNumber(request.getAssignmentNumber())
                 .title(request.getTitle())
                 .description(request.getDescription())
