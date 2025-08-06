@@ -117,7 +117,7 @@ public class DomjudgeService {
 }
 
 
-    public void addProblemToContest(Long contestId, Long domjudgeProblemId, String label) {
+    public void addProblemToContest(Long contestId, String domjudgeProblemId) { // label 제거됨
         HttpHeaders headers = createAuthHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
 
@@ -126,14 +126,14 @@ public class DomjudgeService {
         // request body에는 문제의 domjudge problemId, label 등 포함
         Map<String, Object> requestBody = new HashMap<>();
         requestBody.put("problem", domjudgeProblemId);
-        requestBody.put("label", label);
+        requestBody.put("label", "A");
 
         HttpEntity<Map<String, Object>> requestEntity = new HttpEntity<>(requestBody, headers);
 
         restTemplate.postForEntity(url, requestEntity, String.class);
     }
 
-    public Long uploadProblemToDomjudge(MultipartFile zipFile) throws IOException {
+    public String uploadProblemToDomjudge(MultipartFile zipFile) throws IOException {
         HttpHeaders headers = createAuthHeaders();
         headers.setContentType(MediaType.MULTIPART_FORM_DATA);
 
@@ -160,16 +160,16 @@ public class DomjudgeService {
 
         // "Saved problem 9" -> 9 추출
         String infoMessage = responseBody.path("messages").path("info").get(0).asText();
-        Long domjudgeProblemId = extractProblemId(infoMessage);
+        String domjudgeProblemId = extractProblemId(infoMessage);
 
         return domjudgeProblemId;
     }
 
-    private Long extractProblemId(String infoMessage) {
+    private String extractProblemId(String infoMessage) {
         Pattern pattern = Pattern.compile("Saved problem (\\d+)");
         Matcher matcher = pattern.matcher(infoMessage);
         if (matcher.find()) {
-            return Long.parseLong(matcher.group(1));
+            return matcher.group(1);
         } else {
             throw new RuntimeException("문제 ID를 DOMjudge 응답에서 추출할 수 없습니다: " + infoMessage);
         }
