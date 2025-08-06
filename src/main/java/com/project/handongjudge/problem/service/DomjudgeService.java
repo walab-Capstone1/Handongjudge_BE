@@ -23,6 +23,7 @@ import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Base64;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.regex.Matcher;
@@ -106,60 +107,49 @@ public class DomjudgeService {
 }
 
 
-    public void addProblemToContest(Long contestId, Long domjudgeProblemId, String label) {
+    public void addProblemToContest(Long contestId, String domjudgeProblemId) {
         HttpHeaders headers = createAuthHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
 
-        String url = DOMJUDGE_API_URL + "/api/v4/contests/" + contestId + "/problems";
+        String url = DOMJUDGE_API_URL + "/api/v4/contests/" + contestId + "/problems/" + domjudgeProblemId;
 
-        // request body에는 문제의 domjudge problemId, label 등 포함
-        Map<String, Object> requestBody = new HashMap<>();
-        requestBody.put("problem", domjudgeProblemId);
-        requestBody.put("label", label);
+        // 최소 요청 body 구성
+        Map<String, Object> body = new HashMap<>();
+        body.put("label", "A"); // 실제 서비스에서는 A~Z 자동 생성하는 로직 추가 가능
 
-        HttpEntity<Map<String, Object>> requestEntity = new HttpEntity<>(requestBody, headers);
+        HttpEntity<Map<String, Object>> requestEntity = new HttpEntity<>(body, headers);
 
-        restTemplate.postForEntity(url, requestEntity, String.class);
+        restTemplate.exchange(url, HttpMethod.PUT, requestEntity, String.class);
     }
 
-    public Long uploadProblemToDomjudge(MultipartFile zipFile) throws IOException {
+
+    public String uploadProblemToDomjudge(MultipartFile zipFile) throws IOException {
         HttpHeaders headers = createAuthHeaders();
         headers.setContentType(MediaType.MULTIPART_FORM_DATA);
+        headers.setAccept(Collections.singletonList(MediaType.APPLICATION_JSON));
 
         MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
-        body.add("zip", new MultipartInputStreamFileResource(
-                zipFile.getInputStream(), zipFile.getOriginalFilename()
-        ));
+        body.add("zip", new MultipartInputStreamFileResource(zipFile.getInputStream(), zipFile.getOriginalFilename()));
 
         HttpEntity<MultiValueMap<String, Object>> requestEntity = new HttpEntity<>(body, headers);
 
+        // JSON 응답으로 받기
         ResponseEntity<JsonNode> response = restTemplate.postForEntity(
-                DOMJUDGE_API_URL + "/api/v4/problems",
+                DOMJUDGE_API_URL + "/api/v4/problems?strict=false", // 반드시 strict=false 포함
                 requestEntity,
                 JsonNode.class
         );
 
         JsonNode responseBody = response.getBody();
-        if (responseBody == null || !responseBody.has("messages")) {
-            throw new RuntimeException("DOMjudge 응답에서 메시지를 찾을 수 없습니다.");
+        if (responseBody == null || !responseBody.has("problem_id")) {
+            throw new RuntimeException("DOMjudge 응답에서 problem_id를 찾을 수 없습니다.");
         }
+        System.out.println("Raw response: " + responseBody.toPrettyString());
 
-        // "Saved problem 9" -> 9 추출
-        String infoMessage = responseBody.path("messages").path("info").get(0).asText();
-        Long domjudgeProblemId = extractProblemId(infoMessage);
-
-        return domjudgeProblemId;
+        // 실제 문제 ID 추출 (예: "sum")
+        return responseBody.get("problem_id").asText();
     }
 
-    private Long extractProblemId(String infoMessage) {
-        Pattern pattern = Pattern.compile("Saved problem (\\d+)");
-        Matcher matcher = pattern.matcher(infoMessage);
-        if (matcher.find()) {
-            return Long.parseLong(matcher.group(1));
-        } else {
-            throw new RuntimeException("문제 ID를 DOMjudge 응답에서 추출할 수 없습니다: " + infoMessage);
-        }
-    }
 
 
 
