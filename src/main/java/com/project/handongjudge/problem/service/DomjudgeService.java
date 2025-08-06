@@ -14,6 +14,9 @@ import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.multipart.MultipartFile;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
+import com.project.handongjudge.problem.repository.ProblemRepository;
+import org.springframework.web.util.UriComponentsBuilder;
 
 import java.io.File;
 import java.io.IOException;
@@ -23,22 +26,29 @@ import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Base64;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class DomjudgeService {
+    @Value("${domjudge.api.url}")
+    private String DOMJUDGE_API_URL;
 
-    private static final String DOMJUDGE_API_URL = "http://localhost:12345";
-    private static final String DOMJUDGE_USERNAME = "admin";
-    private static final String DOMJUDGE_PASSWORD = "vhLJKHIoP2rG5S6F";
+    @Value("${domjudge.username}")
+    private String DOMJUDGE_USERNAME;
+
+    @Value("${domjudge.password}")
+    private String DOMJUDGE_PASSWORD;
+    // private static final String DOMJUDGE_API_URL = "http://localhost:12345";
+    // private static final String DOMJUDGE_USERNAME = "admin";
+    // private static final String DOMJUDGE_PASSWORD = "vhLJKHIoP2rG5S6F";
     private final ObjectMapper objectMapper;
-
+    private final ProblemRepository problemRepository;
     private final RestTemplate restTemplate;
 
     private HttpHeaders createAuthHeaders() {
@@ -107,49 +117,63 @@ public class DomjudgeService {
 }
 
 
-    public void addProblemToContest(Long contestId, String domjudgeProblemId) {
+    public void addProblemToContest(Long contestId, Long domjudgeProblemId, String label) {
         HttpHeaders headers = createAuthHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
 
-        String url = DOMJUDGE_API_URL + "/api/v4/contests/" + contestId + "/problems/" + domjudgeProblemId;
+        String url = DOMJUDGE_API_URL + "/api/v4/contests/" + contestId + "/problems";
 
-        // 최소 요청 body 구성
-        Map<String, Object> body = new HashMap<>();
-        body.put("label", "A"); // 실제 서비스에서는 A~Z 자동 생성하는 로직 추가 가능
+        // request body에는 문제의 domjudge problemId, label 등 포함
+        Map<String, Object> requestBody = new HashMap<>();
+        requestBody.put("problem", domjudgeProblemId);
+        requestBody.put("label", label);
 
-        HttpEntity<Map<String, Object>> requestEntity = new HttpEntity<>(body, headers);
+        HttpEntity<Map<String, Object>> requestEntity = new HttpEntity<>(requestBody, headers);
 
-        restTemplate.exchange(url, HttpMethod.PUT, requestEntity, String.class);
+        restTemplate.postForEntity(url, requestEntity, String.class);
     }
 
-
-    public String uploadProblemToDomjudge(MultipartFile zipFile) throws IOException {
+    public Long uploadProblemToDomjudge(MultipartFile zipFile) throws IOException {
         HttpHeaders headers = createAuthHeaders();
         headers.setContentType(MediaType.MULTIPART_FORM_DATA);
-        headers.setAccept(Collections.singletonList(MediaType.APPLICATION_JSON));
 
         MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
-        body.add("zip", new MultipartInputStreamFileResource(zipFile.getInputStream(), zipFile.getOriginalFilename()));
+        body.add("zip", new MultipartInputStreamFileResource(
+                zipFile.getInputStream(), zipFile.getOriginalFilename()
+        )); 
+        // 
+        body.add("problem", problemRepository.findLastProblemId() + 1); // generate problem id : from problemRepository, get last problem id + 1
+        
 
         HttpEntity<MultiValueMap<String, Object>> requestEntity = new HttpEntity<>(body, headers);
 
-        // JSON 응답으로 받기
         ResponseEntity<JsonNode> response = restTemplate.postForEntity(
-                DOMJUDGE_API_URL + "/api/v4/problems?strict=false", // 반드시 strict=false 포함
+                DOMJUDGE_API_URL + "/api/v4/problems",
                 requestEntity,
                 JsonNode.class
         );
 
         JsonNode responseBody = response.getBody();
-        if (responseBody == null || !responseBody.has("problem_id")) {
-            throw new RuntimeException("DOMjudge 응답에서 problem_id를 찾을 수 없습니다.");
+        if (responseBody == null || !responseBody.has("messages")) {
+            throw new RuntimeException("DOMjudge 응답에서 메시지를 찾을 수 없습니다.");
         }
-        System.out.println("Raw response: " + responseBody.toPrettyString());
 
-        // 실제 문제 ID 추출 (예: "sum")
-        return responseBody.get("problem_id").asText();
+        // "Saved problem 9" -> 9 추출
+        String infoMessage = responseBody.path("messages").path("info").get(0).asText();
+        Long domjudgeProblemId = extractProblemId(infoMessage);
+
+        return domjudgeProblemId;
     }
 
+    private Long extractProblemId(String infoMessage) {
+        Pattern pattern = Pattern.compile("Saved problem (\\d+)");
+        Matcher matcher = pattern.matcher(infoMessage);
+        if (matcher.find()) {
+            return Long.parseLong(matcher.group(1));
+        } else {
+            throw new RuntimeException("문제 ID를 DOMjudge 응답에서 추출할 수 없습니다: " + infoMessage);
+        }
+    }
 
 
 
@@ -161,5 +185,67 @@ public class DomjudgeService {
 
         HttpEntity<Void> requestEntity = new HttpEntity<>(headers);
         restTemplate.put(url, requestEntity);
+    }   
+
+    public String createTeam(Long userId, Long cid, String userName) {
+        try {
+            HttpHeaders headers = createAuthHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            String cid_str = cid.toString();
+            
+            // URL에 cid를 파라미터로 추가
+            String url = DOMJUDGE_API_URL + "/api/v4/teams";
+            UriComponentsBuilder builder = UriComponentsBuilder.fromHttpUrl(url)
+                .queryParam("cid", cid_str);
+            String urlWithCid = builder.toUriString();
+            
+            log.info("Creating team for userId: {}, cid: {}, URL: {}", userId, cid, urlWithCid);
+
+            // Request body에 나머지 데이터 추가
+            Map<String, Object> requestBody = new HashMap<>();
+            String id = userId.toString() + "-" + cid_str;
+            String name = userName + "-" + cid_str;    
+            
+            requestBody.put("id", id);
+            requestBody.put("name", name);
+            requestBody.put("type", "contest");
+            
+            log.info("Request body: {}", requestBody);
+
+            HttpEntity<Map<String, Object>> requestEntity = new HttpEntity<>(requestBody, headers);
+            ResponseEntity<JsonNode> response = restTemplate.postForEntity(urlWithCid, requestEntity, JsonNode.class);
+            
+            JsonNode responseBody = response.getBody();
+            log.info("DOMjudge response status: {}, body: {}", response.getStatusCode(), responseBody);
+            
+            if (responseBody == null) {
+                throw new RuntimeException("DOMjudge 응답이 null입니다.");
+            }
+            
+            // 성공적인 응답에서 team ID 추출
+            if (responseBody.has("id")) {
+                String teamID = responseBody.get("id").asText();
+                log.info("Team created successfully with ID: {}", teamID);
+                return teamID;
+            } else {
+                // 에러 응답인 경우 메시지 확인
+                if (responseBody.has("messages")) {
+                    JsonNode messages = responseBody.get("messages");
+                    log.error("DOMjudge team creation failed. Messages: {}", messages);
+                    throw new RuntimeException("DOMjudge team 생성 실패: " + messages.toString());
+                } else {
+                    log.error("DOMjudge team creation failed. Full response: {}", responseBody);
+                    throw new RuntimeException("DOMjudge team 생성 실패: " + responseBody.toString());
+                }
+            }
+            
+        } catch (HttpClientErrorException e) {
+            String errorResponse = e.getResponseBodyAsString();
+            log.error("DOMjudge HTTP Client Error: Status={}, Response={}", e.getStatusCode(), errorResponse);
+            throw new RuntimeException("DOMjudge team 생성 HTTP 에러: " + e.getStatusCode() + " - " + errorResponse, e);
+        } catch (Exception e) {
+            log.error("DOMjudge team 생성 중 예외 발생", e);
+            throw new RuntimeException("DOMjudge team 생성 실패: " + e.getMessage(), e);
+        }
     }
 }
