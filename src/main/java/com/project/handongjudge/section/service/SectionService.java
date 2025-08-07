@@ -11,7 +11,7 @@ import com.project.handongjudge.section.repository.SectionRepository;
 
 import com.project.handongjudge.user.entity.User;
 import com.project.handongjudge.user.repository.UserRepository;
-import com.project.handongjudge.problem.service.DomjudgeService;
+import com.project.handongjudge.domjudge.service.DomjudgeService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;

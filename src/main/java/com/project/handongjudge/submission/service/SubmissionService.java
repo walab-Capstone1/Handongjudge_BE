@@ -14,11 +14,10 @@ import com.project.handongjudge.section.repository.SectionRepository;
 import com.project.handongjudge.user.entity.User;
 import com.project.handongjudge.problem.entity.Problem;
 import com.project.handongjudge.section.entity.Section;
-import com.project.handongjudge.user.repository.EnrollmentRepository;   
-import com.project.handongjudge.user.entity.Enrollment;
+import com.project.handongjudge.user.repository.EnrollmentRepository;
 import com.project.handongjudge.problem.util.CodeExtenstion;
 import java.io.File;
-import com.project.handongjudge.problem.service.DomjudgeService;
+import com.project.handongjudge.domjudge.service.DomjudgeService;
 
 
 @RequiredArgsConstructor

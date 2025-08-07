@@ -14,11 +14,11 @@ import org.springframework.context.annotation.Lazy;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;    
-import com.project.handongjudge.problem.service.DomjudgeService;    
+import com.project.handongjudge.domjudge.service.DomjudgeService;
 import com.project.handongjudge.user.dto.EnrollmentResponseDTO;
 import java.util.List;
 import java.util.Optional;
-import java.util.Map;
+
 @Service
 @Slf4j
 @Transactional(readOnly = true)

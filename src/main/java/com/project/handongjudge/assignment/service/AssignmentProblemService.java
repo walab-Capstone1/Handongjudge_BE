@@ -6,7 +6,7 @@ import com.project.handongjudge.assignment.repository.AssignmentProblemRepositor
 import com.project.handongjudge.assignment.repository.AssignmentRepository;
 import com.project.handongjudge.problem.entity.Problem;
 import com.project.handongjudge.problem.repository.ProblemRepository;
-import com.project.handongjudge.problem.service.DomjudgeService;
+import com.project.handongjudge.domjudge.service.DomjudgeService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
