@@ -1,13 +1,8 @@
 package com.project.handongjudge.submission.entity;
 
-import javax.persistence.Entity;
-import javax.persistence.GeneratedValue;
-import javax.persistence.GenerationType;
-import javax.persistence.Id;
-import javax.persistence.Table;
-import javax.persistence.ManyToOne;
-import javax.persistence.JoinColumn;
-import javax.persistence.Column;
+import javax.persistence.*;
+
+import com.project.handongjudge.section.entity.Section;
 import lombok.*;
 import java.time.LocalDateTime;
 import com.project.handongjudge.problem.entity.Problem;
@@ -49,5 +44,12 @@ public class Submission {
     @Column(name = "result")
     String result;
 
-    
+
+    // Submission.java
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "section_id")
+    private Section section;
+
+
+
 }
