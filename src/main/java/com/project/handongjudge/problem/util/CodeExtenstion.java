@@ -3,6 +3,8 @@ package com.project.handongjudge.problem.util;
 import org.springframework.stereotype.Component;
 import lombok.Getter;
 import lombok.Setter;
+import org.springframework.web.multipart.MultipartFile;
+
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
@@ -45,5 +47,13 @@ public class CodeExtenstion {
         }
         return file;
     }
-        
+    public static File multipartToFile(MultipartFile multipartFile, String language) {
+        try {
+            File tempFile = File.createTempFile("submission_", "." + language);
+            multipartFile.transferTo(tempFile);
+            return tempFile;
+        } catch (IOException e) {
+            throw new RuntimeException("파일 저장 실패", e);
+        }
+    }
 }
