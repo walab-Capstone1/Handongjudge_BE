@@ -248,4 +248,118 @@ public class DomjudgeService {
             throw new RuntimeException("DOMjudge team 생성 실패: " + e.getMessage(), e);
         }
     }
+
+
+
+    // submit code to domjudge
+    public String submitCode(String cid, String teamId, String problemId, String language, File codeFile) {
+        HttpHeaders headers = createAuthHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+
+        String url = DOMJUDGE_API_URL + "/api/v4/contests/" + cid + "/submissions";
+        // /api/v4/contests/{cid}/judgements
+
+        //parameter : cid
+        // strict : false
+        
+
+
+        // request body : 
+        // problem, problemId, language, language_id, team_id, user_id, time, entry_point,id,files,code
+        
+        // example
+    //    curl -X 'POST' \
+    //   'http://192.168.68.2:12345/api/v4/contests/1234/submissions?strict=false' \
+    //   -H 'accept: application/json' \
+    //   -H 'Authorization: Basic YWRtaW46SGFuZG9uZ2p1ZGdlMTIzNA==' \
+    //   -H 'Content-Type: multipart/form-data' \
+    //   -F 'language_id=' \
+    //   -F 'entry_point=' \
+    //   -F 'code=@solution.cpp' \
+    //   -F 'time=' \
+    //   -F 'user_id=' \
+    //   -F 'language=cpp' \
+    //   -F 'id=' \
+    //   -F 'problem_id=simpleadd' \
+    //   -F 'team_id=4-2'
+
+
+        // request body에는 문제의 domjudge problemId, label 등 포함
+        Map<String, Object> requestBody = new HashMap<>();
+            
+            requestBody.put("problem_id", problemId);
+           
+            requestBody.put("language_id", language);
+            requestBody.put("team_id", teamId);
+            
+           
+           
+            
+            
+            requestBody.put("code", codeFile);
+
+
+        HttpEntity<Map<String, Object>> requestEntity = new HttpEntity<>(requestBody, headers);
+
+        ResponseEntity<JsonNode> response = restTemplate.postForEntity(url, requestEntity, JsonNode.class);
+
+        // response example; {
+    //   "language_id": "cpp",
+    //   "time": "2025-08-07T02:37:41.587+02:00",
+    //   "contest_time": "49:35:56.587",
+    //   "team_id": "4-2",
+    //   "problem_id": "simpleadd",
+    //   "files": [
+    //     {
+    //       "href": "contests/1234/submissions/5/files",
+    //       "mime": "application/zip",
+    //       "filename": "submission.zip"
+    //     }
+    //   ],
+    //   "submitid": 5,
+    //   "id": "5",
+    //   "entry_point": null,
+    //   "import_error": null
+    // }
+        // return submissionId
+        return response.getBody().get("id").asText();   // TODO: 추후 수정 ( submissionId -> submission)
+    }
+
+    public String getResult(String cid, String submissionId) { // submissionId -> submissionId
+        HttpHeaders headers = createAuthHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+
+        String url = DOMJUDGE_API_URL + "/api/v4/contests/" + cid + "/judgements";
+        ///api/v4/contests/{cid}/judgements
+
+        UriComponentsBuilder builder = UriComponentsBuilder.fromHttpUrl(url)
+                .queryParam("ids", submissionId)
+                .queryParam("submission_id", submissionId)
+                .queryParam("strict", "false");
+        String urlWithParams = builder.toUriString();
+
+        // request body : 
+        // ids : submissionId
+        // submission_id : submissionId
+        // strict : false
+
+        ResponseEntity<JsonNode> response = restTemplate.getForEntity(urlWithParams, JsonNode.class);
+
+        // response example; 
+        //         [
+        //   {
+        //     "start_time": "2025-08-07T02:37:45.973+02:00",
+        //     "start_contest_time": "49:36:00.973",
+        //     "end_time": "2025-08-07T02:37:49.155+02:00",
+        //     "end_contest_time": "49:36:04.155",
+        //     "max_run_time": 0.001,
+        //     "submission_id": "5",
+        //     "id": "5",
+        //     "valid": true,
+        //     "judgement_type_id": "AC"
+        //   }
+        // ]
+        String result = response.getBody().get(0).get("judgement_type_id").asText();    // TODO: 추후 수정 ( judgement_type_id -> result)
+        return result;
+    }
 }
