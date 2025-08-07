@@ -1,11 +1,17 @@
 package com.project.handongjudge.problem.service;
 
 import com.project.handongjudge.assignment.repository.AssignmentProblemRepository;
+import com.project.handongjudge.problem.dto.ProblemCreateRequest;
 import com.project.handongjudge.problem.dto.ProblemResponse;
 import com.project.handongjudge.assignment.entity.AssignmentProblem;
+import com.project.handongjudge.problem.entity.Problem;
+import com.project.handongjudge.problem.repository.ProblemRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -13,22 +19,42 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class ProblemService {
 
-    private final AssignmentProblemRepository assignmentProblemRepository;
+    private final ProblemRepository problemRepository;
+    private final DomjudgeService domjudgeService;
 
-    public List<ProblemResponse> getProblemsByAssignmentId(Long assignmentId) {
-        List<AssignmentProblem> aps = assignmentProblemRepository.findByAssignmentIdOrderByProblemOrderAsc(assignmentId);
-        return aps.stream()
-                .map(ap -> {
-                    var p = ap.getProblem();
-                    return ProblemResponse.builder()
-                            .id(p.getId())
-                            .title(p.getTitle())
-                            .description(p.getDescription())
-                            .difficulty(p.getDifficulty())
-                            .createdAt(p.getCreatedAt())
-                            .order(ap.getProblemOrder())
-                            .build();
-                })
-                .collect(Collectors.toList());
+    public Long createProblem(ProblemCreateRequest request) throws IOException {
+        String title = request.getTitle();
+        String description = request.getDescription();
+        MultipartFile zipFile = request.getZipFile();
+
+        String domjudgeProblemId = domjudgeService.uploadProblemToDomjudge(zipFile);
+
+        Problem problem = Problem.builder()
+                .title(title)
+                .description(description)
+                .domjudgeProblemId(domjudgeProblemId)
+                .createdAt(LocalDateTime.now())
+                .build();   
+
+        problemRepository.save(problem);
+        return problem.getId();
     }
+
+    public List<Problem> getProblemsByAssignmentId(Long assignmentId) {
+        List<Problem> problems = problemRepository.findByAssignmentId(assignmentId);
+        return problems;
+    }
+
+    public ProblemResponse getProblem(Long problemId) {
+        Problem problem = problemRepository.findById(problemId)
+                .orElseThrow(() -> new IllegalArgumentException("Problem not found"));
+        return ProblemResponse.builder()
+                .id(problem.getId())
+                .title(problem.getTitle())
+                .description(problem.getDescription())
+                .createdAt(problem.getCreatedAt())
+                .build();
+    }
+
 }
+

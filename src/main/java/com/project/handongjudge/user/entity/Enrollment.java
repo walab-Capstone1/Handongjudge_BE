@@ -1,6 +1,6 @@
 package com.project.handongjudge.user.entity;
 
-import com.project.handongjudge.course.entity.Section;
+import com.project.handongjudge.section.entity.Section;
 import lombok.*;
 
 import javax.persistence.*;
@@ -24,6 +24,10 @@ public class Enrollment {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "section_id")
     private Section section;
+
+
+    @Column(name = "team_id", nullable = true)  
+    private String teamId;
 
     private String roleInCourse;
 

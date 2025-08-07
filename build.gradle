@@ -29,6 +29,9 @@ dependencies {
 	implementation 'io.jsonwebtoken:jjwt-impl:0.11.5'
 	implementation 'io.jsonwebtoken:jjwt-jackson:0.11.5'
 
+	// Jackson JSR310 for Java 8 date/time support
+	implementation 'com.fasterxml.jackson.datatype:jackson-datatype-jsr310'
+
 	// Spring Security & OAuth2
 	implementation 'org.springframework.boot:spring-boot-starter-security'
 	implementation 'org.springframework.boot:spring-boot-starter-oauth2-client'
@@ -63,6 +66,9 @@ dependencies {
 	testAnnotationProcessor 'org.projectlombok:lombok'
 
 	implementation 'org.springdoc:springdoc-openapi-ui:1.6.15'
+
+	//jackson-datatype-jsr310 의존성
+	implementation 'com.fasterxml.jackson.datatype:jackson-datatype-jsr310'
 
 }
 

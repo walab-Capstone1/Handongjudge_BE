@@ -3,6 +3,8 @@ package com.project.handongjudge.user.controller;
 import com.project.handongjudge.user.service.UserService;
 import com.project.handongjudge.user.dto.UserDto;
 import com.project.handongjudge.user.dto.DashboardCourseDto;
+import com.project.handongjudge.user.dto.EnrollmentRequestDTO;
+import com.project.handongjudge.user.dto.EnrollmentResponseDTO;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
@@ -84,5 +86,12 @@ public class UserController {
         error.put("success", false);
         error.put("message", message);
         return ResponseEntity.badRequest().body(error);
+    }
+
+    // enroll course
+    @PostMapping("/enroll")
+    public ResponseEntity<EnrollmentResponseDTO> enrollCourse(@RequestBody EnrollmentRequestDTO request) {
+        EnrollmentResponseDTO response = userService.enrollCourse(request);
+        return ResponseEntity.ok(response);
     }
 }
