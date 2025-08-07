@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.project.handongjudge.problem.util.MultipartInputStreamFileResource;
 import lombok.RequiredArgsConstructor;
 import org.springframework.core.io.ByteArrayResource;
+import org.springframework.core.io.FileSystemResource;
 import org.springframework.http.*;
 import org.springframework.stereotype.Service;
 import org.springframework.util.LinkedMultiValueMap;
@@ -34,17 +35,17 @@ import java.util.regex.Pattern;
 @Service
 @RequiredArgsConstructor
 public class DomjudgeService {
-    @Value("${domjudge.api.url}")
-    private String DOMJUDGE_API_URL;
-
-    @Value("${domjudge.username}")
-    private String DOMJUDGE_USERNAME;
-
-    @Value("${domjudge.password}")
-    private String DOMJUDGE_PASSWORD;
-    // private static final String DOMJUDGE_API_URL = "http://localhost:12345";
-    // private static final String DOMJUDGE_USERNAME = "admin";
-    // private static final String DOMJUDGE_PASSWORD = "vhLJKHIoP2rG5S6F";
+//    @Value("${domjudge.api.url}")
+//    private String DOMJUDGE_API_URL;
+//
+//    @Value("${domjudge.username}")
+//    private String DOMJUDGE_USERNAME;
+//
+//    @Value("${domjudge.password}")
+//    private String DOMJUDGE_PASSWORD;
+     private static final String DOMJUDGE_API_URL = "http://localhost:12345";
+     private static final String DOMJUDGE_USERNAME = "admin";
+     private static final String DOMJUDGE_PASSWORD = "vhLJKHIoP2rG5S6F";
     private final ObjectMapper objectMapper;
     private final ProblemRepository problemRepository;
     private final RestTemplate restTemplate;
@@ -115,20 +116,23 @@ public class DomjudgeService {
 }
 
 
-    public void addProblemToContest(Long contestId, String domjudgeProblemId) { // label 제거됨
+    public void addProblemToContest(Long contestId, String domjudgeProblemId) {
         HttpHeaders headers = createAuthHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
 
-        String url = DOMJUDGE_API_URL + "/api/v4/contests/" + contestId + "/problems";
+        String url = DOMJUDGE_API_URL + "/api/v4/contests/" + contestId + "/problems/" + domjudgeProblemId;
 
-        // request body에는 문제의 domjudge problemId, label 등 포함
         Map<String, Object> requestBody = new HashMap<>();
-        requestBody.put("problem", domjudgeProblemId);
-        requestBody.put("label", "A");
+        requestBody.put("label", "A"); // 반드시 포함
 
         HttpEntity<Map<String, Object>> requestEntity = new HttpEntity<>(requestBody, headers);
 
-        restTemplate.postForEntity(url, requestEntity, String.class);
+        restTemplate.exchange(
+                url,
+                HttpMethod.PUT,
+                requestEntity,
+                String.class
+        );
     }
 
     public String uploadProblemToDomjudge(MultipartFile zipFile) throws IOException {
@@ -140,7 +144,7 @@ public class DomjudgeService {
                 zipFile.getInputStream(), zipFile.getOriginalFilename()
         )); 
         // 
-        body.add("problem", problemRepository.findLastProblemId() + 1); // generate problem id : from problemRepository, get last problem id + 1
+        //body.add("problem", problemRepository.findLastProblemId() + 1); // generate problem id : from problemRepository, get last problem id + 1
         
 
         HttpEntity<MultiValueMap<String, Object>> requestEntity = new HttpEntity<>(body, headers);
@@ -156,9 +160,7 @@ public class DomjudgeService {
             throw new RuntimeException("DOMjudge 응답에서 메시지를 찾을 수 없습니다.");
         }
 
-        // "Saved problem 9" -> 9 추출
-        String infoMessage = responseBody.path("messages").path("info").get(0).asText();
-        String domjudgeProblemId = extractProblemId(infoMessage);
+        String domjudgeProblemId = responseBody.path("problem_id").asText();
 
         return domjudgeProblemId;
     }
@@ -249,115 +251,58 @@ public class DomjudgeService {
 
 
 
-    // submit code to domjudge
     public String submitCode(String cid, String teamId, String problemId, String language, File codeFile) {
         HttpHeaders headers = createAuthHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON);
+        headers.setContentType(MediaType.MULTIPART_FORM_DATA);
 
-        String url = DOMJUDGE_API_URL + "/api/v4/contests/" + cid + "/submissions";
-        // /api/v4/contests/{cid}/judgements
+        String url = DOMJUDGE_API_URL + "/api/v4/contests/" + cid + "/submissions?strict=false";
 
-        //parameter : cid
-        // strict : false
-        
-
-
-        // request body : 
-        // problem, problemId, language, language_id, team_id, user_id, time, entry_point,id,files,code
-        
-        // example
-    //    curl -X 'POST' \
-    //   'http://192.168.68.2:12345/api/v4/contests/1234/submissions?strict=false' \
-    //   -H 'accept: application/json' \
-    //   -H 'Authorization: Basic YWRtaW46SGFuZG9uZ2p1ZGdlMTIzNA==' \
-    //   -H 'Content-Type: multipart/form-data' \
-    //   -F 'language_id=' \
-    //   -F 'entry_point=' \
-    //   -F 'code=@solution.cpp' \
-    //   -F 'time=' \
-    //   -F 'user_id=' \
-    //   -F 'language=cpp' \
-    //   -F 'id=' \
-    //   -F 'problem_id=simpleadd' \
-    //   -F 'team_id=4-2'
+        MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
+        body.add("problem_id", problemId);
+        body.add("problem", problemId);
+        body.add("language", language);
+        body.add("language_id", language);
+        body.add("team_id", teamId);
+        body.add("code", new FileSystemResource(codeFile));
 
 
-        // request body에는 문제의 domjudge problemId, label 등 포함
-        Map<String, Object> requestBody = new HashMap<>();
-            
-            requestBody.put("problem_id", problemId);
-           
-            requestBody.put("language_id", language);
-            requestBody.put("team_id", teamId);
-            
-           
-           
-            
-            
-            requestBody.put("code", codeFile);
-
-
-        HttpEntity<Map<String, Object>> requestEntity = new HttpEntity<>(requestBody, headers);
+        HttpEntity<MultiValueMap<String, Object>> requestEntity = new HttpEntity<>(body, headers);
 
         ResponseEntity<JsonNode> response = restTemplate.postForEntity(url, requestEntity, JsonNode.class);
-
-        // response example; {
-    //   "language_id": "cpp",
-    //   "time": "2025-08-07T02:37:41.587+02:00",
-    //   "contest_time": "49:35:56.587",
-    //   "team_id": "4-2",
-    //   "problem_id": "simpleadd",
-    //   "files": [
-    //     {
-    //       "href": "contests/1234/submissions/5/files",
-    //       "mime": "application/zip",
-    //       "filename": "submission.zip"
-    //     }
-    //   ],
-    //   "submitid": 5,
-    //   "id": "5",
-    //   "entry_point": null,
-    //   "import_error": null
-    // }
-        // return submissionId
-        return response.getBody().get("id").asText();   // TODO: 추후 수정 ( submissionId -> submission)
+        JsonNode responseBody = response.getBody();
+        if (responseBody != null && responseBody.has("submitid")) {
+            return responseBody.get("submitid").asText(); // 정수인데 문자열로 반환
+        } else {
+            throw new RuntimeException("submitid not found in response: " + responseBody);
+        }
     }
 
-    public String getResult(String cid, String submissionId) { // submissionId -> submissionId
-        HttpHeaders headers = createAuthHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON);
 
-        String url = DOMJUDGE_API_URL + "/api/v4/contests/" + cid + "/judgements";
-        ///api/v4/contests/{cid}/judgements
+    public String getResult(String cid, String submissionId) {
+        try {
+            HttpHeaders headers = createAuthHeaders();
+            //headers.setContentType(MediaType.MULTIPART_FORM_DATA);
 
-        UriComponentsBuilder builder = UriComponentsBuilder.fromHttpUrl(url)
-                .queryParam("ids", submissionId)
-                .queryParam("submission_id", submissionId)
-                .queryParam("strict", "false");
-        String urlWithParams = builder.toUriString();
+            // 올바른 엔드포인트 사용: /api/v4/contests/{cid}/judgements/{id}
+            String url = String.format("%s/api/v4/contests/%s/judgements/%s",
+                    DOMJUDGE_API_URL, cid, submissionId);
 
-        // request body : 
-        // ids : submissionId
-        // submission_id : submissionId
-        // strict : false
+            System.out.println("Request URL: " + url);
+            System.out.println("Headers: " + headers);
 
-        ResponseEntity<JsonNode> response = restTemplate.getForEntity(urlWithParams, JsonNode.class);
+            ResponseEntity<JsonNode> response = restTemplate.getForEntity(url, JsonNode.class);
 
-        // response example; 
-        //         [
-        //   {
-        //     "start_time": "2025-08-07T02:37:45.973+02:00",
-        //     "start_contest_time": "49:36:00.973",
-        //     "end_time": "2025-08-07T02:37:49.155+02:00",
-        //     "end_contest_time": "49:36:04.155",
-        //     "max_run_time": 0.001,
-        //     "submission_id": "5",
-        //     "id": "5",
-        //     "valid": true,
-        //     "judgement_type_id": "AC"
-        //   }
-        // ]
-        String result = response.getBody().get(0).get("judgement_type_id").asText();    // TODO: 추후 수정 ( judgement_type_id -> result)
-        return result;
+            System.out.println("Response Status: " + response.getStatusCode());
+            System.out.println("Response Body: " + response.getBody());
+
+            // 단일 judgement 객체에서 결과 추출
+            String result = response.getBody().get("judgement_type_id").asText();
+            return result;
+
+        } catch (Exception e) {
+            System.out.println("Error: " + e.getMessage());
+            e.printStackTrace();
+            throw e;
+        }
     }
 }
