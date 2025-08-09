@@ -8,7 +8,7 @@ import com.project.handongjudge.assignment.repository.AssignmentRepository;
 import com.project.handongjudge.assignment.repository.AssignmentProblemRepository;
 import com.project.handongjudge.problem.entity.Problem;
 import com.project.handongjudge.problem.repository.ProblemRepository;
-import com.project.handongjudge.problem.service.DomjudgeService;
+import com.project.handongjudge.domjudge.service.DomjudgeService;
 import com.project.handongjudge.section.entity.Section;
 import com.project.handongjudge.section.repository.SectionRepository;
 import lombok.RequiredArgsConstructor;

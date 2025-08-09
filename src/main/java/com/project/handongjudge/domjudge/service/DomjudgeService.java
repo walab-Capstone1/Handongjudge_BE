@@ -1,4 +1,4 @@
-package com.project.handongjudge.problem.service;
+package com.project.handongjudge.domjudge.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -21,7 +21,6 @@ import org.springframework.web.util.UriComponentsBuilder;
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
@@ -36,17 +35,17 @@ import java.util.regex.Pattern;
 @Service
 @RequiredArgsConstructor
 public class DomjudgeService {
-    @Value("${domjudge.api.url}")
-    private String DOMJUDGE_API_URL;
-
-    @Value("${domjudge.username}")
-    private String DOMJUDGE_USERNAME;
-
-    @Value("${domjudge.password}")
-    private String DOMJUDGE_PASSWORD;
-    // private static final String DOMJUDGE_API_URL = "http://localhost:12345";
-    // private static final String DOMJUDGE_USERNAME = "admin";
-    // private static final String DOMJUDGE_PASSWORD = "vhLJKHIoP2rG5S6F";
+//    @Value("${domjudge.api.url}")
+//    private String DOMJUDGE_API_URL;
+//
+//    @Value("${domjudge.username}")
+//    private String DOMJUDGE_USERNAME;
+//
+//    @Value("${domjudge.password}")
+//    private String DOMJUDGE_PASSWORD;
+     private static final String DOMJUDGE_API_URL = "http://localhost:12345";
+     private static final String DOMJUDGE_USERNAME = "admin";
+     private static final String DOMJUDGE_PASSWORD = "vhLJKHIoP2rG5S6F";
     private final ObjectMapper objectMapper;
     private final ProblemRepository problemRepository;
     private final RestTemplate restTemplate;
@@ -117,20 +116,23 @@ public class DomjudgeService {
 }
 
 
-    public void addProblemToContest(Long contestId, String domjudgeProblemId) { // label 제거됨
+    public void addProblemToContest(Long contestId, String domjudgeProblemId) {
         HttpHeaders headers = createAuthHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
 
-        String url = DOMJUDGE_API_URL + "/api/v4/contests/" + contestId + "/problems";
+        String url = DOMJUDGE_API_URL + "/api/v4/contests/" + contestId + "/problems/" + domjudgeProblemId;
 
-        // request body에는 문제의 domjudge problemId, label 등 포함
         Map<String, Object> requestBody = new HashMap<>();
-        requestBody.put("problem", domjudgeProblemId);
-        requestBody.put("label", "A");
+        requestBody.put("label", "A"); // 반드시 포함
 
         HttpEntity<Map<String, Object>> requestEntity = new HttpEntity<>(requestBody, headers);
 
-        restTemplate.postForEntity(url, requestEntity, String.class);
+        restTemplate.exchange(
+                url,
+                HttpMethod.PUT,
+                requestEntity,
+                String.class
+        );
     }
 
     public String uploadProblemToDomjudge(MultipartFile zipFile) throws IOException {
@@ -142,7 +144,7 @@ public class DomjudgeService {
                 zipFile.getInputStream(), zipFile.getOriginalFilename()
         )); 
         // 
-        body.add("problem", problemRepository.findLastProblemId() + 1); // generate problem id : from problemRepository, get last problem id + 1
+        //body.add("problem", problemRepository.findLastProblemId() + 1); // generate problem id : from problemRepository, get last problem id + 1
         
 
         HttpEntity<MultiValueMap<String, Object>> requestEntity = new HttpEntity<>(body, headers);
@@ -158,9 +160,7 @@ public class DomjudgeService {
             throw new RuntimeException("DOMjudge 응답에서 메시지를 찾을 수 없습니다.");
         }
 
-        // "Saved problem 9" -> 9 추출
-        String infoMessage = responseBody.path("messages").path("info").get(0).asText();
-        String domjudgeProblemId = extractProblemId(infoMessage);
+        String domjudgeProblemId = responseBody.path("problem_id").asText();
 
         return domjudgeProblemId;
     }
@@ -246,6 +246,63 @@ public class DomjudgeService {
         } catch (Exception e) {
             log.error("DOMjudge team 생성 중 예외 발생", e);
             throw new RuntimeException("DOMjudge team 생성 실패: " + e.getMessage(), e);
+        }
+    }
+
+
+
+    public String submitCode(String cid, String teamId, String problemId, String language, File codeFile) {
+        HttpHeaders headers = createAuthHeaders();
+        headers.setContentType(MediaType.MULTIPART_FORM_DATA);
+
+        String url = DOMJUDGE_API_URL + "/api/v4/contests/" + cid + "/submissions?strict=false";
+
+        MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
+        body.add("problem_id", problemId);
+        body.add("problem", problemId);
+        body.add("language", language);
+        body.add("language_id", language);
+        body.add("team_id", teamId);
+        body.add("code", new FileSystemResource(codeFile));
+
+
+        HttpEntity<MultiValueMap<String, Object>> requestEntity = new HttpEntity<>(body, headers);
+
+        ResponseEntity<JsonNode> response = restTemplate.postForEntity(url, requestEntity, JsonNode.class);
+        JsonNode responseBody = response.getBody();
+        if (responseBody != null && responseBody.has("submitid")) {
+            return responseBody.get("submitid").asText(); // 정수인데 문자열로 반환
+        } else {
+            throw new RuntimeException("submitid not found in response: " + responseBody);
+        }
+    }
+
+
+    public String getResult(String cid, String submissionId) {
+        try {
+            HttpHeaders headers = createAuthHeaders();
+            //headers.setContentType(MediaType.MULTIPART_FORM_DATA);
+
+            // 올바른 엔드포인트 사용: /api/v4/contests/{cid}/judgements/{id}
+            String url = String.format("%s/api/v4/contests/%s/judgements/%s",
+                    DOMJUDGE_API_URL, cid, submissionId);
+
+            System.out.println("Request URL: " + url);
+            System.out.println("Headers: " + headers);
+
+            ResponseEntity<JsonNode> response = restTemplate.getForEntity(url, JsonNode.class);
+
+            System.out.println("Response Status: " + response.getStatusCode());
+            System.out.println("Response Body: " + response.getBody());
+
+            // 단일 judgement 객체에서 결과 추출
+            String result = response.getBody().get("judgement_type_id").asText();
+            return result;
+
+        } catch (Exception e) {
+            System.out.println("Error: " + e.getMessage());
+            e.printStackTrace();
+            throw e;
         }
     }
 }
