@@ -10,7 +10,7 @@ import lombok.RequiredArgsConstructor;
 
 @RequiredArgsConstructor    
 @RestController
-@RequestMapping("/submissions")
+@RequestMapping("/api/submissions")
 public class SubmissionController {
     private final SubmissionService submissionService;
 
