@@ -281,21 +281,23 @@ public class DomjudgeService {
     public String getResult(String cid, String submissionId) {
         try {
             HttpHeaders headers = createAuthHeaders();
-            //headers.setContentType(MediaType.MULTIPART_FORM_DATA);
 
-            // 올바른 엔드포인트 사용: /api/v4/contests/{cid}/judgements/{id}
-            String url = String.format("%s/api/v4/contests/%s/judgements/%s",
-                    DOMJUDGE_API_URL, cid, submissionId);
+            String url = DOMJUDGE_API_URL + "/api/v4/contests/" + cid + "/judgements/" + submissionId;
 
             System.out.println("Request URL: " + url);
             System.out.println("Headers: " + headers);
 
-            ResponseEntity<JsonNode> response = restTemplate.getForEntity(url, JsonNode.class);
+            HttpEntity<Object> requestEntity = new HttpEntity<>(headers);
+            ResponseEntity<JsonNode> response = restTemplate.exchange(
+                    url,
+                    HttpMethod.GET,
+                    requestEntity,
+                    JsonNode.class
+            );
 
             System.out.println("Response Status: " + response.getStatusCode());
             System.out.println("Response Body: " + response.getBody());
 
-            // 단일 judgement 객체에서 결과 추출
             String result = response.getBody().get("judgement_type_id").asText();
             return result;
 
