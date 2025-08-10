@@ -57,9 +57,9 @@ jwt:
 
 domjudge:
   api:
-    url: ${DOMJUDGE_URL:http://localhost:12345}
-  username: ${DOMJUDGE_ID:admin}
-  password: ${DOMJUDGE_PW:vhLJKHIoP2rG5S6F}
+    url: ${DOMJUDGE_URL}
+  username: ${DOMJUDGE_ID}
+  password: ${DOMJUDGE_PW}
 
 app:
   oauth2:

@@ -35,17 +35,15 @@ import java.util.regex.Pattern;
 @Service
 @RequiredArgsConstructor
 public class DomjudgeService {
-//    @Value("${domjudge.api.url}")
-//    private String DOMJUDGE_API_URL;
-//
-//    @Value("${domjudge.username}")
-//    private String DOMJUDGE_USERNAME;
-//
-//    @Value("${domjudge.password}")
-//    private String DOMJUDGE_PASSWORD;
-     private static final String DOMJUDGE_API_URL = "http://localhost:12345";
-     private static final String DOMJUDGE_USERNAME = "admin";
-     private static final String DOMJUDGE_PASSWORD = "vhLJKHIoP2rG5S6F";
+    @Value("${domjudge.api.url}")
+    private String DOMJUDGE_API_URL;
+
+    @Value("${domjudge.username}")
+    private String DOMJUDGE_USERNAME;
+
+    @Value("${domjudge.password}")
+    private String DOMJUDGE_PASSWORD;
+
     private final ObjectMapper objectMapper;
     private final ProblemRepository problemRepository;
     private final RestTemplate restTemplate;
