@@ -4,9 +4,11 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import com.project.handongjudge.submission.dto.SubmissionRequestDTO;
+import com.project.handongjudge.submission.dto.SubmissionAuthDTO;
 import com.project.handongjudge.submission.dto.SubmissionResponseDTO;
 import com.project.handongjudge.submission.service.SubmissionService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.core.Authentication;
 
 @RequiredArgsConstructor    
 @RestController
@@ -25,6 +27,12 @@ public class SubmissionController {
 
         String result = submissionService.getResult(sectionId, submissionId);
         return ResponseEntity.ok(result);
+    }   
+
+    @PostMapping(value = "/submitAndGetResult")
+    public SubmissionResponseDTO submitAndGetResult(Authentication authentication, @RequestBody SubmissionAuthDTO request) {
+        SubmissionResponseDTO result = submissionService.submitAndGetResult(authentication, request);
+        return result;
     }
 
 }
