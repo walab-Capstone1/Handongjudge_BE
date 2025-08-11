@@ -35,7 +35,7 @@ public class Submission {
     @Column(name = "language")
     String language;
 
-    @Column(name = "code")
+    @Column(name = "code", columnDefinition = "TEXT")
     String code;
 
     @Column(name = "submitted_at")
