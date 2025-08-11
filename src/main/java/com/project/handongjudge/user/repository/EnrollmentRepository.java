@@ -20,4 +20,7 @@ public interface EnrollmentRepository extends CrudRepository<Enrollment, Long> {
             "WHERE e.user.id = :userId " +
             "GROUP BY c.id, s.id, u.name")
     List<DashboardCourseDto> findDashboardCoursesByUserId(@Param("userId") Long userId);
+
+    @Query("SELECT e.teamId FROM Enrollment e WHERE e.user.id = :userId AND e.section.id = :sectionId")
+    String findTeamIdByUserIdAndSectionId(@Param("userId") Long userId, @Param("sectionId") Long sectionId);
 }

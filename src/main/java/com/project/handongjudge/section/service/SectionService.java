@@ -4,16 +4,20 @@ import com.project.handongjudge.course.entity.Course;
 import com.project.handongjudge.course.repository.CourseRepository;
 import com.project.handongjudge.section.dto.SectionRequest;
 import com.project.handongjudge.section.dto.SectionResponse;
+
 import com.project.handongjudge.section.entity.Section;
+
 import com.project.handongjudge.section.repository.SectionRepository;
+
 import com.project.handongjudge.user.entity.User;
 import com.project.handongjudge.user.repository.UserRepository;
-import com.project.handongjudge.problem.service.DomjudgeService;
+import com.project.handongjudge.domjudge.service.DomjudgeService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
+        
 @Service
+
 @RequiredArgsConstructor
 public class SectionService {
 
@@ -21,6 +25,7 @@ public class SectionService {
     private final CourseRepository courseRepository;
     private final UserRepository userRepository;
     private final DomjudgeService domjudgeService;
+
 
     @Transactional
     public SectionResponse createSection(SectionRequest request) {
@@ -45,5 +50,5 @@ public class SectionService {
                 .instructorId(instructor.getId())
                 .sectionNumber(saved.getSectionNumber())
                 .build();
-    }
+    }       
 }

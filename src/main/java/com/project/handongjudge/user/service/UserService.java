@@ -5,13 +5,17 @@ import com.project.handongjudge.user.dto.UserDto;
 import com.project.handongjudge.user.entity.User;
 import com.project.handongjudge.user.repository.EnrollmentRepository;
 import com.project.handongjudge.user.repository.UserRepository;
+import com.project.handongjudge.user.dto.EnrollmentRequestDTO;
+import com.project.handongjudge.user.entity.Enrollment;
+import com.project.handongjudge.section.repository.SectionRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-
+import org.springframework.transaction.annotation.Transactional;    
+import com.project.handongjudge.domjudge.service.DomjudgeService;
+import com.project.handongjudge.user.dto.EnrollmentResponseDTO;
 import java.util.List;
 import java.util.Optional;
 
@@ -23,14 +27,19 @@ public class UserService {
     private final UserRepository userRepository;
     private final EnrollmentRepository enrollmentRepository;
     private final PasswordEncoder passwordEncoder;
-
+    private final SectionRepository sectionRepository;
+    private final DomjudgeService domjudgeService;
     @Autowired
     public UserService(UserRepository userRepository,
                        EnrollmentRepository enrollmentRepository,
+                       SectionRepository sectionRepository,
+                       DomjudgeService domjudgeService,
                        @Lazy PasswordEncoder passwordEncoder) {
         this.userRepository = userRepository;
         this.enrollmentRepository = enrollmentRepository;
         this.passwordEncoder = passwordEncoder;
+        this.sectionRepository = sectionRepository;
+        this.domjudgeService = domjudgeService;
     }
 
     public Optional<User> findByEmail(String email) {
@@ -101,5 +110,31 @@ public class UserService {
      */
     public List<DashboardCourseDto> getDashboardCourses(Long userId) {
         return enrollmentRepository.findDashboardCoursesByUserId(userId);
+    }
+
+    public EnrollmentResponseDTO enrollCourse(EnrollmentRequestDTO request) { // 팀 생성 및 참가 처리
+        // 팀 생성
+        Enrollment enrollment = Enrollment.builder()
+                .user(userRepository.findById(request.getUserId()).orElseThrow(() -> new RuntimeException("User not found")))
+                .section(sectionRepository.findById(request.getSectionId()).orElseThrow(() -> new RuntimeException("Section not found")))
+                .roleInCourse(request.getRoleInCourse())
+                .build();
+        // user
+
+        // 팀 생성
+        String teamId = domjudgeService.createTeam(enrollment.getUser().getId(), enrollment.getSection().getId(), enrollment.getUser().getName());
+        enrollment.setTeamId(teamId);
+
+        // 참가 처리
+        enrollmentRepository.save(enrollment);      
+
+        EnrollmentResponseDTO response = new EnrollmentResponseDTO();
+        response.setId(enrollment.getId());
+        response.setTeamId(enrollment.getTeamId());
+        response.setSectionId(enrollment.getSection().getId().toString());
+        response.setRoleInCourse(enrollment.getRoleInCourse());
+        return response;
+
+       
     }
 }
