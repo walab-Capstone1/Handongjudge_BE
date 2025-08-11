@@ -282,8 +282,7 @@ public class DomjudgeService {
 
             String url = DOMJUDGE_API_URL + "/api/v4/contests/" + cid + "/judgements/" + submissionId;
 
-            System.out.println("Request URL: " + url);
-            System.out.println("Headers: " + headers);
+            log.debug("Request URL: " + url);
 
             HttpEntity<Object> requestEntity = new HttpEntity<>(headers);
             ResponseEntity<JsonNode> response = restTemplate.exchange(
@@ -293,15 +292,34 @@ public class DomjudgeService {
                     JsonNode.class
             );
 
-            System.out.println("Response Status: " + response.getStatusCode());
-            System.out.println("Response Body: " + response.getBody());
+            log.debug("Response Status: " + response.getStatusCode());
+            log.debug("Response Body: " + response.getBody());
 
-            String result = response.getBody().get("judgement_type_id").asText();
+            JsonNode responseBody = response.getBody();
+            if (responseBody == null) {
+                log.warn("Response body is null for submission: {}", submissionId);
+                return null;
+            }
+
+            // judgement_type_id가 null이거나 없는 경우 처리
+            if (!responseBody.has("judgement_type_id") || responseBody.get("judgement_type_id").isNull()) {
+                log.debug("Judgement not ready yet for submission: {}", submissionId);
+                return null;
+            }
+
+            String result = responseBody.get("judgement_type_id").asText();
+            log.info("Result received for submission {}: {}", submissionId, result);
             return result;
 
+        } catch (HttpClientErrorException e) {
+            if (e.getStatusCode().value() == 404) {
+                log.debug("Judgement not found for submission: {}", submissionId);
+                return null;
+            }
+            log.error("HTTP error while getting result for submission {}: {}", submissionId, e.getMessage());
+            throw e;
         } catch (Exception e) {
-            System.out.println("Error: " + e.getMessage());
-            e.printStackTrace();
+            log.error("Error getting result for submission {}: {}", submissionId, e.getMessage());
             throw e;
         }
     }
