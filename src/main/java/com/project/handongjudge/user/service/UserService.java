@@ -1,11 +1,9 @@
 package com.project.handongjudge.user.service;
 
-import com.project.handongjudge.user.dto.DashboardCourseDto;
-import com.project.handongjudge.user.dto.UserDto;
+import com.project.handongjudge.user.dto.*;
 import com.project.handongjudge.user.entity.User;
 import com.project.handongjudge.user.repository.EnrollmentRepository;
 import com.project.handongjudge.user.repository.UserRepository;
-import com.project.handongjudge.user.dto.EnrollmentRequestDTO;
 import com.project.handongjudge.user.entity.Enrollment;
 import com.project.handongjudge.section.repository.SectionRepository;
 import lombok.extern.slf4j.Slf4j;
@@ -15,7 +13,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;    
 import com.project.handongjudge.domjudge.service.DomjudgeService;
-import com.project.handongjudge.user.dto.EnrollmentResponseDTO;
+
 import java.util.List;
 import java.util.Optional;
 
@@ -136,5 +134,19 @@ public class UserService {
         return response;
 
        
+    }
+    // UserService.java에 추가
+    /**
+     * 특정 분반의 학생 목록 조회
+     */
+    public List<StudentDto> getStudentsBySection(Long sectionId) {
+        return enrollmentRepository.findStudentsBySectionId(sectionId);
+    }
+
+    /**
+     * 교수가 담당하는 모든 분반의 학생 목록 조회
+     */
+    public List<StudentDto> getStudentsByInstructor(Long instructorId) {
+        return enrollmentRepository.findStudentsByInstructorId(instructorId);
     }
 }

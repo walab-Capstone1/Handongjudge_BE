@@ -1,6 +1,7 @@
 package com.project.handongjudge.user.repository;
 
 import com.project.handongjudge.user.dto.DashboardCourseDto;
+import com.project.handongjudge.user.dto.StudentDto;
 import com.project.handongjudge.user.entity.Enrollment;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -23,4 +24,29 @@ public interface EnrollmentRepository extends CrudRepository<Enrollment, Long> {
 
     @Query("SELECT e.teamId FROM Enrollment e WHERE e.user.id = :userId AND e.section.id = :sectionId")
     String findTeamIdByUserIdAndSectionId(@Param("userId") Long userId, @Param("sectionId") Long sectionId);
+
+    // EnrollmentRepository.java에 추가
+    @Query("SELECT new com.project.handongjudge.user.dto.StudentDto(" +
+            "u.id, u.name, u.email, '', e.teamId, s.id, " +
+            "CONCAT(c.title, ' - Section ', s.sectionNumber), c.title, s.sectionNumber, " +
+            "e.joinedAt, u.updatedAt) " +
+            "FROM Enrollment e " +
+            "JOIN User u ON e.user.id = u.id " +
+            "JOIN Section s ON e.section.id = s.id " +
+            "JOIN Course c ON s.course.id = c.id " +
+            "WHERE s.id = :sectionId")
+    List<StudentDto> findStudentsBySectionId(@Param("sectionId") Long sectionId);
+
+    // 교수가 담당하는 모든 분반의 학생들 조회
+    @Query("SELECT new com.project.handongjudge.user.dto.StudentDto(" +
+            "u.id, u.name, u.email, '', e.teamId, s.id, " +
+            "CONCAT(c.title, ' - Section ', s.sectionNumber), c.title, s.sectionNumber, " +
+            "e.joinedAt, u.updatedAt) " +
+            "FROM Enrollment e " +
+            "JOIN User u ON e.user.id = u.id " +
+            "JOIN Section s ON e.section.id = s.id " +
+            "JOIN Course c ON s.course.id = c.id " +
+            "WHERE s.instructor.id = :instructorId " +
+            "ORDER BY c.title, s.sectionNumber, u.name")
+    List<StudentDto> findStudentsByInstructorId(@Param("instructorId") Long instructorId);
 }
