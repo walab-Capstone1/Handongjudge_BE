@@ -11,6 +11,7 @@ import java.time.LocalDateTime;
 public class NoticeResponseDto {
     private Long id;
     private Long sectionId;
+    private String sectionName; // 분반 정보 (예: "컴퓨터과학개론 - 16분반")
     private String title;
     private String content;
     private String difficulty;

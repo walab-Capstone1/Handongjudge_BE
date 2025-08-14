@@ -32,6 +32,9 @@ public class Assignment {
     private LocalDateTime startDate;
     private LocalDateTime endDate;
 
+    @Column(name = "is_new", nullable = false)
+    @Builder.Default
+    private boolean isNew = true;
     @JsonIgnore
     @OneToMany(mappedBy = "assignment", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<AssignmentProblem> assignmentProblems;

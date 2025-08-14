@@ -16,4 +16,8 @@ public interface NoticeRepository extends JpaRepository<Notice, Long> {
     
     @Query("SELECT n FROM Notice n WHERE n.section.id = :sectionId AND n.isNew = true")
     List<Notice> findNewNoticesBySectionId(@Param("sectionId") Long sectionId);
+    
+    // 교수가 담당하는 모든 분반의 공지사항 조회
+    @Query("SELECT n FROM Notice n WHERE n.section.instructor.id = :instructorId ORDER BY n.createdAt DESC")
+    List<Notice> findByInstructorIdOrderByCreatedAtDesc(@Param("instructorId") Long instructorId);
 }

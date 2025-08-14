@@ -104,11 +104,30 @@ public class NoticeService {
         log.info("공지사항 삭제 완료 - ID: {}", noticeId);
     }
 
+    // 교수가 담당하는 모든 분반의 공지사항 조회
+    public List<NoticeResponseDto> getInstructorNotices(Long instructorId) {
+        log.info("🔥 교수 공지사항 조회 시작 - instructorId: {}", instructorId);
+        
+        // 교수가 담당하는 모든 분반의 공지사항 조회
+        List<Notice> notices = noticeRepository.findByInstructorIdOrderByCreatedAtDesc(instructorId);
+        log.info("🔥 교수 공지사항 조회 결과 - 공지사항 수: {}", notices.size());
+        
+        return notices.stream()
+                .map(this::convertToResponse)
+                .collect(Collectors.toList());
+    }
+
     private NoticeResponseDto convertToResponse(Notice notice) {
         log.info("🔥 공지사항 변환 - ID: {}, isNew: {}", notice.getId(), notice.isNew());
+        
+        // 분반 정보 생성 (예: "컴퓨터과학개론 - 16분반")
+        Section section = notice.getSection();
+        String sectionName = section.getCourse().getTitle() + " - " + section.getSectionNumber() + "분반";
+        
         return NoticeResponseDto.builder()
                 .id(notice.getId())
                 .sectionId(notice.getSection().getId())
+                .sectionName(sectionName)
                 .title(notice.getTitle())
                 .content(notice.getContent())
                 .difficulty(notice.getDifficulty())

@@ -60,4 +60,13 @@ public class NoticeController {
         noticeService.deleteNotice(noticeId, instructorId);
         return ResponseEntity.ok().build();
     }
+
+    // 교수가 담당하는 모든 분반의 공지사항 조회
+    @GetMapping("/instructor/my")
+    public ResponseEntity<List<NoticeResponseDto>> getInstructorNotices(
+            Authentication authentication) {
+        Long instructorId = Long.parseLong(authentication.getName());
+        List<NoticeResponseDto> notices = noticeService.getInstructorNotices(instructorId);
+        return ResponseEntity.ok(notices);
+    }
 }
