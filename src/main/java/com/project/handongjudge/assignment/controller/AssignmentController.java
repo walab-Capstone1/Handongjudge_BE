@@ -6,6 +6,7 @@ import com.project.handongjudge.assignment.service.AssignmentService;
 import com.project.handongjudge.problem.entity.Problem;
 import com.project.handongjudge.problem.service.ProblemService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
@@ -18,7 +19,7 @@ import java.util.List;
 @RequestMapping("/api/sections/{sectionId}/assignments")
 public class AssignmentController {
 
-    private final AssignmentService assignmentService;  
+    private final AssignmentService assignmentService;
     private final ProblemService problemService;
 
     @PostMapping
@@ -45,7 +46,7 @@ public class AssignmentController {
     @GetMapping("/{assignmentId}")
     public ResponseEntity<AssignmentResponse> getAssignmentInfo(
         @PathVariable Long sectionId,
-            @PathVariable Long assignmentId     
+            @PathVariable Long assignmentId
     ) {
         return ResponseEntity.ok(
                 assignmentService.getAssignmentInfo(assignmentId)
@@ -53,12 +54,14 @@ public class AssignmentController {
     }
 
     @GetMapping("/{assignmentId}/problems")
-    public ResponseEntity<List<Problem>> getAssignmentProblems( // 과제 문제 목록 조회                                  
+    public ResponseEntity<List<Problem>> getAssignmentProblems( // 과제 문제 목록 조회
             @PathVariable Long sectionId,
             @PathVariable Long assignmentId
-    ) { 
+    ) {
         return ResponseEntity.ok(
                 problemService.getProblemsByAssignmentId(assignmentId)
         );
     }
+
+
 }

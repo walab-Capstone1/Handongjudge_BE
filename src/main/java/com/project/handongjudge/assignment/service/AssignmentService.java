@@ -39,7 +39,7 @@ public class AssignmentService {
 
         // 2. Assignment 엔티티 생성 및 저장
         Assignment assignment = Assignment.builder()
-                .section(section)   
+                .section(section)
                 .assignmentNumber(request.getAssignmentNumber())
                 .title(request.getTitle())
                 .description(request.getDescription())
@@ -72,14 +72,14 @@ public class AssignmentService {
                 domjudgeService.addProblemToContest(contestId, domjudgeProblemId); // label 제거됨
             }
 
-            assignmentProblemRepository.saveAll(assignmentProblems);    
+            assignmentProblemRepository.saveAll(assignmentProblems);
         }
 
         return toResponse(savedAssignment);
     }
 
 
-    private AssignmentResponse toResponse(Assignment assignment) {  
+    private AssignmentResponse toResponse(Assignment assignment) {
         return AssignmentResponse.builder()
                 .id(assignment.getId())
                 .assignmentNumber(assignment.getAssignmentNumber())
@@ -126,4 +126,5 @@ public class AssignmentService {
                 .orElseThrow(() -> new IllegalArgumentException("Assignment not found"));
         return toResponse(assignment);
     }
+
 }
