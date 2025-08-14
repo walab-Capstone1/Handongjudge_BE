@@ -1,6 +1,5 @@
 package com.project.handongjudge.assignment.controller;
 
-import com.project.handongjudge.assignment.dto.AssignmentInfoDto;
 import com.project.handongjudge.assignment.dto.AssignmentRequest;
 import com.project.handongjudge.assignment.dto.AssignmentResponse;
 import com.project.handongjudge.assignment.service.AssignmentService;
@@ -20,7 +19,7 @@ import java.util.List;
 @RequestMapping("/api/sections/{sectionId}/assignments")
 public class AssignmentController {
 
-    private final AssignmentService assignmentService;  
+    private final AssignmentService assignmentService;
     private final ProblemService problemService;
 
     @PostMapping
@@ -35,26 +34,34 @@ public class AssignmentController {
         );
     }
 
+    @GetMapping
+    public ResponseEntity<List<AssignmentResponse>> getAssignmentsBySection(
+            @PathVariable Long sectionId
+    ) {
+        return ResponseEntity.ok(
+                assignmentService.getAssignmentsBySection(sectionId)
+        );
+    }
 
+    @GetMapping("/{assignmentId}")
+    public ResponseEntity<AssignmentResponse> getAssignmentInfo(
+        @PathVariable Long sectionId,
+            @PathVariable Long assignmentId
+    ) {
+        return ResponseEntity.ok(
+                assignmentService.getAssignmentInfo(assignmentId)
+        );
+    }
 
     @GetMapping("/{assignmentId}/problems")
-    public ResponseEntity<List<Problem>> getAssignmentProblems( // 과제 문제 목록 조회                                  
+    public ResponseEntity<List<Problem>> getAssignmentProblems( // 과제 문제 목록 조회
             @PathVariable Long sectionId,
             @PathVariable Long assignmentId
-    ) { 
+    ) {
         return ResponseEntity.ok(
                 problemService.getProblemsByAssignmentId(assignmentId)
         );
     }
 
-    // AssignmentController.java에 추가
-    @GetMapping("/{assignmentId}")
-    public ResponseEntity<AssignmentInfoDto> getAssignmentInfo(@PathVariable Long assignmentId) {
-        try {
-            AssignmentInfoDto assignmentInfo = assignmentService.getAssignmentInfo(assignmentId);
-            return ResponseEntity.ok(assignmentInfo);
-        } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
-        }
-    }
+
 }

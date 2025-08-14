@@ -1,6 +1,5 @@
 package com.project.handongjudge.assignment.service;
 
-import com.project.handongjudge.assignment.dto.AssignmentInfoDto;
 import com.project.handongjudge.assignment.dto.AssignmentRequest;
 import com.project.handongjudge.assignment.dto.AssignmentResponse;
 import com.project.handongjudge.assignment.entity.Assignment;
@@ -40,7 +39,7 @@ public class AssignmentService {
 
         // 2. Assignment 엔티티 생성 및 저장
         Assignment assignment = Assignment.builder()
-                .section(section)   
+                .section(section)
                 .assignmentNumber(request.getAssignmentNumber())
                 .title(request.getTitle())
                 .description(request.getDescription())
@@ -73,14 +72,14 @@ public class AssignmentService {
                 domjudgeService.addProblemToContest(contestId, domjudgeProblemId); // label 제거됨
             }
 
-            assignmentProblemRepository.saveAll(assignmentProblems);    
+            assignmentProblemRepository.saveAll(assignmentProblems);
         }
 
         return toResponse(savedAssignment);
     }
 
 
-    private AssignmentResponse toResponse(Assignment assignment) {  
+    private AssignmentResponse toResponse(Assignment assignment) {
         return AssignmentResponse.builder()
                 .id(assignment.getId())
                 .assignmentNumber(assignment.getAssignmentNumber())
@@ -122,19 +121,10 @@ public class AssignmentService {
                 .build();
     }
 
-
-    // AssignmentService.java에 추가
-    public AssignmentInfoDto getAssignmentInfo(Long assignmentId) {
+    public AssignmentResponse getAssignmentInfo(Long assignmentId) {
         Assignment assignment = assignmentRepository.findById(assignmentId)
-                .orElseThrow(() -> new IllegalArgumentException("과제를 찾을 수 없습니다: " + assignmentId));
-
-        return AssignmentInfoDto.builder()
-                .id(assignment.getId())
-                .title(assignment.getTitle())
-                .assignmentNumber(assignment.getAssignmentNumber())
-                .description(assignment.getDescription())
-                .startDate(assignment.getStartDate())
-                .endDate(assignment.getEndDate())
-                .build();
+                .orElseThrow(() -> new IllegalArgumentException("Assignment not found"));
+        return toResponse(assignment);
     }
+
 }
