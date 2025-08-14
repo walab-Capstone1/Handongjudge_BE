@@ -5,6 +5,9 @@ import com.project.handongjudge.problem.dto.ProblemCreateRequest;
 import com.project.handongjudge.problem.dto.ProblemResponse;
 import com.project.handongjudge.problem.entity.Problem;
 import com.project.handongjudge.problem.repository.ProblemRepository;
+import com.project.handongjudge.assignment.entity.Assignment;
+import com.project.handongjudge.assignment.repository.AssignmentRepository;
+import com.project.handongjudge.assignment.service.AssignmentProblemService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
@@ -19,11 +22,19 @@ public class ProblemService {
 
     private final ProblemRepository problemRepository;
     private final DomjudgeService domjudgeService;
+    private final AssignmentProblemService assignmentProblemService;
+    private final AssignmentRepository assignmentRepository;
 
     public Long createProblem(ProblemCreateRequest request) throws IOException {
         String title = request.getTitle();
-        String description = request.getDescription();
+        MultipartFile descriptionFile = request.getDescriptionFile();
         MultipartFile zipFile = request.getZipFile();
+
+        // Read description from MD file
+        String description = "";
+        if (descriptionFile != null && !descriptionFile.isEmpty()) {
+            description = new String(descriptionFile.getBytes(), "UTF-8");
+        }
 
         String domjudgeProblemId = domjudgeService.uploadProblemToDomjudge(zipFile);
 
@@ -52,6 +63,10 @@ public class ProblemService {
                 .description(problem.getDescription())
                 .createdAt(problem.getCreatedAt())
                 .build();
+    }
+
+    public void addProblem(Long problemId, Long assignmentId) {
+        assignmentProblemService.addProblemToAssignment(assignmentId, problemId);
     }
 
 }
