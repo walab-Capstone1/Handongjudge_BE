@@ -2,6 +2,7 @@ package com.project.handongjudge.section.service;
 
 import com.project.handongjudge.course.entity.Course;
 import com.project.handongjudge.course.repository.CourseRepository;
+import com.project.handongjudge.section.dto.SectionInfoDto;
 import com.project.handongjudge.section.dto.SectionRequest;
 import com.project.handongjudge.section.dto.SectionResponse;
 
@@ -50,5 +51,17 @@ public class SectionService {
                 .instructorId(instructor.getId())
                 .sectionNumber(saved.getSectionNumber())
                 .build();
-    }       
+    }
+    // SectionService.java에 추가
+    public SectionInfoDto getSectionInfo(Long sectionId) {
+        Section section = sectionRepository.findById(sectionId)
+                .orElseThrow(() -> new IllegalArgumentException("분반을 찾을 수 없습니다: " + sectionId));
+
+        return SectionInfoDto.builder()
+                .sectionId(section.getId())
+                .sectionNumber(section.getSectionNumber())
+                .courseTitle(section.getCourse().getTitle())
+                .instructorName(section.getInstructor().getName())
+                .build();
+    }
 }

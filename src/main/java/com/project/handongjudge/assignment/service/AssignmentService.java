@@ -1,5 +1,6 @@
 package com.project.handongjudge.assignment.service;
 
+import com.project.handongjudge.assignment.dto.AssignmentInfoDto;
 import com.project.handongjudge.assignment.dto.AssignmentRequest;
 import com.project.handongjudge.assignment.dto.AssignmentResponse;
 import com.project.handongjudge.assignment.entity.Assignment;
@@ -121,9 +122,19 @@ public class AssignmentService {
                 .build();
     }
 
-    public AssignmentResponse getAssignmentInfo(Long assignmentId) {
+
+    // AssignmentService.java에 추가
+    public AssignmentInfoDto getAssignmentInfo(Long assignmentId) {
         Assignment assignment = assignmentRepository.findById(assignmentId)
-                .orElseThrow(() -> new IllegalArgumentException("Assignment not found"));
-        return toResponse(assignment);
+                .orElseThrow(() -> new IllegalArgumentException("과제를 찾을 수 없습니다: " + assignmentId));
+
+        return AssignmentInfoDto.builder()
+                .id(assignment.getId())
+                .title(assignment.getTitle())
+                .assignmentNumber(assignment.getAssignmentNumber())
+                .description(assignment.getDescription())
+                .startDate(assignment.getStartDate())
+                .endDate(assignment.getEndDate())
+                .build();
     }
 }
