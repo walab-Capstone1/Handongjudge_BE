@@ -20,4 +20,13 @@ public class AssignmentProblemController {
        assignmentProblemService.addProblemToAssignment(assignmentId, problemId);
        return ResponseEntity.ok().build();
    }
+    // AssignmentProblemController.java에 추가 (문제 제거 API)
+    @DeleteMapping("/{problemId}")
+    public ResponseEntity<Void> removeProblemFromAssignment(
+            @PathVariable Long assignmentId,
+            @PathVariable Long problemId
+    ) {
+        assignmentProblemService.removeProblemFromAssignment(assignmentId, problemId);
+        return ResponseEntity.ok().build();
+    }
 }

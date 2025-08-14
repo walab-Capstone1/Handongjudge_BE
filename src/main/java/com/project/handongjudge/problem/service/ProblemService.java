@@ -15,6 +15,7 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.IOException;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -68,6 +69,22 @@ public class ProblemService {
     public void addProblem(Long problemId, Long assignmentId) {
         assignmentProblemService.addProblemToAssignment(assignmentId, problemId);
     }
+    // ProblemService.java에 추가
+    public List<ProblemResponse> getAllProblems() {
+        List<Problem> problems = problemRepository.findAll();
+        return problems.stream()
+                .map(this::convertToProblemResponse)
+                .collect(Collectors.toList());
+    }
 
+    private ProblemResponse convertToProblemResponse(Problem problem) {
+        return ProblemResponse.builder()
+                .id(problem.getId())
+                .title(problem.getTitle())
+                .description(problem.getDescription())
+                .difficulty(problem.getDifficulty())
+                .createdAt(problem.getCreatedAt())
+                .build();
+    }
 }
 
