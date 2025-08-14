@@ -4,6 +4,7 @@ import com.project.handongjudge.user.dto.*;
 import com.project.handongjudge.user.service.UserService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
@@ -56,12 +57,26 @@ public class UserController {
 
     /**
      * 로그인한 사용자의 대시보드에 표시할 과목 목록 반환
+     * - 학생: 수강 중인 분반
+     * - 교수: 담당하고 있는 분반
      */
     @GetMapping("/dashboard")
     public ResponseEntity<Map<String, Object>> getDashboardCourses(Authentication authentication) {
         try {
             Long userId = Long.parseLong(authentication.getName());
-            List<DashboardCourseDto> courses = userService.getDashboardCourses(userId);
+            
+            // 사용자 정보 조회
+            UserDto user = userService.getUserInfoById(userId);
+            List<DashboardCourseDto> courses;
+            
+            // 역할에 따라 다른 데이터 조회
+            if ("ADMIN".equals(user.getRole())) {
+                // 교수: 담당하고 있는 분반 조회
+                courses = userService.getInstructorDashboardCourses(userId);
+            } else {
+                // 학생: 수강 중인 분반 조회
+                courses = userService.getDashboardCourses(userId);
+            }
 
             Map<String, Object> response = new HashMap<>();
             response.put("success", true);
@@ -133,6 +148,52 @@ public class UserController {
         } catch (Exception e) {
             log.error("분반 학생 목록 조회 실패: sectionId={}", sectionId, e);
             return buildErrorResponse("학생 목록을 가져오지 못했습니다.");
+        }
+    }
+
+    // 공지사항 읽음 처리
+    @PostMapping("/read/notice/{noticeId}")
+    public ResponseEntity<Map<String, Object>> markNoticeAsRead(
+            @PathVariable Long noticeId,
+            Authentication authentication) {
+        try {
+            Long userId = Long.parseLong(authentication.getName());
+            userService.markNoticeAsRead(userId, noticeId);
+            
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("message", "공지사항을 읽음 처리했습니다.");
+            
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            log.error("Error marking notice as read", e);
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", false);
+            response.put("message", e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
+        }
+    }
+
+    // 과제 읽음 처리
+    @PostMapping("/read/assignment/{assignmentId}")
+    public ResponseEntity<Map<String, Object>> markAssignmentAsRead(
+            @PathVariable Long assignmentId,
+            Authentication authentication) {
+        try {
+            Long userId = Long.parseLong(authentication.getName());
+            userService.markAssignmentAsRead(userId, assignmentId);
+            
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("message", "과제를 읽음 처리했습니다.");
+            
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            log.error("Error marking assignment as read", e);
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", false);
+            response.put("message", e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
         }
     }
 }

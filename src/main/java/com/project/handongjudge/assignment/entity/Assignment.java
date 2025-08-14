@@ -32,6 +32,10 @@ public class Assignment {
     private LocalDateTime startDate;
     private LocalDateTime endDate;
 
+    @Column(name = "is_new", nullable = false)
+    @Builder.Default
+    private boolean isNew = true; // 새로 생성된 과제는 기본적으로 새로운 상태
+
     @JsonIgnore
     @OneToMany(mappedBy = "assignment", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<AssignmentProblem> assignmentProblems;

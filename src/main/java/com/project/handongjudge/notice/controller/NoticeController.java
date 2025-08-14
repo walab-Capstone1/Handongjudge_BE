@@ -38,14 +38,14 @@ public class NoticeController {
         return ResponseEntity.ok(notices);
     }
 
-    // 특정 분반의 공지사항 조회
+    // 특정 분반의 공지사항 조회 (교수 및 수강생 모두 접근 가능)
     @GetMapping("/section/{sectionId}")
     public ResponseEntity<List<NoticeResponseDto>> getSectionNotices(
             @PathVariable Long sectionId,
             Authentication authentication) {
 
-        Long instructorId = Long.valueOf(authentication.getName());
-        List<NoticeResponseDto> notices = noticeService.getSectionNotices(sectionId, instructorId);
+        Long userId = Long.valueOf(authentication.getName());
+        List<NoticeResponseDto> notices = noticeService.getSectionNotices(sectionId, userId);
         return ResponseEntity.ok(notices);
     }
 

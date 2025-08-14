@@ -6,14 +6,16 @@ import com.project.handongjudge.notice.entity.Notice;
 import com.project.handongjudge.notice.repository.NoticeRepository;
 import com.project.handongjudge.section.entity.Section;
 import com.project.handongjudge.section.repository.SectionRepository;
+import com.project.handongjudge.user.repository.EnrollmentRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.stream.Collectors;
-
+@Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
@@ -21,6 +23,7 @@ public class NoticeService {
 
     private final NoticeRepository noticeRepository;
     private final SectionRepository sectionRepository;
+    private final EnrollmentRepository enrollmentRepository;
 
     // 공지사항 생성
     @Transactional
@@ -56,13 +59,17 @@ public class NoticeService {
                 .collect(Collectors.toList());
     }
 
-    // 특정 분반의 공지사항 조회
-    public List<NoticeResponseDto> getSectionNotices(Long sectionId, Long instructorId) {
-        // 분반 조회 및 권한 확인
+    // 특정 분반의 공지사항 조회 (교수 및 수강생 모두 접근 가능)
+    public List<NoticeResponseDto> getSectionNotices(Long sectionId, Long userId) {
+        // 분반 조회
         Section section = sectionRepository.findById(sectionId)
                 .orElseThrow(() -> new IllegalArgumentException("분반을 찾을 수 없습니다: " + sectionId));
 
-        if (!section.getInstructor().getId().equals(instructorId)) {
+        // 권한 확인: 교수이거나 해당 분반을 수강하는 학생이어야 함
+        boolean isInstructor = section.getInstructor().getId().equals(userId);
+        boolean isStudent = enrollmentRepository.existsByUserIdAndSectionId(userId, sectionId);
+        
+        if (!isInstructor && !isStudent) {
             throw new IllegalArgumentException("해당 분반의 공지사항을 조회할 권한이 없습니다");
         }
 
@@ -118,6 +125,7 @@ public class NoticeService {
 
     // Entity -> Response DTO 변환
     private NoticeResponseDto convertToResponse(Notice notice) {
+        log.info("🔥 Notice 변환 - id: {}, isNew: {}", notice.getId(), notice.isNew());
         return NoticeResponseDto.builder()
                 .id(notice.getId())
                 .sectionId(notice.getSection().getId())
