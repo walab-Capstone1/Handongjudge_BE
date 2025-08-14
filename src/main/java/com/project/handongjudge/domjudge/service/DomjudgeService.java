@@ -119,9 +119,9 @@ public class DomjudgeService {
         headers.setContentType(MediaType.APPLICATION_JSON);
 
         String url = DOMJUDGE_API_URL + "/api/v4/contests/" + contestId + "/problems/" + domjudgeProblemId;
-
+        
         Map<String, Object> requestBody = new HashMap<>();
-        requestBody.put("label", "A"); // 반드시 포함
+        requestBody.put("label", domjudgeProblemId); // 반드시 포함
 
         HttpEntity<Map<String, Object>> requestEntity = new HttpEntity<>(requestBody, headers);
 
