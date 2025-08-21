@@ -9,6 +9,8 @@ public class DashboardCourseDto {
     private Long courseId;
     private String courseTitle;
     private Long sectionId;
+    private Integer sectionNumber;
     private String instructorName;
     private Long newNoticeCount;
+    private Long newAssignmentCount;
 }

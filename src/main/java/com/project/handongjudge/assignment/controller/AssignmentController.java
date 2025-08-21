@@ -2,10 +2,12 @@ package com.project.handongjudge.assignment.controller;
 
 import com.project.handongjudge.assignment.dto.AssignmentRequest;
 import com.project.handongjudge.assignment.dto.AssignmentResponse;
+import com.project.handongjudge.assignment.dto.AssignmentSubmissionStatsResponse;
 import com.project.handongjudge.assignment.service.AssignmentService;
 import com.project.handongjudge.problem.entity.Problem;
 import com.project.handongjudge.problem.service.ProblemService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
@@ -18,7 +20,7 @@ import java.util.List;
 @RequestMapping("/api/sections/{sectionId}/assignments")
 public class AssignmentController {
 
-    private final AssignmentService assignmentService;  
+    private final AssignmentService assignmentService;
     private final ProblemService problemService;
 
     @PostMapping
@@ -45,7 +47,7 @@ public class AssignmentController {
     @GetMapping("/{assignmentId}")
     public ResponseEntity<AssignmentResponse> getAssignmentInfo(
         @PathVariable Long sectionId,
-            @PathVariable Long assignmentId     
+            @PathVariable Long assignmentId
     ) {
         return ResponseEntity.ok(
                 assignmentService.getAssignmentInfo(assignmentId)
@@ -53,12 +55,30 @@ public class AssignmentController {
     }
 
     @GetMapping("/{assignmentId}/problems")
-    public ResponseEntity<List<Problem>> getAssignmentProblems( // 과제 문제 목록 조회                                  
+    public ResponseEntity<List<Problem>> getAssignmentProblems( // 과제 문제 목록 조회
             @PathVariable Long sectionId,
             @PathVariable Long assignmentId
-    ) { 
+    ) {
         return ResponseEntity.ok(
                 problemService.getProblemsByAssignmentId(assignmentId)
         );
+    }
+
+    // 기존 코드에 추가
+    @GetMapping("/{assignmentId}/submission-stats")
+    public ResponseEntity<AssignmentSubmissionStatsResponse> getAssignmentSubmissionStats(
+            @PathVariable Long assignmentId,
+            @PathVariable Long sectionId) {  // @RequestParam → @PathVariable로 변경
+
+        AssignmentSubmissionStatsResponse stats = assignmentService.getAssignmentSubmissionStats(assignmentId, sectionId);
+        return ResponseEntity.ok(stats);
+    }
+
+    @GetMapping("/instructor/{instructorId}/all-submission-stats")
+    public ResponseEntity<List<AssignmentSubmissionStatsResponse>> getAllAssignmentsSubmissionStats(
+            @PathVariable Long instructorId) {
+
+        List<AssignmentSubmissionStatsResponse> allStats = assignmentService.getAllAssignmentsSubmissionStats(instructorId);
+        return ResponseEntity.ok(allStats);
     }
 }

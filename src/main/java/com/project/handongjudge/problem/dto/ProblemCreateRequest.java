@@ -8,6 +8,6 @@ import org.springframework.web.multipart.MultipartFile;
 @Setter
 public class ProblemCreateRequest {
     private String title;
-    private String description;
+    private MultipartFile descriptionFile;
     private MultipartFile zipFile;
 }
