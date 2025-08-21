@@ -1,7 +1,6 @@
 package com.project.handongjudge.assignment.service;
 
-import com.project.handongjudge.assignment.dto.AssignmentRequest;
-import com.project.handongjudge.assignment.dto.AssignmentResponse;
+import com.project.handongjudge.assignment.dto.*;
 import com.project.handongjudge.assignment.entity.Assignment;
 import com.project.handongjudge.assignment.entity.AssignmentProblem;
 import com.project.handongjudge.assignment.repository.AssignmentRepository;
@@ -14,8 +13,8 @@ import com.project.handongjudge.section.repository.SectionRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.project.handongjudge.submission.repository.SubmissionRepository;
 
-import com.project.handongjudge.assignment.dto.AssignmentProblemsResponse;
 import com.project.handongjudge.problem.dto.ProblemDto;
 import java.util.ArrayList;
 import java.util.List;
@@ -31,6 +30,7 @@ public class AssignmentService {
     private final ProblemRepository problemRepository;
     private final SectionRepository sectionRepository;
     private final DomjudgeService domjudgeService;
+    private final SubmissionRepository submissionRepository;
 
     public AssignmentResponse createAssignment(Long sectionId, AssignmentRequest request, Long userId) {
         // 1. Section 조회
@@ -126,5 +126,93 @@ public class AssignmentService {
                 .orElseThrow(() -> new IllegalArgumentException("Assignment not found"));
         return toResponse(assignment);
     }
+    // 기존 코드에 추가
+    public AssignmentSubmissionStatsResponse getAssignmentSubmissionStats(Long assignmentId, Long sectionId) {
+        // 1. 과제 정보 조회
+        Assignment assignment = assignmentRepository.findById(assignmentId)
+                .orElseThrow(() -> new IllegalArgumentException("Assignment not found"));
 
+        // 2. 분반 정보 조회
+        Section section = sectionRepository.findById(sectionId)
+                .orElseThrow(() -> new IllegalArgumentException("Section not found"));
+
+        // 3. 분반 전체 학생 수
+        Integer totalStudents = submissionRepository.countStudentsBySection(sectionId);
+
+        // 4. 과제 제출한 학생 수
+        // 4. 과제 제출한 학생 수
+        Integer submittedStudents = submissionRepository.countAllProblemsSubmittedStudents(assignmentId, sectionId);
+        if (submittedStudents == null) {
+            submittedStudents = 0; // null인 경우 0으로 설정
+        }
+        // 5. 과제 제출률 계산
+        Double submissionRate = totalStudents > 0 ?
+                (double) submittedStudents / totalStudents * 100 : 0.0;
+
+        // 6. 각 문제별 통계
+        List<ProblemSubmissionStats> problemStats = new ArrayList<>();
+        List<AssignmentProblem> assignmentProblems = assignmentProblemRepository.findByAssignmentId(assignmentId);
+
+        for (AssignmentProblem ap : assignmentProblems) {
+            Problem problem = ap.getProblem();
+
+            // 문제별 제출한 학생 수
+            Integer problemSubmittedStudents = submissionRepository.countSubmittedStudentsByProblem(problem.getId(), sectionId);
+
+            // 문제별 정답 제출 수
+            Integer correctSubmissions = submissionRepository.countCorrectSubmissionsByProblem(problem.getId(), sectionId);
+
+            // 문제별 제출률
+            Double problemSubmissionRate = totalStudents > 0 ?
+                    (double) problemSubmittedStudents / totalStudents * 100 : 0.0;
+
+            // 문제별 정답률
+            Double correctRate = problemSubmittedStudents > 0 ?
+                    (double) correctSubmissions / problemSubmittedStudents * 100 : 0.0;
+
+            ProblemSubmissionStats problemStat = ProblemSubmissionStats.builder()
+                    .problemId(problem.getId())
+                    .problemTitle(problem.getTitle())
+                    .problemOrder(ap.getProblemOrder())
+                    .totalStudents(totalStudents)
+                    .submittedStudents(problemSubmittedStudents)
+                    .correctSubmissions(correctSubmissions)
+                    .submissionRate(problemSubmissionRate)
+                    .correctRate(correctRate)
+                    .build();
+
+            problemStats.add(problemStat);
+        }
+
+        return AssignmentSubmissionStatsResponse.builder()
+                .assignmentId(assignmentId)
+                .assignmentTitle(assignment.getTitle())
+                .sectionId(sectionId)
+                .sectionName(section.getCourse().getTitle() + " - " + section.getSectionNumber() + "분반")
+                .totalStudents(totalStudents)
+                .submittedStudents(submittedStudents)
+                .submissionRate(submissionRate)
+                .problemStats(problemStats)
+                .build();
+    }
+
+    // 전체 과제 통계 (교수가 담당하는 모든 분반)
+    public List<AssignmentSubmissionStatsResponse> getAllAssignmentsSubmissionStats(Long instructorId) {
+        // 1. 교수가 담당하는 모든 분반 조회
+        List<Section> sections = sectionRepository.findByInstructorId(instructorId);
+
+        List<AssignmentSubmissionStatsResponse> allStats = new ArrayList<>();
+
+        for (Section section : sections) {
+            // 2. 각 분반의 과제들 조회
+            List<Assignment> assignments = assignmentRepository.findBySectionId(section.getId());
+
+            for (Assignment assignment : assignments) {
+                AssignmentSubmissionStatsResponse stats = getAssignmentSubmissionStats(assignment.getId(), section.getId());
+                allStats.add(stats);
+            }
+        }
+
+        return allStats;
+    }
 }
