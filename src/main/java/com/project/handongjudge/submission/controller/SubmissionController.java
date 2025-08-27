@@ -10,7 +10,7 @@ import com.project.handongjudge.submission.service.SubmissionService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.Authentication;
 
-@RequiredArgsConstructor    
+@RequiredArgsConstructor
 @RestController
 @RequestMapping("/api/submissions")
 public class SubmissionController {
@@ -27,7 +27,7 @@ public class SubmissionController {
 
         String result = submissionService.getResult(sectionId, submissionId);
         return ResponseEntity.ok(result);
-    }   
+    }
 
     @PostMapping(value = "/submitAndGetResult")
     public SubmissionResponseDTO submitAndGetResult(Authentication authentication, @RequestBody SubmissionAuthDTO request) {
