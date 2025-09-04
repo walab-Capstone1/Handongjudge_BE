@@ -1,8 +1,11 @@
 package com.project.handongjudge.domjudge.service;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.project.handongjudge.problem.util.MultipartInputStreamFileResource;
+import com.project.handongjudge.submission.dto.SubmissionOutputResponseDTO;
+import com.project.handongjudge.submission.entity.Output;
 import lombok.RequiredArgsConstructor;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.core.io.FileSystemResource;
@@ -24,9 +27,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.Base64;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -323,4 +324,72 @@ public class DomjudgeService {
             throw e;
         }
     }
+
+    // Result with Outputs
+    public SubmissionOutputResponseDTO getResultOutput(String cid, String submissionId) throws JsonProcessingException {
+        try {
+            HttpHeaders headers = createAuthHeaders();
+
+            String url = DOMJUDGE_API_URL + "/api/v4/contests/" + cid + "/judgements/" + submissionId + "/output";
+
+            log.debug("Request URL: " + url);
+
+            HttpEntity<Object> requestEntity = new HttpEntity<>(headers);
+            ResponseEntity<JsonNode> response = restTemplate.exchange(
+                    url,
+                    HttpMethod.GET,
+                    requestEntity,
+                    JsonNode.class
+            );
+
+            log.debug("Response Status: " + response.getStatusCode());
+            log.debug("Response Body: " + response.getBody());
+
+            JsonNode responseBody = response.getBody();
+            if (responseBody == null) {
+                log.warn("Response body is null for submission: {}", submissionId);
+                return null;
+            }
+
+            // judgement_type_id가 null이거나 없는 경우 처리
+            if (!responseBody.has("result") || responseBody.get("result").isNull()) {
+                log.debug("Judgement not ready yet for submission: {}", submissionId);
+                return null;
+            }
+
+            String result = responseBody.get("result").asText();
+            log.info("Result received for submission {}: {}", submissionId, result);
+
+
+            // Output parsing
+            JsonNode runsResponse = responseBody.get("runs");
+            List<Output> outputList = new ArrayList<>();
+            ObjectMapper mapper = new ObjectMapper();
+
+            if(runsResponse != null && runsResponse.isArray()){
+                for(JsonNode runNode : runsResponse){
+                    Output output = mapper.treeToValue(runNode, Output.class);
+                    outputList.add(output);
+                }
+            }
+
+
+            return SubmissionOutputResponseDTO.builder()
+                    .result(result)
+                    .outputList(outputList)
+                    .build();
+
+        } catch (HttpClientErrorException e) {
+            if (e.getStatusCode().value() == 404) {
+                log.debug("Judgement not found for submission: {}", submissionId);
+                return null;
+            }
+            log.error("HTTP error while getting result for submission {}: {}", submissionId, e.getMessage());
+            throw e;
+        } catch (Exception e) {
+            log.error("Error getting result for submission {}: {}", submissionId, e.getMessage());
+            throw e;
+        }
+    }
+
 }
