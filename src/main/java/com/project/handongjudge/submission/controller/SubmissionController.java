@@ -1,5 +1,6 @@
 package com.project.handongjudge.submission.controller;
 
+import com.project.handongjudge.submission.dto.SubmissionOutputResponseDTO;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -32,6 +33,12 @@ public class SubmissionController {
     @PostMapping(value = "/submitAndGetResult")
     public SubmissionResponseDTO submitAndGetResult(Authentication authentication, @RequestBody SubmissionAuthDTO request) {
         SubmissionResponseDTO result = submissionService.submitAndGetResult(authentication, request);
+        return result;
+    }
+
+    @PostMapping(value = "/submitAndGetResult/output")
+    public SubmissionOutputResponseDTO submitAndGetResultOutput(Authentication authentication, @RequestBody SubmissionAuthDTO request) {
+        SubmissionOutputResponseDTO result = submissionService.submitAndGetResultOutput(authentication, request);
         return result;
     }
 
