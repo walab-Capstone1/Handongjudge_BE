@@ -118,6 +118,20 @@ public class SubmissionService {
         return domjudgeService.getResult(cid, submissionId);
     }
 
+    public SubmissionOutputResponseDTO getResultOutput(Long sectionId, String submissionId) {
+        String cid = String.valueOf(sectionId);
+        try {
+            SubmissionOutputResponseDTO result = domjudgeService.getResultOutput(cid, submissionId);
+            if (result != null && !result.getResult().isEmpty()) {
+                return result;
+            }
+        } catch (Exception e) {
+            // 결과가 아직 준비되지 않은 경우 무시하고 계속 시도
+            System.out.println(e);
+        }
+        return null;
+    }
+
     public SubmissionResponseDTO submitAndGetResult(Authentication authentication, SubmissionAuthDTO submissionRequestDTO) {
         Long userId = Long.parseLong(authentication.getName());
         User user = userRepository.findById(userId)
