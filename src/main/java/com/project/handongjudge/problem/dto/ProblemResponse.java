@@ -14,4 +14,6 @@ public class ProblemResponse {
     private String difficulty;
     private LocalDateTime createdAt;
     private Integer order;
+    private Double timeLimit;  // 초 단위
+    private Integer memoryLimit;  // MB 단위
 }
