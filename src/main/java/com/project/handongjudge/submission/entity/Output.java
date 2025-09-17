@@ -36,6 +36,12 @@ public class Output {
     @JsonProperty("output_diff")
     private String outputDiff;
 
+    @JsonProperty("testcase_input")
+    private String testcase_input;
+
+    @JsonProperty("expected_output")
+    private String testcase_output;
+
 }
 //"testcase_rank": 0,
 //        "result": "string",
