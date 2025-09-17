@@ -42,4 +42,14 @@ public class SubmissionController {
         return result;
     }
 
+
+    @GetMapping("/result/output")
+    public ResponseEntity<SubmissionOutputResponseDTO> getSubmissionOutputResult(
+            @RequestParam("sectionId") Long sectionId,
+            @RequestParam("submissionId") String submissionId) {
+
+        SubmissionOutputResponseDTO result = submissionService.getResultOutput(sectionId, submissionId);
+        return ResponseEntity.ok(result);
+    }
+
 }
