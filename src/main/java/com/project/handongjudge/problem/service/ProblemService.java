@@ -131,6 +131,9 @@ public class ProblemService {
                 .id(problem.getId())
                 .title(problem.getTitle())
                 .description(problem.getDescription())
+                .difficulty(problem.getDifficulty())
+                .timeLimit(problem.getTimeLimit())         // 추가
+                .memoryLimit(problem.getMemoryLimit())     // 추가
                 .createdAt(problem.getCreatedAt())
                 .build();
     }

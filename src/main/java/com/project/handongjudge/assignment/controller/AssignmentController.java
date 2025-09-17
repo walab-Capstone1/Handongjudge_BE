@@ -3,6 +3,7 @@ package com.project.handongjudge.assignment.controller;
 import com.project.handongjudge.assignment.dto.AssignmentRequest;
 import com.project.handongjudge.assignment.dto.AssignmentResponse;
 import com.project.handongjudge.assignment.dto.AssignmentSubmissionStatsResponse;
+import com.project.handongjudge.assignment.dto.UserSubmissionStatusResponse;
 import com.project.handongjudge.assignment.service.AssignmentService;
 import com.project.handongjudge.problem.entity.Problem;
 import com.project.handongjudge.problem.service.ProblemService;
@@ -80,5 +81,29 @@ public class AssignmentController {
 
         List<AssignmentSubmissionStatsResponse> allStats = assignmentService.getAllAssignmentsSubmissionStats(instructorId);
         return ResponseEntity.ok(allStats);
+    }
+
+    @PutMapping("/{assignmentId}")
+    public ResponseEntity<AssignmentResponse> updateAssignment(
+            @PathVariable Long sectionId,
+            @PathVariable Long assignmentId,
+            @RequestBody AssignmentRequest request,
+            Authentication authentication
+    ) {
+        Long userId = Long.parseLong(authentication.getName());
+        return ResponseEntity.ok(
+                assignmentService.updateAssignment(sectionId, assignmentId, request, userId)
+        );
+    }
+    @GetMapping("/{assignmentId}/user-submission-status")
+    public ResponseEntity<UserSubmissionStatusResponse> getUserSubmissionStatus(
+            @PathVariable Long sectionId,
+            @PathVariable Long assignmentId,
+            Authentication authentication
+    ) {
+        Long userId = Long.parseLong(authentication.getName());
+        return ResponseEntity.ok(
+                assignmentService.getUserSubmissionStatus(sectionId, assignmentId, userId)
+        );
     }
 }
