@@ -39,5 +39,13 @@ public class Assignment {
     @OneToMany(mappedBy = "assignment", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<AssignmentProblem> assignmentProblems;
 
+    public void updateAssignment(String assignmentNumber, String title, String description,
+                                 LocalDateTime startDate, LocalDateTime endDate) {
+        this.assignmentNumber = assignmentNumber;
+        this.title = title;
+        this.description = description;
+        this.startDate = startDate;
+        this.endDate = endDate;
+    }
 
 }

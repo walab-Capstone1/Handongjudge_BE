@@ -42,4 +42,19 @@ public interface SubmissionRepository extends JpaRepository<Submission, Long> {
             "HAVING COUNT(DISTINCT s.problem.id) = " +
             "(SELECT COUNT(ap) FROM AssignmentProblem ap WHERE ap.assignment.id = :assignmentId)")
     Integer countAllProblemsSubmittedStudents(@Param("assignmentId") Long assignmentId, @Param("sectionId") Long sectionId);
+
+    // 사용자가 특정 문제를 제출했는지 확인
+    @Query("SELECT COUNT(s) > 0 FROM Submission s " +
+            "WHERE s.user.id = :userId AND s.problem.id = :problemId AND s.section.id = :sectionId")
+    boolean existsByUserIdAndProblemIdAndSectionId(@Param("userId") Long userId,
+                                                   @Param("problemId") Long problemId,
+                                                   @Param("sectionId") Long sectionId);
+
+    // 사용자가 특정 문제를 정답으로 제출했는지 확인
+    @Query("SELECT COUNT(s) > 0 FROM Submission s " +
+            "WHERE s.user.id = :userId AND s.problem.id = :problemId AND s.section.id = :sectionId " +
+            "AND s.result = 'correct'")
+    boolean existsCorrectSubmissionByUserIdAndProblemIdAndSectionId(@Param("userId") Long userId,
+                                                                    @Param("problemId") Long problemId,
+                                                                    @Param("sectionId") Long sectionId);
 }

@@ -2,6 +2,9 @@ package com.project.handongjudge.assignment.repository;
 
 import com.project.handongjudge.assignment.entity.AssignmentProblem;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.util.List;
 import java.util.Optional;
@@ -13,4 +16,7 @@ public interface AssignmentProblemRepository extends JpaRepository<AssignmentPro
 
     // 새로 추가할 메서드
     List<AssignmentProblem> findByAssignmentId(Long assignmentId);
+    @Modifying
+    @Query("DELETE FROM AssignmentProblem ap WHERE ap.assignment.id = :assignmentId")
+    void deleteByAssignmentId(@Param("assignmentId") Long assignmentId);
 }

@@ -27,6 +27,14 @@ public class Problem {
     @Column(name = "domjudge_problem_id")
     private String domjudgeProblemId;
 
+    // 새로 추가되는 필드들
+    @Column(name = "time_limit")
+    private Double timeLimit;  // 초 단위
+
+    @Column(name = "memory_limit")
+    private Integer memoryLimit;  // MB 단위
+
+
     private LocalDateTime createdAt;
 
     @OneToMany(mappedBy = "problem", cascade = CascadeType.ALL, orphanRemoval = true)
