@@ -215,4 +215,92 @@ public class AssignmentService {
 
         return allStats;
     }
+    public AssignmentResponse updateAssignment(Long sectionId, Long assignmentId, AssignmentRequest request, Long userId) {
+        // 1. Assignment 조회
+        Assignment assignment = assignmentRepository.findById(assignmentId)
+                .orElseThrow(() -> new IllegalArgumentException("Assignment not found"));
+
+        // 2. 권한 확인 (선택사항 - 교수만 수정 가능하도록)
+        // Section section = assignment.getSection();
+        // if (!section.getInstructor().getId().equals(userId)) {
+        //     throw new IllegalArgumentException("권한이 없습니다");
+        // }
+
+        // 3. Assignment 정보 업데이트
+        assignment.updateAssignment(
+                request.getAssignmentNumber(),
+                request.getTitle(),
+                request.getDescription(),
+                request.getStartDate(),
+                request.getEndDate()
+        );
+
+        Assignment savedAssignment = assignmentRepository.save(assignment);
+
+        // 4. 문제 연결 업데이트 (기존 문제 연결 삭제 후 새로 추가)
+        if (request.getProblemIds() != null) {
+            // 기존 AssignmentProblem 삭제
+            assignmentProblemRepository.deleteByAssignmentId(assignmentId);
+
+            // 새로운 문제 연결
+            if (!request.getProblemIds().isEmpty()) {
+                List<AssignmentProblem> assignmentProblems = new ArrayList<>();
+                int order = 1;
+
+                for (Long problemId : request.getProblemIds()) {
+                    Problem problem = problemRepository.findById(problemId)
+                            .orElseThrow(() -> new IllegalArgumentException("문제 ID 없음: " + problemId));
+
+                    AssignmentProblem ap = AssignmentProblem.builder()
+                            .assignment(savedAssignment)
+                            .problem(problem)
+                            .problemOrder(order++)
+                            .build();
+                    assignmentProblems.add(ap);
+                }
+
+                assignmentProblemRepository.saveAll(assignmentProblems);
+            }
+        }
+
+        return toResponse(savedAssignment);
+    }
+    public UserSubmissionStatusResponse getUserSubmissionStatus(Long sectionId, Long assignmentId, Long userId) {
+        // 과제 정보 조회
+        Assignment assignment = assignmentRepository.findById(assignmentId)
+                .orElseThrow(() -> new IllegalArgumentException("Assignment not found"));
+
+        // 과제의 문제 목록 조회
+        List<AssignmentProblem> assignmentProblems = assignmentProblemRepository.findByAssignmentId(assignmentId);
+
+        List<ProblemSubmissionStatus> problemStatuses = new ArrayList<>();
+
+        for (AssignmentProblem ap : assignmentProblems) {
+            Problem problem = ap.getProblem();
+
+            // 사용자가 이 문제를 제출했는지 확인
+            boolean hasSubmitted = submissionRepository.existsByUserIdAndProblemIdAndSectionId(userId, problem.getId(), sectionId);
+
+            // 사용자가 이 문제를 정답으로 제출했는지 확인
+            boolean hasCorrectSubmission = submissionRepository.existsCorrectSubmissionByUserIdAndProblemIdAndSectionId(userId, problem.getId(), sectionId);
+
+            ProblemSubmissionStatus status = ProblemSubmissionStatus.builder()
+                    .problemId(problem.getId())
+                    .problemTitle(problem.getTitle())
+                    .problemOrder(ap.getProblemOrder())
+                    .hasSubmitted(hasSubmitted)
+                    .hasCorrectSubmission(hasCorrectSubmission)
+                    .build();
+
+            problemStatuses.add(status);
+        }
+
+        return UserSubmissionStatusResponse.builder()
+                .assignmentId(assignmentId)
+                .assignmentTitle(assignment.getTitle())
+                .sectionId(sectionId)
+                .userId(userId)
+                .problemStatuses(problemStatuses)
+                .build();
+    }
 }
