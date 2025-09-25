@@ -6,6 +6,7 @@ import com.project.handongjudge.user.entity.User;
 import com.project.handongjudge.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
@@ -324,5 +325,36 @@ public class MypageController {
         response.put("success", false);
         response.put("message", message);
         return ResponseEntity.badRequest().body(response);
+    }
+
+    /**
+     * 제출된 코드 조회
+     */
+    @GetMapping("/submission/{submissionId}/code")
+    public ResponseEntity<?> getSubmissionCode(
+            @PathVariable Long submissionId,
+            Authentication authentication) {
+        try {
+            Long userId = getUserIdFromAuthentication(authentication.getName());
+
+            // 사용자가 본인의 제출만 볼 수 있도록 권한 확인
+            SubmissionCodeDto codeDto = mypageService.getSubmissionCode(submissionId, userId);
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("data", codeDto);
+
+            return ResponseEntity.ok(response);
+
+        } catch (Exception e) {
+            log.error("제출 코드 조회 실패: submissionId={}", submissionId, e);
+
+            Map<String, Object> errorResponse = new HashMap<>();
+            errorResponse.put("success", false);
+            errorResponse.put("message", "코드를 불러오는데 실패했습니다: " + e.getMessage());
+
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(errorResponse);
+        }
     }
 }

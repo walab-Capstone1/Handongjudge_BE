@@ -3,6 +3,7 @@ package com.project.handongjudge.mypage.service;
 import com.project.handongjudge.mypage.dto.*;
 import com.project.handongjudge.mypage.repository.MypageRepository;
 import com.project.handongjudge.submission.entity.Submission;
+import com.project.handongjudge.submission.repository.SubmissionRepository;
 import com.project.handongjudge.user.entity.User;
 import com.project.handongjudge.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -23,7 +24,7 @@ public class MypageService {
 
     private final MypageRepository mypageRepository;
     private final UserRepository userRepository;
-
+    private final SubmissionRepository submissionRepository;
     // ==================== 1단계: 기본 프로필 정보 ====================
 
     /**
@@ -265,5 +266,38 @@ public class MypageService {
                         .submittedAt(submission.getSubmittedAt().toString())
                         .build())
                 .collect(Collectors.toList());
+    }
+    /**
+     * 제출된 코드 조회
+     */
+    public SubmissionCodeDto getSubmissionCode(Long submissionId, Long userId) {
+        try {
+            // 제출 정보 조회 및 권한 확인
+            Submission submission = submissionRepository.findById(submissionId)
+                    .orElseThrow(() -> new RuntimeException("제출 정보를 찾을 수 없습니다: " + submissionId));
+
+            // 본인의 제출인지 확인
+            if (!submission.getUser().getId().equals(userId)) {
+                throw new RuntimeException("본인의 제출만 조회할 수 있습니다.");
+            }
+
+            return SubmissionCodeDto.builder()
+                    .submissionId(submission.getId())
+                    .problemTitle(submission.getProblem().getTitle())
+                    .sectionName(submission.getSection().getCourse().getTitle() + " - " +
+                            submission.getSection().getSectionNumber() + "분반")
+                    .language(submission.getLanguage())
+                    .code(submission.getCode()) // 실제 제출된 코드
+                    .result(submission.getResult())
+                    .submittedAt(submission.getSubmittedAt())
+//                    .executionTime(submission.getExecutionTime())
+//                    .memoryUsage(submission.getMemoryUsage())
+//                    .compileMessage(submission.getCompileMessage())
+                    .build();
+
+        } catch (Exception e) {
+            log.error("제출 코드 조회 실패: submissionId={}, userId={}", submissionId, userId, e);
+            throw new RuntimeException("코드 조회 중 오류가 발생했습니다: " + e.getMessage());
+        }
     }
 }

@@ -10,6 +10,7 @@ import org.springframework.stereotype.Repository;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 @Repository
 public interface MypageRepository extends JpaRepository<Submission, Long> {
@@ -95,4 +96,15 @@ public interface MypageRepository extends JpaRepository<Submission, Long> {
             "JOIN FETCH s.instructor i " +
             "WHERE e.user.id = :userId")
     List<Enrollment> getEnrolledSectionsByUserId(@Param("userId") Long userId);
+
+    /**
+     * 제출 ID로 상세 정보 조회 (코드 포함)
+     */
+    @Query("SELECT s FROM Submission s " +
+            "JOIN FETCH s.problem p " +
+            "JOIN FETCH s.section sec " +
+            "JOIN FETCH sec.course c " +
+            "JOIN FETCH s.user u " +
+            "WHERE s.id = :submissionId")
+    Optional<Submission> findSubmissionWithDetailsById(@Param("submissionId") Long submissionId);
 }
