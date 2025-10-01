@@ -7,6 +7,7 @@ import com.project.handongjudge.submission.dto.SubmissionRequestDTO;
 import com.project.handongjudge.submission.dto.SubmissionResponseDTO;           
 import com.project.handongjudge.submission.dto.SubmissionAuthDTO;
 import com.project.handongjudge.submission.entity.Output;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.security.core.Authentication;
 import org.slf4j.Logger;
@@ -24,6 +25,7 @@ import com.project.handongjudge.problem.entity.Problem;
 import com.project.handongjudge.section.entity.Section;
 import com.project.handongjudge.user.repository.EnrollmentRepository;
 
+import java.awt.print.Pageable;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -330,5 +332,17 @@ public class SubmissionService {
         throw new RuntimeException("Result not available after " + maxWaitSeconds + " seconds");
     }
 
+    public String getUserLatestSubmission(Authentication authentication, Long problemId,Long sectionId, String language ) {
+        Long userId = Long.parseLong(authentication.getName());
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+        Problem problem = problemRepository.findById(problemId)
+                .orElseThrow(() -> new RuntimeException("Problem not found"));
+
+        String result = submissionRepository.getUserLastSubmission(userId, problemId,sectionId,language)
+                .orElse(null);
+
+        return result;
+    }
 
 }
