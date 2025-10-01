@@ -52,4 +52,15 @@ public class SubmissionController {
         return ResponseEntity.ok(result);
     }
 
+    @GetMapping("/lastSubmitCode")
+    public ResponseEntity<String> getUserSubmissionStatus(
+            Authentication authentication,
+            @RequestParam("problemId") Long problemId,
+            @RequestParam("sectionId") Long sectionId,
+            @RequestParam("language") String language
+    ){
+        String result = submissionService.getUserLatestSubmission(authentication,problemId,sectionId,language);
+        return ResponseEntity.ok(result);
+    }
+
 }
