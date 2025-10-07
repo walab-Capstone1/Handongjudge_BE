@@ -51,11 +51,11 @@ public interface EnrollmentRepository extends CrudRepository<Enrollment, Long> {
             "GROUP BY c.id, c.title, s.id, s.sectionNumber, u.name, s.createdAt")
     List<DashboardCourseDto> findDashboardCoursesByInstructorId(@Param("instructorId") Long instructorId);
 
-    // EnrollmentRepository
     @Query("SELECT new com.project.handongjudge.user.dto.StudentDto(" +
             "u.id, u.name, u.email, '', e.teamId, s.id, " +
             "CONCAT(c.title, ' - Section ', s.sectionNumber), c.title, s.sectionNumber, " +
-            "e.joinedAt, u.updatedAt) " +
+            "e.joinedAt, u.updatedAt, " +
+            "0.0, 0, 0) " +  // 진도율 관련 필드는 0으로 초기화 (서비스에서 계산)
             "FROM Enrollment e " +
             "JOIN User u ON e.user.id = u.id " +
             "JOIN Section s ON e.section.id = s.id " +
@@ -63,11 +63,11 @@ public interface EnrollmentRepository extends CrudRepository<Enrollment, Long> {
             "WHERE s.id = :sectionId")
     List<StudentDto> findStudentsBySectionId(@Param("sectionId") Long sectionId);
 
-    // 교수가 담당하는 모든 분반의 학생들 조회
     @Query("SELECT new com.project.handongjudge.user.dto.StudentDto(" +
             "u.id, u.name, u.email, '', e.teamId, s.id, " +
             "CONCAT(c.title, ' - Section ', s.sectionNumber), c.title, s.sectionNumber, " +
-            "e.joinedAt, u.updatedAt) " +
+            "e.joinedAt, u.updatedAt, " +
+            "0.0, 0, 0) " +  // 진도율 관련 필드는 0으로 초기화 (서비스에서 계산)
             "FROM Enrollment e " +
             "JOIN User u ON e.user.id = u.id " +
             "JOIN Section s ON e.section.id = s.id " +
