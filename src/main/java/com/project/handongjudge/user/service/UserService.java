@@ -1,5 +1,8 @@
 package com.project.handongjudge.user.service;
 
+import com.project.handongjudge.problem.entity.Problem;
+import com.project.handongjudge.problem.repository.ProblemRepository;
+import com.project.handongjudge.submission.entity.Submission;
 import com.project.handongjudge.user.dto.*;
 import com.project.handongjudge.user.entity.User;
 import com.project.handongjudge.user.entity.UserReadStatus;
@@ -12,15 +15,18 @@ import com.project.handongjudge.notice.entity.Notice;
 import com.project.handongjudge.notice.repository.NoticeRepository;
 import com.project.handongjudge.assignment.entity.Assignment;
 import com.project.handongjudge.assignment.repository.AssignmentRepository;
+import com.project.handongjudge.assignment.repository.AssignmentProblemRepository;
+import com.project.handongjudge.submission.repository.SubmissionRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;    
+import org.springframework.transaction.annotation.Transactional;
 import com.project.handongjudge.domjudge.service.DomjudgeService;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
@@ -37,6 +43,10 @@ public class UserService {
     private final UserReadStatusRepository userReadStatusRepository;
     private final NoticeRepository noticeRepository;
     private final AssignmentRepository assignmentRepository;
+    private final AssignmentProblemRepository assignmentProblemRepository;
+    private final SubmissionRepository submissionRepository;
+    private final ProblemRepository problemRepository;
+
     @Autowired
     public UserService(UserRepository userRepository,
                        EnrollmentRepository enrollmentRepository,
@@ -45,6 +55,9 @@ public class UserService {
                        UserReadStatusRepository userReadStatusRepository,
                        NoticeRepository noticeRepository,
                        AssignmentRepository assignmentRepository,
+                       AssignmentProblemRepository assignmentProblemRepository,
+                       SubmissionRepository submissionRepository,
+                       ProblemRepository problemRepository,
                        @Lazy PasswordEncoder passwordEncoder) {
         this.userRepository = userRepository;
         this.enrollmentRepository = enrollmentRepository;
@@ -54,6 +67,9 @@ public class UserService {
         this.userReadStatusRepository = userReadStatusRepository;
         this.noticeRepository = noticeRepository;
         this.assignmentRepository = assignmentRepository;
+        this.assignmentProblemRepository = assignmentProblemRepository;
+        this.submissionRepository = submissionRepository;
+        this.problemRepository = problemRepository;
     }
 
     public Optional<User> findByEmail(String email) {
@@ -124,13 +140,13 @@ public class UserService {
      */
     public List<DashboardCourseDto> getDashboardCourses(Long userId) {
         log.info("🔥 대시보드 조회 시작 - userId: {}", userId);
-        
+
         // 사용자 정보 조회
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("User not found with ID: " + userId));
-        
+
         List<DashboardCourseDto> result;
-        
+
         // 사용자 역할에 따라 다른 쿼리 사용
         if (user.getRole() == User.Role.ADMIN) {
             // 교수인 경우: 담당하는 분반들 조회
@@ -141,21 +157,21 @@ public class UserService {
             log.info("🔥 학생용 대시보드 조회 - studentId: {}", userId);
             result = enrollmentRepository.findDashboardCoursesByUserId(userId);
         }
-        
+
         log.info("🔥 대시보드 조회 결과 - 분반 수: {}", result.size());
-        
+
         // 학생인 경우에만 읽지 않은 공지사항 수를 수동으로 계산
         if (user.getRole() != User.Role.ADMIN) {
             for (DashboardCourseDto dto : result) {
                 // 해당 분반의 새로운 공지사항 중 읽지 않은 것들의 수 계산
                 long unreadNoticeCount = noticeRepository.findNewNoticesBySectionId(dto.getSectionId())
-                    .stream()
-                    .filter(notice -> !userReadStatusRepository.existsByUserIdAndNoticeId(userId, notice.getId()))
-                    .count();
-                
-                log.info("🔥 학생 분반 정보 - sectionId: {}, courseTitle: {}, 계산된 읽지않은 공지수: {}, 쿼리결과: {}", 
-                    dto.getSectionId(), dto.getCourseTitle(), unreadNoticeCount, dto.getNewNoticeCount());
-                
+                        .stream()
+                        .filter(notice -> !userReadStatusRepository.existsByUserIdAndNoticeId(userId, notice.getId()))
+                        .count();
+
+                log.info("🔥 학생 분반 정보 - sectionId: {}, courseTitle: {}, 계산된 읽지않은 공지수: {}, 쿼리결과: {}",
+                        dto.getSectionId(), dto.getCourseTitle(), unreadNoticeCount, dto.getNewNoticeCount());
+
                 // 수동 계산된 값으로 업데이트 (리플렉션 사용)
                 try {
                     java.lang.reflect.Field field = dto.getClass().getDeclaredField("newNoticeCount");
@@ -168,11 +184,11 @@ public class UserService {
         } else {
             // 교수인 경우 로그만 출력
             for (DashboardCourseDto dto : result) {
-                log.info("🔥 교수 분반 정보 - sectionId: {}, courseTitle: {}, newNoticeCount: {}, newAssignmentCount: {}", 
-                    dto.getSectionId(), dto.getCourseTitle(), dto.getNewNoticeCount(), dto.getNewAssignmentCount());
+                log.info("🔥 교수 분반 정보 - sectionId: {}, courseTitle: {}, newNoticeCount: {}, newAssignmentCount: {}",
+                        dto.getSectionId(), dto.getCourseTitle(), dto.getNewNoticeCount(), dto.getNewAssignmentCount());
             }
         }
-        
+
         return result;
     }
 
@@ -190,7 +206,7 @@ public class UserService {
         enrollment.setTeamId(teamId);
 
         // 참가 처리
-        enrollmentRepository.save(enrollment);      
+        enrollmentRepository.save(enrollment);
 
         EnrollmentResponseDTO response = new EnrollmentResponseDTO();
         response.setId(enrollment.getId());
@@ -199,28 +215,93 @@ public class UserService {
         response.setRoleInCourse(enrollment.getRoleInCourse());
         return response;
 
-       
-    }
-    // UserService.java에 추가
-    /**
-     * 특정 분반의 학생 목록 조회
-     */
-    public List<StudentDto> getStudentsBySection(Long sectionId) {
-        return enrollmentRepository.findStudentsBySectionId(sectionId);
+
     }
 
     /**
-     * 교수가 담당하는 모든 분반의 학생 목록 조회
+     * 특정 분반의 학생 목록 조회 (과제 진도율 포함)
+     */
+    public List<StudentDto> getStudentsBySection(Long sectionId) {
+        List<StudentDto> students = enrollmentRepository.findStudentsBySectionId(sectionId);
+
+        // 각 학생의 과제 진도율 계산
+        for (StudentDto student : students) {
+            calculateAssignmentProgress(student, sectionId);
+        }
+
+        return students;
+    }
+
+    /**
+     * 교수가 담당하는 모든 분반의 학생 목록 조회 (과제 진도율 포함)
      */
     public List<StudentDto> getStudentsByInstructor(Long instructorId) {
-        return enrollmentRepository.findStudentsByInstructorId(instructorId);
+        List<StudentDto> students = enrollmentRepository.findStudentsByInstructorId(instructorId);
+
+        // 각 학생의 과제 진도율 계산
+        for (StudentDto student : students) {
+            calculateAssignmentProgress(student, student.getSectionId());
+        }
+
+        return students;
+    }
+
+    /**
+     * 학생의 과제 진도율 계산
+     */
+    private void calculateAssignmentProgress(StudentDto student, Long sectionId) {
+        // 1. 해당 분반의 전체 과제 수
+        Integer totalAssignments = assignmentRepository.countBySectionId(sectionId);
+        student.setTotalAssignments(totalAssignments);
+
+        if (totalAssignments == 0) {
+            student.setCompletedAssignments(0);
+            student.setAssignmentCompletionRate(0.0);
+            return;
+        }
+
+        // 2. 해당 분반의 모든 과제 ID 가져오기
+        List<Long> assignmentIds = assignmentRepository.findAssignmentIdsBySectionId(sectionId);
+
+        // 3. 각 과제별로 완료 여부 확인
+        int completedCount = 0;
+        for (Long assignmentId : assignmentIds) {
+            if (isAssignmentCompleted(student.getUserId(), assignmentId)) {
+                completedCount++;
+            }
+        }
+
+        student.setCompletedAssignments(completedCount);
+
+        // 4. 완료율 계산 (%)
+        double completionRate = (completedCount * 100.0) / totalAssignments;
+        student.setAssignmentCompletionRate(Math.round(completionRate * 10.0) / 10.0); // 소수점 첫째자리까지
+    }
+
+    /**
+     * 특정 학생이 특정 과제를 완료했는지 확인
+     * (과제의 모든 문제를 ACCEPTED로 제출한 경우 완료로 간주)
+     */
+    private boolean isAssignmentCompleted(Long userId, Long assignmentId) {
+        // 1. 해당 과제의 모든 문제 ID 가져오기
+        List<Long> problemIds = assignmentProblemRepository.findProblemIdsByAssignmentId(assignmentId);
+
+        if (problemIds.isEmpty()) {
+            return false;
+        }
+
+        // 2. 학생이 ACCEPTED를 받은 문제 ID 가져오기
+        List<Long> acceptedProblemIds = submissionRepository.findAcceptedProblemIdsByUserAndProblems(userId, problemIds);
+
+        // 3. 모든 문제를 풀었는지 확인
+        return acceptedProblemIds.size() == problemIds.size();
     }
 
     // 공지사항 읽음 처리
     @Transactional
     public void markNoticeAsRead(Long userId, Long noticeId) {
         log.info("🔥 공지사항 읽음 처리 시작 - userId: {}, noticeId: {}", userId, noticeId);
-        
+
         // 이미 읽음 처리된 경우 중복 방지
         if (userReadStatusRepository.existsByUserIdAndNoticeId(userId, noticeId)) {
             log.info("🔥 이미 읽음 처리된 공지사항 - userId: {}, noticeId: {}", userId, noticeId);
@@ -247,7 +328,7 @@ public class UserService {
     @Transactional
     public void markAssignmentAsRead(Long userId, Long assignmentId) {
         log.info("🔥 과제 읽음 처리 시작 - userId: {}, assignmentId: {}", userId, assignmentId);
-        
+
         // 이미 읽음 처리된 경우 중복 방지
         if (userReadStatusRepository.existsByUserIdAndAssignmentId(userId, assignmentId)) {
             log.info("🔥 이미 읽음 처리된 과제 - userId: {}, assignmentId: {}", userId, assignmentId);
@@ -268,5 +349,90 @@ public class UserService {
 
         UserReadStatus saved = userReadStatusRepository.save(readStatus);
         log.info("🔥 과제 읽음 처리 완료 - readStatusId: {}", saved.getId());
+    }
+    /**
+     * 특정 학생의 특정 분반 모든 과제에 대한 진도율 조회
+     */
+    public List<StudentAssignmentProgressDto> getStudentAssignmentsProgress(Long userId, Long sectionId) {
+        // 1. 해당 분반의 모든 과제 가져오기
+        List<Assignment> assignments = assignmentRepository.findBySectionId(sectionId);
+
+        // 2. 각 과제별로 학생의 진도율 계산
+        List<StudentAssignmentProgressDto> progressList = new ArrayList<>();
+
+        for (Assignment assignment : assignments) {
+            StudentAssignmentProgressDto progress = calculateStudentAssignmentProgress(userId, assignment);
+            progressList.add(progress);
+        }
+
+        return progressList;
+    }
+
+    /**
+     * 특정 학생의 특정 과제 진도율 계산
+     */
+    private StudentAssignmentProgressDto calculateStudentAssignmentProgress(Long userId, Assignment assignment) {
+        // 1. 해당 과제의 모든 문제 ID 가져오기
+        List<Long> problemIds = assignmentProblemRepository.findProblemIdsByAssignmentId(assignment.getId());
+
+        int totalProblems = problemIds.size();
+        int solvedProblems = 0;
+
+        if (totalProblems > 0) {
+            // 2. 학생이 ACCEPTED를 받은 문제 ID 가져오기
+            List<Long> acceptedProblemIds = submissionRepository.findAcceptedProblemIdsByUserAndProblems(userId, problemIds);
+            solvedProblems = acceptedProblemIds.size();
+        }
+
+        // 3. 진도율 계산
+        double progressRate = totalProblems > 0 ? (solvedProblems * 100.0) / totalProblems : 0.0;
+
+        return StudentAssignmentProgressDto.builder()
+                .assignmentId(assignment.getId())
+                .assignmentTitle(assignment.getTitle())
+                .description(assignment.getDescription())
+                .totalProblems(totalProblems)
+                .solvedProblems(solvedProblems)
+                .progressRate(Math.round(progressRate * 10.0) / 10.0)
+                .build();
+    }
+    // SubmissionRepository에서 메서드 제거하고 UserService에서 직접 처리
+
+    // UserService의 getStudentAssignmentProblemsStatus 메서드:
+    public List<StudentProblemStatusDto> getStudentAssignmentProblemsStatus(Long userId, Long sectionId, Long assignmentId) {
+        // 1. 해당 과제의 모든 문제 가져오기
+        List<Long> problemIds = assignmentProblemRepository.findProblemIdsByAssignmentId(assignmentId);
+
+        List<StudentProblemStatusDto> problemStatusList = new ArrayList<>();
+
+        for (Long problemId : problemIds) {
+            // 2. 문제 정보 가져오기
+            Problem problem = problemRepository.findById(problemId)
+                    .orElse(null);
+
+            if (problem == null) continue;
+
+            // 3. 해당 문제에 대한 학생의 제출 상태 확인
+            String status = "NOT_SUBMITTED";
+            int submissionCount = submissionRepository.countByUserIdAndProblemId(userId, problemId);
+
+            if (submissionCount > 0) {
+                // ACCEPTED("AC")가 있는지 확인
+                int acceptedCount = submissionRepository.countAcceptedByUserIdAndProblemId(userId, problemId);
+
+                status = acceptedCount > 0 ? "ACCEPTED" : "SUBMITTED";
+            }
+
+            StudentProblemStatusDto statusDto = StudentProblemStatusDto.builder()
+                    .problemId(problemId)
+                    .problemTitle(problem.getTitle())
+                    .status(status)
+                    .submissionCount(submissionCount)
+                    .build();
+
+            problemStatusList.add(statusDto);
+        }
+
+        return problemStatusList;
     }
 }

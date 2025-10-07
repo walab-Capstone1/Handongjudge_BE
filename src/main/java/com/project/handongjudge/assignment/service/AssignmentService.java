@@ -140,7 +140,6 @@ public class AssignmentService {
         Integer totalStudents = submissionRepository.countStudentsBySection(sectionId);
 
         // 4. 과제 제출한 학생 수
-        // 4. 과제 제출한 학생 수
         Integer submittedStudents = submissionRepository.countAllProblemsSubmittedStudents(assignmentId, sectionId);
         if (submittedStudents == null) {
             submittedStudents = 0; // null인 경우 0으로 설정

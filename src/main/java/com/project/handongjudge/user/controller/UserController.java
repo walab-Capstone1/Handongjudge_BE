@@ -1,6 +1,8 @@
 package com.project.handongjudge.user.controller;
 
 import com.project.handongjudge.user.dto.*;
+import com.project.handongjudge.user.entity.User;
+import com.project.handongjudge.user.repository.UserRepository;
 import com.project.handongjudge.user.service.UserService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -21,7 +23,7 @@ import java.util.Map;
 public class UserController {
 
     private final UserService userService;
-
+    private final UserRepository userRepository;
     /**
      * 현재 로그인한 사용자 정보 반환
      */
@@ -180,6 +182,73 @@ public class UserController {
             response.put("success", false);
             response.put("message", e.getMessage());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
+        }
+    }
+    /**
+     * 특정 학생의 특정 분반 과제 진도율 조회
+     */
+    @GetMapping("/students/{userId}/sections/{sectionId}/assignments-progress")
+    public ResponseEntity<Map<String, Object>> getStudentAssignmentsProgress(
+            @PathVariable Long userId,
+            @PathVariable Long sectionId,
+            Authentication authentication) {
+        try {
+            Long requestUserId = Long.parseLong(authentication.getName());
+
+            // 교수는 자신이 담당하는 분반의 학생만, 학생은 자기 자신의 정보만 조회 가능
+            User requestUser = userRepository.findById(requestUserId)
+                    .orElseThrow(() -> new RuntimeException("User not found"));
+
+            // 권한 검증 로직 (선택사항)
+            if (requestUser.getRole() != User.Role.ADMIN && !requestUserId.equals(userId)) {
+                return buildErrorResponse("권한이 없습니다.");
+            }
+
+            List<StudentAssignmentProgressDto> progressList = userService.getStudentAssignmentsProgress(userId, sectionId);
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("message", "학생 과제 진도율 조회 성공");
+            response.put("data", progressList);
+            return ResponseEntity.ok(response);
+
+        } catch (Exception e) {
+            log.error("학생 과제 진도율 조회 실패: userId={}, sectionId={}", userId, sectionId, e);
+            return buildErrorResponse("과제 진도율을 가져오지 못했습니다.");
+        }
+    }
+    /**
+     * 특정 학생의 특정 과제의 문제별 상태 조회
+     */
+    @GetMapping("/students/{userId}/sections/{sectionId}/assignments/{assignmentId}/problems-status")
+    public ResponseEntity<Map<String, Object>> getStudentAssignmentProblemsStatus(
+            @PathVariable Long userId,
+            @PathVariable Long sectionId,
+            @PathVariable Long assignmentId,
+            Authentication authentication) {
+        try {
+            Long requestUserId = Long.parseLong(authentication.getName());
+
+            // 권한 검증
+            User requestUser = userRepository.findById(requestUserId)
+                    .orElseThrow(() -> new RuntimeException("User not found"));
+
+            if (requestUser.getRole() != User.Role.ADMIN && !requestUserId.equals(userId)) {
+                return buildErrorResponse("권한이 없습니다.");
+            }
+
+            List<StudentProblemStatusDto> problemStatusList =
+                    userService.getStudentAssignmentProblemsStatus(userId, sectionId, assignmentId);
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("message", "학생 문제 상태 조회 성공");
+            response.put("data", problemStatusList);
+            return ResponseEntity.ok(response);
+
+        } catch (Exception e) {
+            log.error("학생 문제 상태 조회 실패: userId={}, assignmentId={}", userId, assignmentId, e);
+            return buildErrorResponse("문제 상태를 가져오지 못했습니다.");
         }
     }
 }
