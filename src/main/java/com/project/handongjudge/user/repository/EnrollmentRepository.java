@@ -13,8 +13,11 @@ public interface EnrollmentRepository extends CrudRepository<Enrollment, Long> {
 
     @Query("SELECT new com.project.handongjudge.user.dto.DashboardCourseDto(" +
             "c.id, c.title, s.id, s.sectionNumber, u.name, " +
-            "COALESCE(SUM(CASE WHEN n.isNew = true AND urs.id IS NULL THEN 1 ELSE 0 END), 0), " +
-            "COALESCE(SUM(CASE WHEN a.isNew = true THEN 1 ELSE 0 END), 0)) " +
+            "CAST(COALESCE(SUM(CASE WHEN n.isNew = true AND urs.id IS NULL THEN 1 ELSE 0 END), 0) AS long), " +
+            "CAST(COALESCE(SUM(CASE WHEN a.isNew = true THEN 1 ELSE 0 END), 0) AS long), " +
+            "CAST(COUNT(DISTINCT n.id) AS long), " +
+            "CAST((SELECT COUNT(e2.id) FROM Enrollment e2 WHERE e2.section.id = s.id) AS long), " +
+            "s.createdAt) " +
             "FROM Enrollment e " +
             "JOIN Section s ON e.section.id = s.id " +
             "JOIN Course c ON s.course.id = c.id " +
@@ -23,7 +26,7 @@ public interface EnrollmentRepository extends CrudRepository<Enrollment, Long> {
             "LEFT JOIN UserReadStatus urs ON urs.notice.id = n.id AND urs.user.id = :userId " +
             "LEFT JOIN Assignment a ON a.section.id = s.id " +
             "WHERE e.user.id = :userId " +
-            "GROUP BY c.id, c.title, s.id, s.sectionNumber, u.name")
+            "GROUP BY c.id, c.title, s.id, s.sectionNumber, u.name, s.createdAt")
     List<DashboardCourseDto> findDashboardCoursesByUserId(@Param("userId") Long userId);
     @Query("SELECT e.teamId FROM Enrollment e WHERE e.user.id = :userId AND e.section.id = :sectionId")
     String findTeamIdByUserIdAndSectionId(@Param("userId") Long userId, @Param("sectionId") Long sectionId);
@@ -34,18 +37,21 @@ public interface EnrollmentRepository extends CrudRepository<Enrollment, Long> {
     // 교수가 담당하는 분반들 조회 (교수용 대시보드)
     @Query("SELECT new com.project.handongjudge.user.dto.DashboardCourseDto(" +
             "c.id, c.title, s.id, s.sectionNumber, u.name, " +
-            "COALESCE(SUM(CASE WHEN n.isNew = true THEN 1 ELSE 0 END), 0), " +
-            "COALESCE(SUM(CASE WHEN a.isNew = true THEN 1 ELSE 0 END), 0)) " +
+            "CAST(COALESCE(SUM(CASE WHEN n.isNew = true THEN 1 ELSE 0 END), 0) AS long), " +
+            "CAST(COALESCE(SUM(CASE WHEN a.isNew = true THEN 1 ELSE 0 END), 0) AS long), " +
+            "CAST(COUNT(DISTINCT n.id) AS long), " +
+            "CAST((SELECT COUNT(e2.id) FROM Enrollment e2 WHERE e2.section.id = s.id) AS long), " +
+            "s.createdAt) " +
             "FROM Section s " +
             "JOIN Course c ON s.course.id = c.id " +
             "JOIN User u ON s.instructor.id = u.id " +
             "LEFT JOIN Notice n ON n.section.id = s.id " +
             "LEFT JOIN Assignment a ON a.section.id = s.id " +
             "WHERE s.instructor.id = :instructorId " +
-            "GROUP BY c.id, c.title, s.id, s.sectionNumber, u.name")
+            "GROUP BY c.id, c.title, s.id, s.sectionNumber, u.name, s.createdAt")
     List<DashboardCourseDto> findDashboardCoursesByInstructorId(@Param("instructorId") Long instructorId);
 
-    // EnrollmentRepository.java에 추가
+    // EnrollmentRepository
     @Query("SELECT new com.project.handongjudge.user.dto.StudentDto(" +
             "u.id, u.name, u.email, '', e.teamId, s.id, " +
             "CONCAT(c.title, ' - Section ', s.sectionNumber), c.title, s.sectionNumber, " +
