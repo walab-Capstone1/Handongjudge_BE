@@ -6,7 +6,7 @@ import com.project.handongjudge.user.entity.Enrollment;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.data.repository.CrudRepository;
-
+import com.project.handongjudge.user.entity.User;
 import java.util.List;
 
 public interface EnrollmentRepository extends CrudRepository<Enrollment, Long> {
@@ -55,11 +55,11 @@ public interface EnrollmentRepository extends CrudRepository<Enrollment, Long> {
             "u.id, u.name, u.email, '', e.teamId, s.id, " +
             "CONCAT(c.title, ' - Section ', s.sectionNumber), c.title, s.sectionNumber, " +
             "e.joinedAt, u.updatedAt, " +
-            "0.0, 0, 0) " +  // 진도율 관련 필드는 0으로 초기화 (서비스에서 계산)
+            "CAST(0.0 AS double), CAST(0 AS int), CAST(0 AS int)) " +
             "FROM Enrollment e " +
-            "JOIN User u ON e.user.id = u.id " +
-            "JOIN Section s ON e.section.id = s.id " +
-            "JOIN Course c ON s.course.id = c.id " +
+            "JOIN e.user u " +
+            "JOIN e.section s " +
+            "JOIN s.course c " +
             "WHERE s.id = :sectionId")
     List<StudentDto> findStudentsBySectionId(@Param("sectionId") Long sectionId);
 
@@ -67,12 +67,17 @@ public interface EnrollmentRepository extends CrudRepository<Enrollment, Long> {
             "u.id, u.name, u.email, '', e.teamId, s.id, " +
             "CONCAT(c.title, ' - Section ', s.sectionNumber), c.title, s.sectionNumber, " +
             "e.joinedAt, u.updatedAt, " +
-            "0.0, 0, 0) " +  // 진도율 관련 필드는 0으로 초기화 (서비스에서 계산)
+            "CAST(0.0 AS double), CAST(0 AS int), CAST(0 AS int)) " +
             "FROM Enrollment e " +
-            "JOIN User u ON e.user.id = u.id " +
-            "JOIN Section s ON e.section.id = s.id " +
-            "JOIN Course c ON s.course.id = c.id " +
+            "JOIN e.user u " +
+            "JOIN e.section s " +
+            "JOIN s.course c " +
             "WHERE s.instructor.id = :instructorId " +
             "ORDER BY c.title, s.sectionNumber, u.name")
     List<StudentDto> findStudentsByInstructorId(@Param("instructorId") Long instructorId);
+    // 분반의 모든 학생 조회 (학생별 문제 풀이 현황용)
+    @Query("SELECT e.user FROM Enrollment e " +
+            "WHERE e.section.id = :sectionId " +
+            "ORDER BY e.user.email")
+    List<User> findUsersBySectionId(@Param("sectionId") Long sectionId);
 }

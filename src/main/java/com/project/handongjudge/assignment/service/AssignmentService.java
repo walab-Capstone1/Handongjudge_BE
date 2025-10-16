@@ -10,15 +10,21 @@ import com.project.handongjudge.problem.repository.ProblemRepository;
 import com.project.handongjudge.domjudge.service.DomjudgeService;
 import com.project.handongjudge.section.entity.Section;
 import com.project.handongjudge.section.repository.SectionRepository;
+import com.project.handongjudge.user.entity.User;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import com.project.handongjudge.submission.repository.SubmissionRepository;
+import com.project.handongjudge.assignment.dto.StudentProgressResponse;
+import java.util.ArrayList;
 
 import com.project.handongjudge.problem.dto.ProblemDto;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
+import com.project.handongjudge.user.repository.EnrollmentRepository;
+import com.project.handongjudge.user.entity.User;
+import com.project.handongjudge.assignment.dto.StudentProgressResponse;
 
 @Transactional
 @Service
@@ -31,6 +37,7 @@ public class AssignmentService {
     private final SectionRepository sectionRepository;
     private final DomjudgeService domjudgeService;
     private final SubmissionRepository submissionRepository;
+    private final EnrollmentRepository enrollmentRepository;  // 이 줄 추가
 
     public AssignmentResponse createAssignment(Long sectionId, AssignmentRequest request, Long userId) {
         // 1. Section 조회
@@ -301,5 +308,36 @@ public class AssignmentService {
                 .userId(userId)
                 .problemStatuses(problemStatuses)
                 .build();
+    }
+    public List<StudentProgressResponse> getAssignmentStudentProgress(Long assignmentId, Long sectionId) {
+        // 1. 과제 정보 조회
+        Assignment assignment = assignmentRepository.findById(assignmentId)
+                .orElseThrow(() -> new IllegalArgumentException("Assignment not found"));
+
+        // 2. 분반의 모든 학생 조회
+        List<User> students = enrollmentRepository.findUsersBySectionId(sectionId);
+
+        // 3. 각 학생별로 푼 문제 조회
+        List<StudentProgressResponse> progressList = new ArrayList<>();
+
+        for (User student : students) {
+            // 학생이 푼 문제 ID 목록 조회 (정답 처리된 것만)
+            List<Long> solvedProblemIds = submissionRepository
+                    .findSolvedProblemIdsByUserAndAssignment(student.getId(), assignmentId, sectionId);
+
+            StudentProgressResponse progress = StudentProgressResponse.builder()
+                    .userId(student.getId())
+                    .studentId(student.getEmail())
+                    .studentName(student.getName())
+                    .solvedProblems(solvedProblemIds)
+                    .build();
+
+            progressList.add(progress);
+        }
+
+        // 이메일 순으로 정렬
+        progressList.sort((a, b) -> a.getStudentId().compareTo(b.getStudentId()));
+
+        return progressList;
     }
 }

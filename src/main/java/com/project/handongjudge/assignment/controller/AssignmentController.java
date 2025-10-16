@@ -12,7 +12,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
-
+import com.project.handongjudge.assignment.dto.StudentProgressResponse;
 
 import java.util.List;
 
@@ -105,5 +105,14 @@ public class AssignmentController {
         return ResponseEntity.ok(
                 assignmentService.getUserSubmissionStatus(sectionId, assignmentId, userId)
         );
+    }
+    // 과제별 학생 진행 현황 조회
+    @GetMapping("/{assignmentId}/student-progress")
+    public ResponseEntity<List<StudentProgressResponse>> getAssignmentStudentProgress(
+            @PathVariable Long assignmentId,
+            @PathVariable Long sectionId) {
+
+        List<StudentProgressResponse> progress = assignmentService.getAssignmentStudentProgress(assignmentId, sectionId);
+        return ResponseEntity.ok(progress);
     }
 }

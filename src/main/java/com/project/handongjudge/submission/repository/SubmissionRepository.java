@@ -90,4 +90,14 @@ public interface SubmissionRepository extends JpaRepository<Submission, Long> {
     // 특정 학생의 특정 문제에 대한 ACCEPTED 제출 횟수
     @Query("SELECT COUNT(s) FROM Submission s WHERE s.user.id = :userId AND s.problem.id = :problemId AND s.result = 'AC'")
     Integer countAcceptedByUserIdAndProblemId(@Param("userId") Long userId, @Param("problemId") Long problemId);
+
+    // 학생별 특정 과제에서 푼 문제 조회 (정답 처리된 문제만)
+    @Query("SELECT DISTINCT s.problem.id FROM Submission s " +
+            "WHERE s.user.id = :userId " +
+            "AND s.problem.id IN (SELECT ap.problem.id FROM AssignmentProblem ap WHERE ap.assignment.id = :assignmentId) " +
+            "AND s.section.id = :sectionId " +
+            "AND s.result = 'correct'")
+    List<Long> findSolvedProblemIdsByUserAndAssignment(@Param("userId") Long userId,
+                                                       @Param("assignmentId") Long assignmentId,
+                                                       @Param("sectionId") Long sectionId);
 }

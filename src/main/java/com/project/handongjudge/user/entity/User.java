@@ -55,6 +55,9 @@ public class User {
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
 
+    @Column(name = "student_id", length = 50)
+    private String studentId;
+
     public enum AuthProvider {
         LOCAL, GOOGLE, GITHUB
     }
