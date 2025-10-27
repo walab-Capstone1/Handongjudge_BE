@@ -1,0 +1,23 @@
+FROM openjdk:11-jdk-slim
+
+WORKDIR /app
+
+COPY . .
+
+# Install Gradle and build the application
+RUN apt-get update && \
+    apt-get install -y curl unzip && \
+    curl -L https://services.gradle.org/distributions/gradle-7.6-bin.zip -o gradle.zip && \
+    unzip gradle.zip && \
+    rm gradle.zip && \
+    ./gradle-7.6/bin/gradle build --no-daemon -x test && \
+    rm -rf gradle-7.6 && \
+    apt-get remove -y curl unzip && \
+    apt-get autoremove -y && \
+    apt-get clean
+
+# Expose the port
+EXPOSE 8080
+
+# Run the application as JAR
+CMD ["java", "-jar", "build/libs/*.jar"]
