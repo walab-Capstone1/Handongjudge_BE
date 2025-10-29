@@ -24,16 +24,19 @@ RUN ./gradlew build --no-daemon -x test
 # Stage 2: Runtime stage
 FROM openjdk:11-jre-slim AS runtime
 
+WORKDIR /opt/app
+
+# Copy only the built JAR from builder stage (as root first)
+COPY --from=builder /app/build/libs/*.jar ./app.jar
+
+# Verify JAR file exists and show info for debugging
+RUN ls -la /opt/app/ && file /opt/app/app.jar
+
 # Create non-root user for security
 RUN groupadd -r appuser && useradd -r -g appuser appuser
 
-WORKDIR /opt/app
-
-# Copy only the built JAR from builder stage
-COPY --from=builder /app/build/libs/*.jar ./app.jar
-
-# Change ownership to non-root user
-RUN chown -R appuser:appuser /opt/app
+# Change ownership to non-root user AFTER copying files
+RUN chown -R appuser:appuser /opt/app && ls -la /opt/app/
 
 # Switch to non-root user
 USER appuser
