@@ -29,9 +29,9 @@ WORKDIR /opt/app
 # Copy built JAR files from builder stage (as root first)
 COPY --from=builder /app/build/libs/ ./libs/
 
-# Find and copy the JAR file with proper name
+# Find and copy the WAR file (Spring Boot WAR can run as JAR)
 RUN ls -la /opt/app/libs/ && \
-    cp /opt/app/libs/*.jar /opt/app/app.jar && \
+    cp /opt/app/libs/*-SNAPSHOT.war /opt/app/app.jar && \
     rm -rf /opt/app/libs/ && \
     ls -la /opt/app/
 
