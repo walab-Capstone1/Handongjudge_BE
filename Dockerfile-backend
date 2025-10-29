@@ -26,11 +26,14 @@ FROM openjdk:11-jre-slim AS runtime
 
 WORKDIR /opt/app
 
-# Copy only the built JAR from builder stage (as root first)
-COPY --from=builder /app/build/libs/*.jar ./app.jar
+# Copy built JAR files from builder stage (as root first)
+COPY --from=builder /app/build/libs/ ./libs/
 
-# Verify JAR file exists and show info for debugging
-RUN ls -la /opt/app/ && file /opt/app/app.jar
+# Find and copy the JAR file with proper name
+RUN ls -la /opt/app/libs/ && \
+    cp /opt/app/libs/*.jar /opt/app/app.jar && \
+    rm -rf /opt/app/libs/ && \
+    ls -la /opt/app/
 
 # Create non-root user for security
 RUN groupadd -r appuser && useradd -r -g appuser appuser
