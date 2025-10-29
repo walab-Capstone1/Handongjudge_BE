@@ -27,13 +27,14 @@ FROM openjdk:11-jre-slim AS runtime
 # Create non-root user for security
 RUN groupadd -r appuser && useradd -r -g appuser appuser
 
-WORKDIR /app
+WORKDIR /opt/app
 
 # Copy only the built JAR from builder stage
-COPY --from=builder /app/build/libs/*.jar app.jar
+COPY --from=builder /app/build/libs/ /tmp/libs/
+RUN cp /tmp/libs/*.jar app.jar && rm -rf /tmp/libs
 
 # Change ownership to non-root user
-RUN chown -R appuser:appuser /app
+RUN chown -R appuser:appuser /opt/app
 
 # Switch to non-root user
 USER appuser
@@ -46,7 +47,7 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=60s --retries=3 \
     CMD curl -f http://localhost:8080/actuator/health || exit 1
 
 # Run the application
-ENTRYPOINT ["java", "-jar", "/app/app.jar"]
+ENTRYPOINT ["java", "-jar", "/opt/app/app.jar"]
 
 # Optional: JVM optimization for containerized environments
 CMD ["-Djava.security.egd=file:/dev/./urandom", "-Dspring.profiles.active=docker"]
