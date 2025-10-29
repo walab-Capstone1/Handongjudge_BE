@@ -30,8 +30,7 @@ RUN groupadd -r appuser && useradd -r -g appuser appuser
 WORKDIR /opt/app
 
 # Copy only the built JAR from builder stage
-COPY --from=builder /app/build/libs/ /tmp/libs/
-RUN cp /tmp/libs/*.jar app.jar && rm -rf /tmp/libs
+COPY --from=builder /app/build/libs/*.jar ./app.jar
 
 # Change ownership to non-root user
 RUN chown -R appuser:appuser /opt/app
@@ -46,8 +45,5 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=3s --start-period=60s --retries=3 \
     CMD curl -f http://localhost:8080/actuator/health || exit 1
 
-# Run the application
-ENTRYPOINT ["java", "-jar", "/opt/app/app.jar"]
-
-# Optional: JVM optimization for containerized environments
-CMD ["-Djava.security.egd=file:/dev/./urandom", "-Dspring.profiles.active=docker"]
+# Run the application with JVM optimizations
+CMD ["java", "-Djava.security.egd=file:/dev/./urandom", "-Dspring.profiles.active=docker", "-jar", "/opt/app/app.jar"]
