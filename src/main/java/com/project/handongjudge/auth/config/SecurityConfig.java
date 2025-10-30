@@ -178,7 +178,7 @@ public class SecurityConfig extends WebSecurityConfigurerAdapter {
             setRefreshTokenCookie(response, refreshToken);
 
             // 프론트엔드 콜백 페이지로 리다이렉트 (Access Token만 포함)
-            String redirectUrl = String.format("http://localhost:3000/auth/callback?accessToken=%s", accessToken);
+            String redirectUrl = String.format("https://hj.walab.info/handongjudge/auth/callback?accessToken=%s", accessToken);
             log.info("OAuth2 success - redirecting to: {}", redirectUrl);
             response.sendRedirect(redirectUrl);
 
@@ -194,9 +194,9 @@ public class SecurityConfig extends WebSecurityConfigurerAdapter {
     private void setRefreshTokenCookie(HttpServletResponse response, String refreshToken) {
         Cookie cookie = new Cookie("refreshToken", refreshToken);
         cookie.setHttpOnly(true);
-        cookie.setSecure(false); // 개발환경에서는 HTTP 사용
+        cookie.setSecure(true); // 개발환경에서는 HTTP 사용
         cookie.setPath("/");
-        cookie.setDomain("localhost");
+        cookie.setDomain("hj.walab.info");
         cookie.setMaxAge(7 * 24 * 60 * 60); // 7일
         response.addCookie(cookie);
     }
