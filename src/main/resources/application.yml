@@ -2,9 +2,9 @@ server:
   port: ${PORT:8080}
 
 spring:
-  # .env import
-  config:
-    import: optional:file:.env[.properties]
+#  # .env import
+#  config:
+#    import: optional:file:.env[.properties]
 
   jackson:
     serialization:

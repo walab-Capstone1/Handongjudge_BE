@@ -78,7 +78,7 @@ public class SecurityConfig extends WebSecurityConfigurerAdapter {
                 .csrf().disable()
                 // 세션 정책 설정 (NEVER - 세션 생성 완전 방지)
                 .sessionManagement()
-                .sessionCreationPolicy(SessionCreationPolicy.NEVER)
+                .sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED)
                 .and()
                 // 요청 권한 설정
                 .authorizeRequests()
