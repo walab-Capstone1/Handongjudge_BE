@@ -55,7 +55,8 @@ public class SectionService {
 
         Section saved = sectionRepository.save(section);
 
-        domjudgeService.createContest(saved.getId(), request.getSectionNumber());
+        // courseTitle을 전달
+        domjudgeService.createContest(saved.getId(), request.getSectionNumber(), course.getTitle());
 
         return SectionResponse.builder()
                 .id(saved.getId())
@@ -80,45 +81,5 @@ public class SectionService {
                 .build();
     }
 
-    // SectionService.java에 추가
-    @Transactional
-    public SectionResponse createSectionWithCourse(SectionWithCourseRequest request) {
-        String enrollmentCode = generateEnrollmentCode();
-
-        // 먼저 Course 생성 또는 조회
-        Course course;
-        Optional<Course> existingCourse = courseRepository.findByTitle(request.getCourseTitle());
-
-        if (existingCourse.isPresent()) {
-            course = existingCourse.get();
-        } else {
-            course = Course.builder()
-                    .title(request.getCourseTitle())
-                    .build();
-            course = courseRepository.save(course);
-        }
-
-        User instructor = userRepository.findById(request.getInstructorId())
-                .orElseThrow(() -> new IllegalArgumentException("User not found"));
-
-        Section section = Section.builder()
-                .course(course)
-                .instructor(instructor)
-                .sectionNumber(request.getSectionNumber())
-                .enrollmentCode(enrollmentCode)
-                .year(request.getYear())
-                .semester(request.getSemester())
-                .build();
-
-        Section saved = sectionRepository.save(section);
-
-        domjudgeService.createContest(saved.getId(), request.getSectionNumber());
-
-        return SectionResponse.builder()
-                .id(saved.getId())
-                .courseId(course.getId())
-                .instructorId(instructor.getId())
-                .sectionNumber(saved.getSectionNumber())
-                .build();
-    }
+    
 }

@@ -11,6 +11,7 @@ import com.project.handongjudge.user.entity.Enrollment;
 import com.project.handongjudge.user.entity.User;
 import com.project.handongjudge.user.repository.EnrollmentRepository;
 import com.project.handongjudge.user.repository.UserRepository;
+import com.project.handongjudge.domjudge.service.DomjudgeService;  // ← 추가
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -29,13 +30,14 @@ public class SectionController {
     private final SectionRepository sectionRepository;
     private final EnrollmentRepository enrollmentRepository;
     private final UserRepository userRepository;
+    private final DomjudgeService domjudgeService;  // ← 추가
 
     @PostMapping
     public ResponseEntity<SectionResponse> createSection(@RequestBody SectionRequest request) {
         SectionResponse response = sectionService.createSection(request);
         return ResponseEntity.ok(response);
     }
-    // SectionController.java에 추가
+
     @GetMapping("/{sectionId}")
     public ResponseEntity<SectionInfoDto> getSectionInfo(@PathVariable Long sectionId) {
         try {
@@ -45,8 +47,6 @@ public class SectionController {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
         }
     }
-    // 5. 수업 참가 엔드포인트 추가
-// Handongjudge_BE/src/main/java/com/project/handongjudge/section/controller/SectionController.java
 
     @PostMapping("/enroll/{enrollmentCode}")
     public ResponseEntity<Map<String, Object>> enrollByCode(
@@ -66,13 +66,22 @@ public class SectionController {
                 );
             }
 
-            // Enrollment 생성
+            // User 조회
             User user = userRepository.findById(userId)
                     .orElseThrow(() -> new RuntimeException("User not found"));
 
+            // ===== DomJudge Team 생성 (추가) =====
+            String teamId = domjudgeService.createTeam(
+                    userId,
+                    section.getId(),
+                    user.getName()
+            );
+
+            // Enrollment 생성 (teamId 포함)
             Enrollment enrollment = Enrollment.builder()
                     .user(user)
                     .section(section)
+                    .teamId(teamId)  // ← 추가
                     .joinedAt(LocalDateTime.now())
                     .build();
             enrollmentRepository.save(enrollment);
@@ -90,10 +99,5 @@ public class SectionController {
             );
         }
     }
-    // SectionController.java에 추가
-    @PostMapping("/with-course")
-    public ResponseEntity<SectionResponse> createSectionWithCourse(@RequestBody SectionWithCourseRequest request) {
-        SectionResponse response = sectionService.createSectionWithCourse(request);
-        return ResponseEntity.ok(response);
-    }
+
 }
