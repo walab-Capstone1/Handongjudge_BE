@@ -57,26 +57,26 @@ public class DomjudgeService {
         headers.set("Authorization", authHeader);
         return headers;
     }
-    public void createContest(Long sectionId, Integer sectionNumber) {
+    // DomjudgeService.java - createContest 메서드 수정
+    public void createContest(Long sectionId, Integer sectionNumber, String courseTitle) {
         try {
             // 1. contest.json 내용 구성
             Map<String, Object> contestJson = new HashMap<>();
-            contestJson.put("id", sectionId.toString()); // 선택사항
-            contestJson.put("name", "Section " + sectionNumber + " Contest");
-            contestJson.put("short_name", sectionId.toString());
+            contestJson.put("id", sectionId.toString()); // external ID = sectionId
+            contestJson.put("name", courseTitle + " " + sectionNumber + "분반"); // name = "오픈소스스튜디오 1분반"
+            contestJson.put("short_name", sectionId.toString()); // short_name = sectionId
 
             DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ssXXX");
 
+            // 시작 시간: 지금 바로 시작
             String startTime = ZonedDateTime
                     .now(ZoneId.of("Asia/Seoul"))
-                    .plusDays(1)
-                    .withHour(10).withMinute(0).withSecond(0)
-                    .format(formatter);
+                    .format(formatter);  // ← plusDays(1) 제거!
 
             contestJson.put("start_time", startTime);
-            contestJson.put("duration", "2:00:00");
+            contestJson.put("duration", "8760:00:00"); // 1년
+            contestJson.put("activate_time", startTime); // ← 자동 활성화 시간 추가
             contestJson.put("public", true);
-
 
             // 2. JSON -> byte[]
             byte[] jsonBytes = objectMapper.writeValueAsBytes(contestJson);
@@ -100,19 +100,18 @@ public class DomjudgeService {
             String url = DOMJUDGE_API_URL + "/api/v4/contests";
             ResponseEntity<String> response = restTemplate.postForEntity(url, requestEntity, String.class);
 
-            System.out.println("DOMjudge contest 생성 결과: " + response.getStatusCode());
-            System.out.println(response.getBody());
+            log.info("DOMjudge contest 생성 결과: {}", response.getStatusCode());
+            log.info("Response: {}", response.getBody());
 
-        }  catch (HttpClientErrorException e) {
-        String response = e.getResponseBodyAsString();
-        log.error("Domjudge API 에러: {}", response);
-        throw new RuntimeException("DOMjudge contest 생성 실패\n" + response, e);
-    } catch (Exception e) {
-        log.error("Domjudge API Unknown 에러", e);
-        throw new RuntimeException("DOMjudge contest 생성 실패 (Unknown)", e);
+        } catch (HttpClientErrorException e) {
+            String response = e.getResponseBodyAsString();
+            log.error("Domjudge API 에러: {}", response);
+            throw new RuntimeException("DOMjudge contest 생성 실패\n" + response, e);
+        } catch (Exception e) {
+            log.error("Domjudge API Unknown 에러", e);
+            throw new RuntimeException("DOMjudge contest 생성 실패 (Unknown)", e);
+        }
     }
-
-}
 
 
     public void addProblemToContest(Long contestId, String domjudgeProblemId) {
