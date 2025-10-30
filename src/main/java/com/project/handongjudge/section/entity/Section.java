@@ -1,3 +1,6 @@
+// 1. Section 엔티티 수정 - semester를 String으로 변경
+// Handongjudge_BE/src/main/java/com/project/handongjudge/section/entity/Section.java
+
 package com.project.handongjudge.section.entity;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
@@ -31,6 +34,16 @@ public class Section {
     private User instructor;
 
     private Integer sectionNumber;
+
+    @Column(name = "enrollment_code", length = 50, unique = true)
+    private String enrollmentCode;  // 수업 참가 코드
+
+    // 추가 필드
+    @Column(name = "year")
+    private Integer year;  // 년도 (예: 2024)
+
+    @Column(name = "semester", length = 10)
+    private String semester;  // 학기: SPRING(1학기), SUMMER(여름학기), FALL(2학기), WINTER(겨울학기)
 
     @CreationTimestamp
     @Column(name = "created_at", updatable = false)

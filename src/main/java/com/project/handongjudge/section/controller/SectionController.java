@@ -3,11 +3,23 @@ package com.project.handongjudge.section.controller;
 import com.project.handongjudge.section.dto.SectionInfoDto;
 import com.project.handongjudge.section.dto.SectionRequest;
 import com.project.handongjudge.section.dto.SectionResponse;
+import com.project.handongjudge.section.dto.SectionWithCourseRequest;
+import com.project.handongjudge.section.entity.Section;
+import com.project.handongjudge.section.repository.SectionRepository;
 import com.project.handongjudge.section.service.SectionService;
+import com.project.handongjudge.user.entity.Enrollment;
+import com.project.handongjudge.user.entity.User;
+import com.project.handongjudge.user.repository.EnrollmentRepository;
+import com.project.handongjudge.user.repository.UserRepository;
+import com.project.handongjudge.domjudge.service.DomjudgeService;  // ← 추가
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
+
+import java.time.LocalDateTime;
+import java.util.Map;
 
 @RestController
 @RequiredArgsConstructor
@@ -15,13 +27,17 @@ import org.springframework.web.bind.annotation.*;
 public class SectionController {
 
     private final SectionService sectionService;
+    private final SectionRepository sectionRepository;
+    private final EnrollmentRepository enrollmentRepository;
+    private final UserRepository userRepository;
+    private final DomjudgeService domjudgeService;  // ← 추가
 
     @PostMapping
     public ResponseEntity<SectionResponse> createSection(@RequestBody SectionRequest request) {
         SectionResponse response = sectionService.createSection(request);
         return ResponseEntity.ok(response);
     }
-    // SectionController.java에 추가
+
     @GetMapping("/{sectionId}")
     public ResponseEntity<SectionInfoDto> getSectionInfo(@PathVariable Long sectionId) {
         try {
@@ -31,4 +47,57 @@ public class SectionController {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
         }
     }
+
+    @PostMapping("/enroll/{enrollmentCode}")
+    public ResponseEntity<Map<String, Object>> enrollByCode(
+            @PathVariable String enrollmentCode,
+            Authentication authentication) {
+        try {
+            Long userId = Long.parseLong(authentication.getName());
+
+            // enrollmentCode로 수업 찾기
+            Section section = sectionRepository.findByEnrollmentCode(enrollmentCode)
+                    .orElseThrow(() -> new IllegalArgumentException("유효하지 않은 참가 코드입니다."));
+
+            // 이미 등록되었는지 확인
+            if (enrollmentRepository.existsByUserIdAndSectionId(userId, section.getId())) {
+                return ResponseEntity.badRequest().body(
+                        Map.of("success", false, "message", "이미 수강 신청한 분반입니다.")
+                );
+            }
+
+            // User 조회
+            User user = userRepository.findById(userId)
+                    .orElseThrow(() -> new RuntimeException("User not found"));
+
+            // ===== DomJudge Team 생성 (추가) =====
+            String teamId = domjudgeService.createTeam(
+                    userId,
+                    section.getId(),
+                    user.getName()
+            );
+
+            // Enrollment 생성 (teamId 포함)
+            Enrollment enrollment = Enrollment.builder()
+                    .user(user)
+                    .section(section)
+                    .teamId(teamId)  // ← 추가
+                    .joinedAt(LocalDateTime.now())
+                    .build();
+            enrollmentRepository.save(enrollment);
+
+            return ResponseEntity.ok(Map.of(
+                    "success", true,
+                    "message", "수강 신청이 완료되었습니다.",
+                    "sectionId", section.getId(),
+                    "courseTitle", section.getCourse().getTitle()
+            ));
+
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(
+                    Map.of("success", false, "message", e.getMessage())
+            );
+        }
+    }
+
 }
