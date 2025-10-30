@@ -100,7 +100,7 @@ public class SecurityConfig extends WebSecurityConfigurerAdapter {
                 // OAuth2 로그인 실패 핸들러
                 .failureHandler((request, response, exception) -> {
                     log.error("OAuth2 login failed", exception);
-                    response.sendRedirect("http://localhost:3000/login?error=oauth_failed");
+                    response.sendRedirect("https://hj.walab.info/handongjudge/login?error=oauth_failed");
                 })
                 .and()
                 // JWT 인증 필터 추가
@@ -122,7 +122,8 @@ public class SecurityConfig extends WebSecurityConfigurerAdapter {
                 "http://localhost:3000",
                 "https://localhost:3000",
                 "http://localhost:3001",
-                "https://localhost:3001"
+                "https://localhost:3001",
+                "https://hj.walab.info"
         ));
 
         configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
