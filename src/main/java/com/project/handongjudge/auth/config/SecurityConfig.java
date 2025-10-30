@@ -90,16 +90,19 @@ public class SecurityConfig extends WebSecurityConfigurerAdapter {
                 .and()
                 // OAuth2 로그인 설정
                 .oauth2Login()
-                .userInfoEndpoint()
-                .userService(customOAuth2UserService)
-                .and()
+                    .authorizationEndpoint()
+                        .baseUri("/api/oauth2/authorization")   // ✅ 이 한 줄 추가 (Spring이 /api/oauth2/* 도 인식하게 함)
+                    .and()
+                    .userInfoEndpoint()
+                    .userService(customOAuth2UserService)
+                    .and()
                 // OAuth2 로그인 성공 핸들러
-                .successHandler((request, response, authentication) -> {
-                    handleOAuth2Success(request, response, authentication);
-                })
+                    .successHandler((request, response, authentication) -> {
+                        handleOAuth2Success(request, response, authentication);
+                    })
                 // OAuth2 로그인 실패 핸들러
-                .failureHandler((request, response, exception) -> {
-                    log.error("OAuth2 login failed", exception);
+                    .failureHandler((request, response, exception) -> {
+                        log.error("OAuth2 login failed", exception);
                     response.sendRedirect("https://hj.walab.info/handongjudge/login?error=oauth_failed");
                 })
                 .and()
