@@ -90,7 +90,9 @@ public class SecurityConfig extends WebSecurityConfigurerAdapter {
                 .and()
                 // OAuth2 로그인 설정
                 .oauth2Login()
-
+                    .authorizationEndpoint()
+                        .baseUri("/api/oauth2/authorization")   // ✅ 이 한 줄 추가 (Spring이 /api/oauth2/* 도 인식하게 함)
+                    .and()
                 // added
                 .redirectionEndpoint()
                 .baseUri("/api/login/oauth2/code/*")
