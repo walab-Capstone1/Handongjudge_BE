@@ -76,9 +76,9 @@ public class SecurityConfig extends WebSecurityConfigurerAdapter {
                 .and()
                 // CSRF 비활성화 (JWT 사용으로 인해)
                 .csrf().disable()
-                // 세션 정책 설정 (NEVER - 세션 생성 완전 방지)
+                // 세션 정책 설정 (NEVER - 세션 생성 완전 방지) -> 로컬 개발 환경만. 프로덕션 배포에서는 리버스 프록시등으로 stateless 로 변환
                 .sessionManagement()
-                .sessionCreationPolicy(SessionCreationPolicy.NEVER)
+                .sessionCreationPolicy(SessionCreationPolicy.STATELESS) // NEVER -> STATELESS
                 .and()
                 // 요청 권한 설정
                 .authorizeRequests()
