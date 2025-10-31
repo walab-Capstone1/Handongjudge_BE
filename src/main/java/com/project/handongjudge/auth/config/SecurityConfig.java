@@ -90,6 +90,13 @@ public class SecurityConfig extends WebSecurityConfigurerAdapter {
                 .and()
                 // OAuth2 로그인 설정
                 .oauth2Login()
+
+                // added
+                .redirectionEndpoint()
+                .baseUri("/api/login/oauth2/code/*")
+                .and()
+                // added
+
                 .userInfoEndpoint()
                 .userService(customOAuth2UserService)
                 .and()
