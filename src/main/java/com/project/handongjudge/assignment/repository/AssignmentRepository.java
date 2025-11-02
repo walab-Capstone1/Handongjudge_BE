@@ -18,5 +18,11 @@ public interface AssignmentRepository extends JpaRepository<Assignment, Long> {
     @Query("SELECT a.id FROM Assignment a WHERE a.section.id = :sectionId")
     List<Long> findAssignmentIdsBySectionId(@Param("sectionId") Long sectionId);
 
+    // 학생용: active=true인 과제만 조회
+    @Query("SELECT a FROM Assignment a WHERE a.section.id = :sectionId AND a.active = true ORDER BY a.startDate DESC")
+    List<Assignment> findActiveAssignmentsBySectionId(@Param("sectionId") Long sectionId);
 
+    // 교수용: 모든 과제 조회 (active 여부와 관계없이)
+    @Query("SELECT a FROM Assignment a WHERE a.section.id = :sectionId ORDER BY a.startDate DESC")
+    List<Assignment> findAllAssignmentsBySectionId(@Param("sectionId") Long sectionId);
 }

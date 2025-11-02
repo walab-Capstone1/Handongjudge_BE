@@ -16,7 +16,8 @@ public class NoticeResponseDto {
     private String content;
     private String difficulty;
     private boolean isNew;
-    
+    private Boolean active;
+
     @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", timezone = "UTC")
     private LocalDateTime createdAt;
 }

@@ -43,6 +43,7 @@ public class NoticeService {
                 .content(requestDto.getContent())
                 .difficulty(requestDto.getDifficulty())
                 .isNew(true)
+                .active(true)  // 추가
                 .createdAt(LocalDateTime.now())
                 .build();
 
@@ -59,13 +60,16 @@ public class NoticeService {
 
         // 권한 확인: 교수이거나 해당 분반을 수강하는 학생이어야 함
         boolean isInstructor = section.getInstructor().getId().equals(userId);
-        boolean isStudent = enrollmentRepository.existsByUserIdAndSectionId(userId, sectionId);
-        
-        if (!isInstructor && !isStudent) {
-            throw new IllegalArgumentException("해당 분반의 공지사항을 조회할 권한이 없습니다");
+
+        List<Notice> notices;
+        if (isInstructor) {
+            // 교수는 모든 공지사항 조회 (active 여부와 관계없이)
+            notices = noticeRepository.findBySectionIdOrderByCreatedAtDesc(sectionId);
+        } else {
+            // 학생은 active=true인 공지사항만 조회
+            notices = noticeRepository.findActiveNoticesBySectionId(sectionId);
         }
 
-        List<Notice> notices = noticeRepository.findBySectionIdOrderByCreatedAtDesc(sectionId);
         return notices.stream()
                 .map(this::convertToResponse)
                 .collect(Collectors.toList());
@@ -132,7 +136,23 @@ public class NoticeService {
                 .content(notice.getContent())
                 .difficulty(notice.getDifficulty())
                 .isNew(notice.isNew())
+                .active(notice.getActive())  // 추가
                 .createdAt(notice.getCreatedAt())
                 .build();
+    }
+    public NoticeResponseDto toggleNoticeActive(Long noticeId, Boolean active, Long instructorId) {
+        Notice notice = noticeRepository.findById(noticeId)
+                .orElseThrow(() -> new IllegalArgumentException("공지사항을 찾을 수 없습니다: " + noticeId));
+
+        // 권한 확인
+        if (!notice.getSection().getInstructor().getId().equals(instructorId)) {
+            throw new IllegalArgumentException("해당 공지사항을 수정할 권한이 없습니다");
+        }
+
+        notice.setActive(active);
+        Notice updatedNotice = noticeRepository.save(notice);
+        log.info("공지사항 활성화 상태 변경 - ID: {}, active: {}", updatedNotice.getId(), active);
+
+        return convertToResponse(updatedNotice);
     }
 }

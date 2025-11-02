@@ -13,6 +13,7 @@ public class AssignmentResponse {
     private String assignmentNumber;
     private String title;
     private String description;
+    private Boolean active;
 
     @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", timezone = "UTC")
     private LocalDateTime startDate;

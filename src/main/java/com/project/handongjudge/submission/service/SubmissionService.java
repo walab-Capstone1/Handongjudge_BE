@@ -147,6 +147,18 @@ public class SubmissionService {
         String teamId = enrollmentRepository.findTeamIdByUserIdAndSectionId(user.getId(), section.getId());
         String domjudgeProblemId = problem.getDomjudgeProblemId();
 
+        log.info("=== Submission Debug Info ===");
+        log.info("User ID: {}", userId);
+        log.info("Section ID: {}", section.getId());
+        log.info("Contest ID: {}", contestId);
+        log.info("Team ID: {}", teamId);
+        log.info("Problem DomJudge ID: {}", domjudgeProblemId);
+        log.info("===========================");
+
+        if (teamId == null || teamId.isEmpty()) {
+            throw new RuntimeException("팀 ID를 찾을 수 없습니다. 수강신청이 되어있는지 확인하세요.");
+        }
+
         File codeFile = CodeExtenstion.StringToFile(
                 submissionRequestDTO.getLanguage(),
                 submissionRequestDTO.getCodeString()
@@ -193,6 +205,7 @@ public class SubmissionService {
 
         savedSubmission.setResult(result);
         submissionRepository.save(savedSubmission);
+
 
         return toSubmissionResponseDTO(savedSubmission);
     }

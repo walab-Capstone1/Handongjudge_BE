@@ -10,6 +10,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/notices")
@@ -68,5 +69,16 @@ public class NoticeController {
         Long instructorId = Long.parseLong(authentication.getName());
         List<NoticeResponseDto> notices = noticeService.getInstructorNotices(instructorId);
         return ResponseEntity.ok(notices);
+    }
+    
+    @PatchMapping("/{noticeId}/active")
+    public ResponseEntity<NoticeResponseDto> toggleNoticeActive(
+            @PathVariable Long noticeId,
+            @RequestBody Map<String, Boolean> request,
+            Authentication authentication) {
+        Long instructorId = Long.parseLong(authentication.getName());
+        Boolean active = request.get("active");
+        NoticeResponseDto response = noticeService.toggleNoticeActive(noticeId, active, instructorId);
+        return ResponseEntity.ok(response);
     }
 }
