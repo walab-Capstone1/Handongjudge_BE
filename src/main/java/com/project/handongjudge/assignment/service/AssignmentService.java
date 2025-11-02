@@ -52,6 +52,7 @@ public class AssignmentService {
                 .description(request.getDescription())
                 .startDate(request.getStartDate())
                 .endDate(request.getEndDate())
+                .active(true)  // 추가
                 .build();
 
         Assignment savedAssignment = assignmentRepository.save(assignment);
@@ -94,11 +95,28 @@ public class AssignmentService {
                 .description(assignment.getDescription())
                 .startDate(assignment.getStartDate())
                 .endDate(assignment.getEndDate())
+                .active(assignment.getActive())  // 추가
                 .build();
     }
 
-    public List<AssignmentResponse> getAssignmentsBySection(Long sectionId) {
-        return assignmentRepository.findBySectionId(sectionId).stream()
+    public List<AssignmentResponse> getAssignmentsBySection(Long sectionId, Long userId) {
+        // Section 조회
+        Section section = sectionRepository.findById(sectionId)
+                .orElseThrow(() -> new IllegalArgumentException("Section not found"));
+
+        // 권한 확인: 교수이거나 해당 분반을 수강하는 학생이어야 함
+        boolean isInstructor = section.getInstructor().getId().equals(userId);
+
+        List<Assignment> assignments;
+        if (isInstructor) {
+            // 교수는 모든 과제 조회 (active 여부와 관계없이)
+            assignments = assignmentRepository.findAllAssignmentsBySectionId(sectionId);
+        } else {
+            // 학생은 active=true인 과제만 조회
+            assignments = assignmentRepository.findActiveAssignmentsBySectionId(sectionId);
+        }
+
+        return assignments.stream()
                 .map(this::toResponse)
                 .collect(Collectors.toList());
     }
@@ -128,9 +146,21 @@ public class AssignmentService {
                 .build();
     }
 
-    public AssignmentResponse getAssignmentInfo(Long assignmentId) {
+    public AssignmentResponse getAssignmentInfo(Long assignmentId, Long userId) {
         Assignment assignment = assignmentRepository.findById(assignmentId)
                 .orElseThrow(() -> new IllegalArgumentException("Assignment not found"));
+
+        // Section 조회
+        Section section = assignment.getSection();
+
+        // 권한 확인: 교수이거나 해당 분반을 수강하는 학생이어야 함
+        boolean isInstructor = section.getInstructor().getId().equals(userId);
+
+        // 학생이고 과제가 비활성화되어 있으면 접근 불가
+        if (!isInstructor && assignment.getActive() == false) {
+            throw new IllegalArgumentException("해당 과제는 비활성화되어 있어 접근할 수 없습니다");
+        }
+
         return toResponse(assignment);
     }
     // 기존 코드에 추가
@@ -339,5 +369,20 @@ public class AssignmentService {
         progressList.sort((a, b) -> a.getStudentId().compareTo(b.getStudentId()));
 
         return progressList;
+    }
+
+    public AssignmentResponse toggleAssignmentActive(Long assignmentId, Boolean active, Long instructorId) {
+        Assignment assignment = assignmentRepository.findById(assignmentId)
+                .orElseThrow(() -> new IllegalArgumentException("Assignment not found"));
+
+        // 권한 확인
+        if (!assignment.getSection().getInstructor().getId().equals(instructorId)) {
+            throw new IllegalArgumentException("해당 과제를 수정할 권한이 없습니다");
+        }
+
+        assignment.setActive(active);
+        Assignment updatedAssignment = assignmentRepository.save(assignment);
+
+        return toResponse(updatedAssignment);
     }
 }
