@@ -24,5 +24,7 @@ public class DashboardCourseDto {
     private Integer year;        // 추가
     private String semester;     // 추가
     private String enrollmentCode;  // 추가
+    private Boolean active;  // 추가
+
 
 }

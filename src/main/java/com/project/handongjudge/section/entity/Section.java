@@ -14,6 +14,7 @@ import java.time.LocalDateTime;
 
 @Entity
 @Getter
+@Setter
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
@@ -48,4 +49,9 @@ public class Section {
     @CreationTimestamp
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
+
+    // 활성화/비활성화 필드 추가
+    @Column(name = "active", nullable = false)
+    @Builder.Default
+    private Boolean active = true;
 }

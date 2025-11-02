@@ -9,6 +9,7 @@ import java.util.List;
 
 @Entity
 @Getter
+@Setter
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
@@ -47,5 +48,7 @@ public class Assignment {
         this.startDate = startDate;
         this.endDate = endDate;
     }
-
+    @Column(name = "active", nullable = false)
+    @Builder.Default
+    private Boolean active = true;
 }

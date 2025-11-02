@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.*;
 import com.project.handongjudge.assignment.dto.StudentProgressResponse;
 
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequiredArgsConstructor
@@ -38,20 +39,23 @@ public class AssignmentController {
 
     @GetMapping
     public ResponseEntity<List<AssignmentResponse>> getAssignmentsBySection(
-            @PathVariable Long sectionId
-    ) {
+            @PathVariable Long sectionId,
+            Authentication authentication) {  // Authentication 추가
+        Long userId = Long.parseLong(authentication.getName());
         return ResponseEntity.ok(
-                assignmentService.getAssignmentsBySection(sectionId)
+                assignmentService.getAssignmentsBySection(sectionId, userId)  // userId 전달
         );
     }
 
     @GetMapping("/{assignmentId}")
     public ResponseEntity<AssignmentResponse> getAssignmentInfo(
-        @PathVariable Long sectionId,
-            @PathVariable Long assignmentId
+            @PathVariable Long sectionId,
+            @PathVariable Long assignmentId,
+            Authentication authentication  // 추가
     ) {
+        Long userId = Long.parseLong(authentication.getName());
         return ResponseEntity.ok(
-                assignmentService.getAssignmentInfo(assignmentId)
+                assignmentService.getAssignmentInfo(assignmentId, userId)  // userId 전달
         );
     }
 
@@ -114,5 +118,16 @@ public class AssignmentController {
 
         List<StudentProgressResponse> progress = assignmentService.getAssignmentStudentProgress(assignmentId, sectionId);
         return ResponseEntity.ok(progress);
+    }
+    @PatchMapping("/{assignmentId}/active")
+    public ResponseEntity<AssignmentResponse> toggleAssignmentActive(
+            @PathVariable Long sectionId,
+            @PathVariable Long assignmentId,
+            @RequestBody Map<String, Boolean> request,
+            Authentication authentication) {
+        Long instructorId = Long.parseLong(authentication.getName());
+        Boolean active = request.get("active");
+        AssignmentResponse response = assignmentService.toggleAssignmentActive(assignmentId, active, instructorId);
+        return ResponseEntity.ok(response);
     }
 }

@@ -37,4 +37,8 @@ public class Notice {
 
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
+
+    @Column(name = "active", nullable = false)
+    @Builder.Default
+    private Boolean active = true;
 }
