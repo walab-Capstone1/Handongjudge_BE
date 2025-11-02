@@ -16,6 +16,7 @@ public class EnrolledSectionDto {
     private int completedAssignments;
     private int noticeCount;
     private int unreadNotices;
+    private Boolean active;  // 추가
 
     public static EnrolledSectionDto from(com.project.handongjudge.user.entity.Enrollment enrollment) {
         return EnrolledSectionDto.builder()

@@ -99,5 +99,36 @@ public class SectionController {
             );
         }
     }
+    // 수업 활성화/비활성화 엔드포인트 추가
+    @PatchMapping("/{sectionId}/active")
+    public ResponseEntity<Map<String, Object>> toggleSectionActive(
+            @PathVariable Long sectionId,
+            @RequestBody Map<String, Boolean> request,
+            Authentication authentication) {
+        try {
+            Boolean active = request.get("active");
+            if (active == null) {
+                return ResponseEntity.badRequest().body(
+                        Map.of("success", false, "message", "active 필드가 필요합니다.")
+                );
+            }
 
+            Section section = sectionService.toggleSectionActive(sectionId, active);
+
+            return ResponseEntity.ok(Map.of(
+                    "success", true,
+                    "message", active ? "수업이 활성화되었습니다." : "수업이 비활성화되었습니다.",
+                    "sectionId", section.getId(),
+                    "active", section.getActive()
+            ));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(
+                    Map.of("success", false, "message", e.getMessage())
+            );
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(
+                    Map.of("success", false, "message", "서버 오류가 발생했습니다.")
+            );
+        }
+    }
 }

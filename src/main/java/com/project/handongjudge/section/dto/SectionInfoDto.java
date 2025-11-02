@@ -16,4 +16,6 @@ public class SectionInfoDto {
     private String courseTitle;
     private String instructorName;
     private String enrollmentCode;  // 추가
+    private Boolean active;  // 추가
+
 }

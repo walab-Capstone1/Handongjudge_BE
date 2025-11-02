@@ -78,8 +78,16 @@ public class SectionService {
                 .courseTitle(section.getCourse().getTitle())
                 .instructorName(section.getInstructor().getName())
                 .enrollmentCode(section.getEnrollmentCode())  // 추가
+                .active(section.getActive())  // 추가
                 .build();
     }
 
-    
+    @Transactional
+    public Section toggleSectionActive(Long sectionId, Boolean active) {
+        Section section = sectionRepository.findById(sectionId)
+                .orElseThrow(() -> new IllegalArgumentException("분반을 찾을 수 없습니다: " + sectionId));
+
+        section.setActive(active);
+        return sectionRepository.save(section);
+    }
 }
