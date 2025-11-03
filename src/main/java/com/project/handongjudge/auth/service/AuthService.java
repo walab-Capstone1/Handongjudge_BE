@@ -81,7 +81,8 @@ public class AuthService {
         User user = userService.createUser(
                 registerRequest.getEmail(),
                 registerRequest.getPassword(),
-                registerRequest.getName()
+                registerRequest.getName(),
+                registerRequest.getStudentId()
         );
 
         // JWT 토큰 생성 (사용자 ID 사용)
