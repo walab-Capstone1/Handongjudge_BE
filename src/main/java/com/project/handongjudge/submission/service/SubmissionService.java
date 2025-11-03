@@ -276,45 +276,22 @@ public class SubmissionService {
             }
         }
 
-        //Submission submission = toSubmission(submissionRequestDTO);
-        Submission submission = Submission.builder()
-                .problem(problem)
-                .user(user)
-                .language(submissionRequestDTO.getLanguage())
-                .code(submissionRequestDTO.getCodeString())
-                .submittedAt(LocalDateTime.now())
-                .build();
-        submission.setSection(section);
-        submission.setSubmissionId(domjudgeSubmissionId);
-
-        submissionRepository.save(submission);
-
-        Submission savedSubmission = submissionRepository.findById(submission.getId())
-                .orElseThrow(() -> new RuntimeException("Submission not found"));
-
-        String cid = String.valueOf(savedSubmission.getSection().getId());
+        // ⭐⭐⭐ 테스트하기는 DB에 저장하지 않음!
+        String cid = String.valueOf(section.getId());
 
         // 폴링 방식으로 결과 조회 (최대 30초 대기)
-        SubmissionOutputResponseDTO responseDTO = pollForResultOutput(cid, savedSubmission.getSubmissionId(), 30);
+        SubmissionOutputResponseDTO responseDTO = pollForResultOutput(cid, domjudgeSubmissionId, 30);
 
-
-        savedSubmission.setResult(responseDTO.getResult());
-        submissionRepository.save(savedSubmission);
-
-        //return toSubmissionOutputResponse(savedSubmission,outputList);
-
-        List<Output> outputList = responseDTO.getOutputList();
-        String result = responseDTO.getResult();
-
-        return responseDTO.builder()
-                .problemId(savedSubmission.getProblem().getId())
-                .submissionId(savedSubmission.getSubmissionId())
-                .language(savedSubmission.getLanguage())
-                .submittedAt(savedSubmission.getSubmittedAt())
-                .result(result)
-                .outputList(outputList)
+        // DB에 저장하지 않고 바로 반환
+        return SubmissionOutputResponseDTO.builder()
+                .problemId(problem.getId())
+                .submissionId(domjudgeSubmissionId)
+                .language(submissionRequestDTO.getLanguage())
+                .submittedAt(LocalDateTime.now())
+                .result(responseDTO.getResult())
+                .outputList(responseDTO.getOutputList())
+                .sectionId(section.getId())
                 .build();
-
     }
 
 
