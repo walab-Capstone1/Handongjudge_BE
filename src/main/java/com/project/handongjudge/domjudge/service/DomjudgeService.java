@@ -315,20 +315,32 @@ public class DomjudgeService {
             log.debug("Response Body: " + response.getBody());
 
             JsonNode responseBody = response.getBody();
-            if (responseBody == null) {
+            if (responseBody == null||responseBody.isEmpty()) {
                 log.warn("Response body is null for submission: {}", submissionId);
                 return null;
             }
 
             // judgement_type_id가 null이거나 없는 경우 처리
-            if (!responseBody.has("judgement_type_id") || responseBody.get("judgement_type_id").isNull()) {
-                log.debug("Judgement not ready yet for submission: {}", submissionId);
-                return null;
-            }
+//            if (!responseBody.has("judgement_type_id") || responseBody.get("judgement_type_id").isNull()) {
+//                log.debug("Judgement not ready yet for submission: {}", submissionId);
+//                return null;
+//            }
+//
+//            String result = responseBody.get("judgement_type_id").asText();
+//            log.info("Result received for submission {}: {}", submissionId, result);
+//            return result;
 
-            String result = responseBody.get("judgement_type_id").asText();
-            log.info("Result received for submission {}: {}", submissionId, result);
-            return result;
+            // 응답이 배열이므로 첫 번째 요소를 가져옵니다
+            if (responseBody.isArray() && responseBody.size() > 0) {
+                JsonNode judgement = responseBody.get(0); // 첫 번째 판정
+
+                // 이제 판정 객체에서 judgement_type_id를 확인합니다
+                if (judgement.has("judgement_type_id") && !judgement.get("judgement_type_id").isNull()) {
+                    String result = judgement.get("judgement_type_id").asText();
+                    log.info("Result received for submission {}: {}", submissionId, result);
+                    return result;
+                }
+            }
 
         } catch (HttpClientErrorException e) {
             if (e.getStatusCode().value() == 404) {
