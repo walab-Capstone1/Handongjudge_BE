@@ -299,10 +299,10 @@ public class DomjudgeService {
         try {
             HttpHeaders headers = createAuthHeaders();
 
-            String url = DOMJUDGE_API_URL + "/api/v4/contests/" + cid + "/judgements/" + submissionId;
+            //String url = DOMJUDGE_API_URL + "/api/v4/contests/" + cid + "/judgements/" + submissionId;
+            String url = DOMJUDGE_API_URL + "/api/v4/contests/" + cid + "/judgements?submission_id=" + submissionId;
 
             log.debug("Request URL: " + url);
-
             HttpEntity<Object> requestEntity = new HttpEntity<>(headers);
             ResponseEntity<JsonNode> response = restTemplate.exchange(
                     url,
