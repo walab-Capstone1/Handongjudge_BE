@@ -81,11 +81,12 @@ public class UserService {
     }
 
     @Transactional
-    public User createUser(String email, String password, String name) {
+    public User createUser(String email, String password, String name, String studentId) {
         User user = User.builder()
                 .email(email)
                 .password(passwordEncoder.encode(password))
                 .name(name)
+                .studentId(studentId)
                 .provider(User.AuthProvider.LOCAL)
                 .role(User.Role.USER)
                 .build();
