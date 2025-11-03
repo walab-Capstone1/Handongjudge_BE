@@ -24,7 +24,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import com.project.handongjudge.domjudge.service.DomjudgeService;
-
+import java.util.ArrayList;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -140,26 +140,41 @@ public class UserService {
      * 🔥 로그인한 사용자의 대시보드에 보여줄 수강 중인 과목들 조회
      */
     public List<DashboardCourseDto> getDashboardCourses(Long userId) {
-        log.info("🔥 대시보드 조회 시작 - userId: {}", userId);
 
         // 사용자 정보 조회
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("User not found with ID: " + userId));
 
-        List<DashboardCourseDto> result;
+        List<DashboardCourseDto> result = new ArrayList<>();
 
         // 사용자 역할에 따라 다른 쿼리 사용
         if (user.getRole() == User.Role.ADMIN) {
-            // 교수인 경우: 담당하는 분반들 조회
-            log.info("🔥 교수용 대시보드 조회 - instructorId: {}", userId);
-            result = enrollmentRepository.findDashboardCoursesByInstructorId(userId);
+            // 교수인 경우: 담당하는 분반들 + 학생으로 등록된 분반들 모두 조회
+
+            // 1. 자신이 instructor인 분반들
+            List<DashboardCourseDto> instructorSections = enrollmentRepository.findDashboardCoursesByInstructorId(userId);
+            result.addAll(instructorSections);
+
+            // 2. 자신이 학생으로 enrollment에 등록된 분반들
+            List<DashboardCourseDto> enrolledSections = enrollmentRepository.findDashboardCoursesByUserId(userId);
+            result.addAll(enrolledSections);
+
+            // 중복 제거 (같은 sectionId가 있을 수 있으므로)
+            result = result.stream()
+                    .collect(java.util.stream.Collectors.toMap(
+                            DashboardCourseDto::getSectionId,
+                            dto -> dto,
+                            (existing, replacement) -> existing
+                    ))
+                    .values()
+                    .stream()
+                    .collect(java.util.stream.Collectors.toList());
+
         } else {
             // 학생인 경우: 수강하는 분반들 조회
-            log.info("🔥 학생용 대시보드 조회 - studentId: {}", userId);
             result = enrollmentRepository.findDashboardCoursesByUserId(userId);
         }
 
-        log.info("🔥 대시보드 조회 결과 - 분반 수: {}", result.size());
 
         // 학생인 경우에만 읽지 않은 공지사항 수를 수동으로 계산
         if (user.getRole() != User.Role.ADMIN) {
@@ -170,8 +185,6 @@ public class UserService {
                         .filter(notice -> !userReadStatusRepository.existsByUserIdAndNoticeId(userId, notice.getId()))
                         .count();
 
-                log.info("🔥 학생 분반 정보 - sectionId: {}, courseTitle: {}, 계산된 읽지않은 공지수: {}, 쿼리결과: {}",
-                        dto.getSectionId(), dto.getCourseTitle(), unreadNoticeCount, dto.getNewNoticeCount());
 
                 // 수동 계산된 값으로 업데이트 (리플렉션 사용)
                 try {
@@ -179,14 +192,13 @@ public class UserService {
                     field.setAccessible(true);
                     field.set(dto, unreadNoticeCount);
                 } catch (Exception e) {
-                    log.error("🔥 newNoticeCount 업데이트 실패", e);
+                    log.error(" newNoticeCount 업데이트 실패", e);
                 }
             }
         } else {
             // 교수인 경우 로그만 출력
             for (DashboardCourseDto dto : result) {
-                log.info("🔥 교수 분반 정보 - sectionId: {}, courseTitle: {}, newNoticeCount: {}, newAssignmentCount: {}",
-                        dto.getSectionId(), dto.getCourseTitle(), dto.getNewNoticeCount(), dto.getNewAssignmentCount());
+                log.info(" 교수 분반 정보 - sectionId: {}, courseTitle: {}, newNoticeCount: {}, newAssignmentCount: {}", dto.getSectionId(), dto.getCourseTitle(), dto.getNewNoticeCount(), dto.getNewAssignmentCount());
             }
         }
 
