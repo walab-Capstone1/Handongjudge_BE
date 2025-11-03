@@ -342,6 +342,10 @@ public class DomjudgeService {
                 }
             }
 
+            // 여기에 도달하면 판정이 아직 준비되지 않은 것입니다
+            log.debug("Judgement not ready yet for submission: {}", submissionId);
+            return null;
+
         } catch (HttpClientErrorException e) {
             if (e.getStatusCode().value() == 404) {
                 log.debug("Judgement not found for submission: {}", submissionId);
