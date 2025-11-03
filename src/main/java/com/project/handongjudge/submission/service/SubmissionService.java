@@ -201,7 +201,8 @@ public class SubmissionService {
         String cid = String.valueOf(savedSubmission.getSection().getId());
 
         // 폴링 방식으로 결과 조회 (최대 30초 대기)
-        String result = pollForResult(cid, savedSubmission.getSubmissionId(), 30);
+        //String result = pollForResult(cid, savedSubmission.getSubmissionId(), 30);
+        String result = pollForResult(cid, domjudgeSubmissionId, 30); //
 
         savedSubmission.setResult(result);
         submissionRepository.save(savedSubmission);
