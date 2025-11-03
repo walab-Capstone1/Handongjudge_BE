@@ -6,6 +6,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.awt.print.Pageable;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -100,4 +101,11 @@ public interface SubmissionRepository extends JpaRepository<Submission, Long> {
     List<Long> findSolvedProblemIdsByUserAndAssignment(@Param("userId") Long userId,
                                                        @Param("assignmentId") Long assignmentId,
                                                        @Param("sectionId") Long sectionId);
+    // 특정 학생의 특정 문제에 대한 첫 정답 제출 시간 조회
+    @Query("SELECT MIN(s.submittedAt) FROM Submission s " +
+            "WHERE s.user.id = :userId AND s.problem.id = :problemId " +
+            "AND s.section.id = :sectionId AND s.result = 'correct'")
+    Optional<LocalDateTime> findFirstAcceptedSubmissionTime(@Param("userId") Long userId,
+                                                            @Param("problemId") Long problemId,
+                                                            @Param("sectionId") Long sectionId);
 }
