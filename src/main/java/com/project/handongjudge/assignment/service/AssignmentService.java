@@ -16,11 +16,12 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import com.project.handongjudge.submission.repository.SubmissionRepository;
 import com.project.handongjudge.assignment.dto.StudentProgressResponse;
-import java.util.ArrayList;
+
+import java.time.LocalDateTime;
+import java.util.*;
 
 import com.project.handongjudge.problem.dto.ProblemDto;
 import java.util.ArrayList;
-import java.util.List;
 import java.util.stream.Collectors;
 import com.project.handongjudge.user.repository.EnrollmentRepository;
 import com.project.handongjudge.user.entity.User;
@@ -344,10 +345,13 @@ public class AssignmentService {
         Assignment assignment = assignmentRepository.findById(assignmentId)
                 .orElseThrow(() -> new IllegalArgumentException("Assignment not found"));
 
-        // 2. 분반의 모든 학생 조회
+        // 2. 과제의 모든 문제 ID 조회
+        List<Long> assignmentProblemIds = assignmentProblemRepository.findProblemIdsByAssignmentId(assignmentId);
+
+        // 3. 분반의 모든 학생 조회
         List<User> students = enrollmentRepository.findUsersBySectionId(sectionId);
 
-        // 3. 각 학생별로 푼 문제 조회
+        // 4. 각 학생별로 푼 문제 및 제출 시간 조회
         List<StudentProgressResponse> progressList = new ArrayList<>();
 
         for (User student : students) {
@@ -355,11 +359,35 @@ public class AssignmentService {
             List<Long> solvedProblemIds = submissionRepository
                     .findSolvedProblemIdsByUserAndAssignment(student.getId(), assignmentId, sectionId);
 
+            // 각 문제별 첫 정답 제출 시간 조회
+            Map<Long, LocalDateTime> problemSubmissionTimes = new HashMap<>();
+            LocalDateTime assignmentCompletedAt = null;
+
+            for (Long problemId : solvedProblemIds) {
+                Optional<LocalDateTime> firstSubmissionTime = submissionRepository
+                        .findFirstAcceptedSubmissionTime(student.getId(), problemId, sectionId);
+
+                if (firstSubmissionTime.isPresent()) {
+                    problemSubmissionTimes.put(problemId, firstSubmissionTime.get());
+                }
+            }
+
+            // 과제 완료 시간 계산 (모든 문제를 다 푼 경우, 마지막 문제 제출 시간)
+            if (solvedProblemIds.size() == assignmentProblemIds.size() &&
+                    solvedProblemIds.containsAll(assignmentProblemIds)) {
+                // 모든 문제를 다 푼 경우, 가장 늦은 제출 시간을 완료 시간으로 설정
+                assignmentCompletedAt = problemSubmissionTimes.values().stream()
+                        .max(LocalDateTime::compareTo)
+                        .orElse(null);
+            }
+
             StudentProgressResponse progress = StudentProgressResponse.builder()
                     .userId(student.getId())
                     .studentId(student.getEmail())
                     .studentName(student.getName())
                     .solvedProblems(solvedProblemIds)
+                    .problemSubmissionTimes(problemSubmissionTimes)
+                    .assignmentCompletedAt(assignmentCompletedAt)
                     .build();
 
             progressList.add(progress);
