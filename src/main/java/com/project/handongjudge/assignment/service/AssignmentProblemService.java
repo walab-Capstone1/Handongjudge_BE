@@ -59,6 +59,6 @@ public class AssignmentProblemService {
         String domjudgeProblemId = problem.getDomjudgeProblemId();
 
         // DOMjudge에서 문제 제거 (DomjudgeService에 해당 메서드가 있다면)
-        // domjudgeService.removeProblemFromContest(contestId, domjudgeProblemId);
+        domjudgeService.removeProblemFromContest(contestId, domjudgeProblemId);
     }
 }

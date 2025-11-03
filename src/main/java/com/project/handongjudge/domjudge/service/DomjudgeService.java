@@ -133,6 +133,25 @@ public class DomjudgeService {
         );
     }
 
+    public void removeProblemFromContest(Long contestId, String domjudgeProblemId) {
+        HttpHeaders headers = createAuthHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+
+        String url = DOMJUDGE_API_URL + "/api/v4/contests/" + contestId + "/problems/" + domjudgeProblemId;
+
+        Map<String, Object> requestBody = new HashMap<>();
+        requestBody.put("label", domjudgeProblemId); // 반드시 포함
+
+        HttpEntity<Map<String, Object>> requestEntity = new HttpEntity<>(requestBody, headers);
+
+        restTemplate.exchange(
+                url,
+                HttpMethod.DELETE,
+                requestEntity,
+                String.class
+        );
+    }
+
     public String uploadProblemToDomjudge(MultipartFile zipFile) throws IOException {
         HttpHeaders headers = createAuthHeaders();
         headers.setContentType(MediaType.MULTIPART_FORM_DATA);
