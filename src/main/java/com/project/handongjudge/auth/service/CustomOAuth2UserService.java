@@ -43,7 +43,8 @@ public class CustomOAuth2UserService extends DefaultOAuth2UserService {
      */
     @Override
     @Transactional
-    public OAuth2User loadUser(OAuth2UserRequest userRequest) throws OAuth2AuthenticationException {
+    public OAuth2User loadUser(OAuth2UserRequest userRequest) throws OAuth2AuthenticationException{
+        try{
         // OAuth2 제공자로부터 사용자 정보 가져오기
         OAuth2User oauth2User = super.loadUser(userRequest);
 
@@ -58,6 +59,10 @@ public class CustomOAuth2UserService extends DefaultOAuth2UserService {
 
         // OAuth2 사용자와 내부 사용자 정보를 결합하여 반환
         return new AuthUser(oauth2User, user);
+        } catch(Exception e){
+            log.error("OAuth2 인증 처리 중 오류: {}", e.getMessage(), e);
+            throw e; // 또는 적절한 예외로 변환하여 던짐
+        }
     }
 
     /**

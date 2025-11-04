@@ -1,0 +1,55 @@
+# Multi-stage build for optimized production image
+# Stage 1: Build stage
+FROM openjdk:11-jdk-slim AS builder
+
+WORKDIR /app
+
+# Copy Gradle wrapper and build files first (for better caching)
+COPY gradlew gradlew.bat ./
+COPY gradle/ gradle/
+COPY build.gradle settings.gradle ./
+
+# Make gradlew executable
+RUN chmod +x gradlew
+
+# Download dependencies (this layer will be cached if dependencies don't change)
+RUN ./gradlew dependencies --no-daemon
+
+# Copy source code
+COPY src/ src/
+
+# Build the application
+RUN ./gradlew build --no-daemon -x test
+
+# Stage 2: Runtime stage
+FROM openjdk:11-jre-slim AS runtime
+
+WORKDIR /opt/app
+
+# Copy built JAR files from builder stage (as root first)
+COPY --from=builder /app/build/libs/ ./libs/
+
+# Find and copy the WAR file (Spring Boot WAR can run as JAR)
+RUN ls -la /opt/app/libs/ && \
+    cp /opt/app/libs/*-SNAPSHOT.war /opt/app/app.jar && \
+    rm -rf /opt/app/libs/ && \
+    ls -la /opt/app/
+
+# Create non-root user for security
+RUN groupadd -r appuser && useradd -r -g appuser appuser
+
+# Change ownership to non-root user AFTER copying files
+RUN chown -R appuser:appuser /opt/app && ls -la /opt/app/
+
+# Switch to non-root user
+USER appuser
+
+# Expose the port
+EXPOSE 8080
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:8080/actuator/health || exit 1
+
+# Run the application with JVM optimizations
+CMD ["java", "-Djava.security.egd=file:/dev/./urandom", "-Dspring.profiles.active=docker", "-jar", "/opt/app/app.jar"]

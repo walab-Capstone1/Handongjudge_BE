@@ -76,9 +76,9 @@ public class SecurityConfig extends WebSecurityConfigurerAdapter {
                 .and()
                 // CSRF 비활성화 (JWT 사용으로 인해)
                 .csrf().disable()
-                // 세션 정책 설정 (NEVER - 세션 생성 완전 방지)
+                // 세션 정책 설정 (NEVER - 세션 생성 완전 방지) -> 로컬 개발 환경만. 프로덕션 배포에서는 리버스 프록시등으로 stateless 로 변환
                 .sessionManagement()
-                .sessionCreationPolicy(SessionCreationPolicy.NEVER)
+                .sessionCreationPolicy(SessionCreationPolicy.STATELESS) // NEVER -> STATELESS
                 .and()
                 // 요청 권한 설정
                 .authorizeRequests()
@@ -90,6 +90,15 @@ public class SecurityConfig extends WebSecurityConfigurerAdapter {
                 .and()
                 // OAuth2 로그인 설정
                 .oauth2Login()
+                    .authorizationEndpoint()
+                        .baseUri("/api/oauth2/authorization")   // ✅ 이 한 줄 추가 (Spring이 /api/oauth2/* 도 인식하게 함)
+                    .and()
+                // added
+                .redirectionEndpoint()
+                .baseUri("/api/login/oauth2/code/*")
+                .and()
+                // added
+
                 .userInfoEndpoint()
                 .userService(customOAuth2UserService)
                 .and()
@@ -100,7 +109,7 @@ public class SecurityConfig extends WebSecurityConfigurerAdapter {
                 // OAuth2 로그인 실패 핸들러
                 .failureHandler((request, response, exception) -> {
                     log.error("OAuth2 login failed", exception);
-                    response.sendRedirect("http://localhost:3000/login?error=oauth_failed");
+                    response.sendRedirect("https://hj.walab.info/handongjudge/login?error=oauth_failed");
                 })
                 .and()
                 // JWT 인증 필터 추가
@@ -122,7 +131,8 @@ public class SecurityConfig extends WebSecurityConfigurerAdapter {
                 "http://localhost:3000",
                 "https://localhost:3000",
                 "http://localhost:3001",
-                "https://localhost:3001"
+                "https://localhost:3001",
+                "https://hj.walab.info"
         ));
 
         configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
@@ -177,7 +187,7 @@ public class SecurityConfig extends WebSecurityConfigurerAdapter {
             setRefreshTokenCookie(response, refreshToken);
 
             // 프론트엔드 콜백 페이지로 리다이렉트 (Access Token만 포함)
-            String redirectUrl = String.format("http://localhost:3000/auth/callback?accessToken=%s", accessToken);
+            String redirectUrl = String.format("https://hj.walab.info/handongjudge/auth/callback?accessToken=%s", accessToken);
             log.info("OAuth2 success - redirecting to: {}", redirectUrl);
             response.sendRedirect(redirectUrl);
 
@@ -193,9 +203,9 @@ public class SecurityConfig extends WebSecurityConfigurerAdapter {
     private void setRefreshTokenCookie(HttpServletResponse response, String refreshToken) {
         Cookie cookie = new Cookie("refreshToken", refreshToken);
         cookie.setHttpOnly(true);
-        cookie.setSecure(false); // 개발환경에서는 HTTP 사용
+        cookie.setSecure(true); // 개발환경에서는 HTTP 사용
         cookie.setPath("/");
-        cookie.setDomain("localhost");
+        cookie.setDomain("hj.walab.info");
         cookie.setMaxAge(7 * 24 * 60 * 60); // 7일
         response.addCookie(cookie);
     }

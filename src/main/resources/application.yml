@@ -1,10 +1,11 @@
 server:
   port: ${PORT:8080}
+  forward-headers-strategy: framework
 
 spring:
-  # .env import
-  config:
-    import: optional:file:.env[.properties]
+#  # .env import
+#  config:
+#    import: optional:file:.env[.properties]
 
   jackson:
     serialization:
@@ -38,6 +39,7 @@ spring:
           google:
             client-id: ${GOOGLE_CLIENT_ID}
             client-secret: ${GOOGLE_CLIENT_SECRET}
+            redirect-uri: "{baseUrl}/api/login/oauth2/code/{registrationId}"   # ✅ 추가!
             scope:
               - email
               - profile
@@ -64,8 +66,8 @@ domjudge:
 app:
   oauth2:
     authorized-redirect-uris:
-      - http://localhost:3000/auth/callback  # 프론트엔드 콜백 페이지
-
+      #- http://localhost:3000/auth/callback  # 프론트엔드 콜백 페이지
+      - https://hj.walab.info/handongjudge/auth/callback
 logging:
   level:
     com.project.handongjudge: DEBUG
