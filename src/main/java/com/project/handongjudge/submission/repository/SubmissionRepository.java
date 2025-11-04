@@ -92,19 +92,19 @@ public interface SubmissionRepository extends JpaRepository<Submission, Long> {
     @Query("SELECT COUNT(s) FROM Submission s WHERE s.user.id = :userId AND s.problem.id = :problemId AND s.result = 'AC'")
     Integer countAcceptedByUserIdAndProblemId(@Param("userId") Long userId, @Param("problemId") Long problemId);
 
-    // 학생별 특정 과제에서 푼 문제 조회 (정답 처리된 문제만)
+    // 학생별 특정 과제에서 푼 문제 조회 (정답 처리된 문제만) - "AC"로 수정
     @Query("SELECT DISTINCT s.problem.id FROM Submission s " +
             "WHERE s.user.id = :userId " +
             "AND s.problem.id IN (SELECT ap.problem.id FROM AssignmentProblem ap WHERE ap.assignment.id = :assignmentId) " +
             "AND s.section.id = :sectionId " +
-            "AND s.result = 'correct'")
+            "AND s.result = 'AC'")
     List<Long> findSolvedProblemIdsByUserAndAssignment(@Param("userId") Long userId,
                                                        @Param("assignmentId") Long assignmentId,
                                                        @Param("sectionId") Long sectionId);
-    // 특정 학생의 특정 문제에 대한 첫 정답 제출 시간 조회
+    // 특정 학생의 특정 문제에 대한 첫 정답 제출 시간 조회 - "AC"로 수정
     @Query("SELECT MIN(s.submittedAt) FROM Submission s " +
             "WHERE s.user.id = :userId AND s.problem.id = :problemId " +
-            "AND s.section.id = :sectionId AND s.result = 'correct'")
+            "AND s.section.id = :sectionId AND s.result = 'AC'")
     Optional<LocalDateTime> findFirstAcceptedSubmissionTime(@Param("userId") Long userId,
                                                             @Param("problemId") Long problemId,
                                                             @Param("sectionId") Long sectionId);
