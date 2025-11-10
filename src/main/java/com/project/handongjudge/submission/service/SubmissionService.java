@@ -311,7 +311,7 @@ public class SubmissionService {
             }
 
             try {
-                Thread.sleep(100); // 0.1초 대기
+                Thread.sleep(2000); // 0.1초 대기
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 throw new RuntimeException("Polling interrupted", e);
