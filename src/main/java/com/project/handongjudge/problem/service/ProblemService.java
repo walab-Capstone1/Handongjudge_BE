@@ -13,7 +13,13 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 import com.project.handongjudge.problem.util.ProblemFileUtil;
 import lombok.extern.slf4j.Slf4j;
-
+import com.project.handongjudge.user.entity.User;
+import com.project.handongjudge.user.repository.UserRepository;
+import org.springframework.beans.factory.annotation.Value;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.io.IOException;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -29,8 +35,13 @@ public class ProblemService {
     private final DomjudgeService domjudgeService;
     private final AssignmentProblemService assignmentProblemService;
     private final AssignmentRepository assignmentRepository;
+    private final UserRepository userRepository;
 
-    public Long createProblem(ProblemCreateRequest request) throws IOException {
+    @Value("${problem.zip.storage.path:./problem-zips}")
+    private String zipStoragePath;
+
+
+    public Long createProblem(ProblemCreateRequest request, Long instructorId) throws IOException {
         String title = request.getTitle();
         MultipartFile descriptionFile = request.getDescriptionFile();
         MultipartFile zipFile = request.getZipFile();
@@ -89,15 +100,23 @@ public class ProblemService {
         // DOMjudge에 문제 업로드
         String domjudgeProblemId = domjudgeService.uploadProblemToDomjudge(zipFile);
 
+// ✨ ZIP 파일 저장
+        String savedZipPath = saveProblemZip(zipFile, domjudgeProblemId);
+
+// Instructor 조회
+        User instructor = userRepository.findById(instructorId)
+                .orElseThrow(() -> new IllegalArgumentException("Instructor not found: " + instructorId));
+
         Problem problem = Problem.builder()
                 .title(title)
                 .description(description)
                 .domjudgeProblemId(domjudgeProblemId)
-                .timeLimit(timeLimit)           // 새로 추가
-                .memoryLimit(memoryLimit)       // 새로 추가
+                .timeLimit(timeLimit)
+                .memoryLimit(memoryLimit)
                 .createdAt(LocalDateTime.now())
+                .createdBy(instructor)
+                .zipFilePath(savedZipPath)  // ✨ ZIP 파일 경로 저장
                 .build();
-
         problemRepository.save(problem);
         log.info("문제 생성 완료: ID={}, Title={}, Description Length={}, Time Limit={}초, Memory Limit={}MB",
                 problem.getId(), title, description.length(), timeLimit, memoryLimit);
@@ -142,13 +161,208 @@ public class ProblemService {
         assignmentProblemService.addProblemToAssignment(assignmentId, problemId);
     }
     // ProblemService.java에 추가
-    public List<ProblemResponse> getAllProblems() {
-        List<Problem> problems = problemRepository.findAll();
+    public List<ProblemResponse> getAllProblems(Long instructorId) {
+        // instructorId로 필터링하여 해당 instructor가 만든 문제만 조회
+        List<Problem> problems = problemRepository.findByCreatedBy_Id(instructorId);
         return problems.stream()
                 .map(this::convertToProblemResponse)
                 .collect(Collectors.toList());
     }
 
+    /**
+     * 문제 ZIP 파일을 저장
+     */
+    private String saveProblemZip(MultipartFile zipFile, String domjudgeProblemId) throws IOException {
+        // 저장 디렉토리 생성
+        Path storageDir = Paths.get(zipStoragePath);
+        if (!Files.exists(storageDir)) {
+            Files.createDirectories(storageDir);
+        }
 
+        // 파일명: domjudgeProblemId.zip
+        String filename = domjudgeProblemId + ".zip";
+        Path filePath = storageDir.resolve(filename);
+
+        // 파일 저장
+        Files.copy(zipFile.getInputStream(), filePath, StandardCopyOption.REPLACE_EXISTING);
+
+        return filePath.toString();
+    }
+
+    /**
+     * 문제 복사 (권한 체크 포함)
+     */
+    public Long copyProblem(Long sourceProblemId, String newTitle, Long instructorId) throws IOException {
+        // 원본 문제 조회
+        Problem sourceProblem = problemRepository.findById(sourceProblemId)
+                .orElseThrow(() -> new IllegalArgumentException("원본 문제를 찾을 수 없습니다: " + sourceProblemId));
+
+        // 권한 체크
+        if (sourceProblem.getCreatedBy() == null) {
+            throw new IllegalArgumentException("원본 문제의 생성자 정보가 없어 복사할 수 없습니다.");
+        }
+        if (!sourceProblem.getCreatedBy().getId().equals(instructorId)) {
+            throw new IllegalArgumentException("이 문제를 복사할 권한이 없습니다.");
+        }
+
+        // 저장된 ZIP 파일 확인
+        if (sourceProblem.getZipFilePath() == null || !Files.exists(Paths.get(sourceProblem.getZipFilePath()))) {
+            throw new IllegalArgumentException("원본 문제의 ZIP 파일을 찾을 수 없습니다. 복사할 수 없습니다.");
+        }
+
+        // 저장된 ZIP 파일을 MultipartFile로 변환
+        Path zipPath = Paths.get(sourceProblem.getZipFilePath());
+        MultipartFile originalZipFile = new PathMultipartFile(zipPath);
+
+        // ✅ 새로운 고유한 ZIP 파일 이름 생성 (타임스탬프 기반)
+        String timestamp = String.valueOf(System.currentTimeMillis());
+        String newZipFileName = "copy_" + timestamp + ".zip";
+        MultipartFile zipFileWithNewName = new RenamedMultipartFile(originalZipFile, newZipFileName);
+
+        // 새 문제 제목
+        String problemTitle = (newTitle != null && !newTitle.trim().isEmpty())
+                ? newTitle
+                : sourceProblem.getTitle() + " (복사본)";
+
+        // ✅ DOMJudge에 새 문제로 업로드 (새로운 파일 이름으로)
+        String newDomjudgeProblemId = domjudgeService.uploadProblemToDomjudge(zipFileWithNewName);
+
+        // 새 ZIP 파일 저장
+        String newZipPath = saveProblemZip(zipFileWithNewName, newDomjudgeProblemId);
+
+        // 새 Problem 엔티티 생성
+        User instructor = userRepository.findById(instructorId)
+                .orElseThrow(() -> new IllegalArgumentException("Instructor not found: " + instructorId));
+
+        Problem newProblem = Problem.builder()
+                .title(problemTitle)
+                .description(sourceProblem.getDescription())
+                .domjudgeProblemId(newDomjudgeProblemId)
+                .timeLimit(sourceProblem.getTimeLimit())
+                .memoryLimit(sourceProblem.getMemoryLimit())
+                .createdAt(LocalDateTime.now())
+                .createdBy(instructor)
+                .zipFilePath(newZipPath)
+                .build();
+
+        Problem savedProblem = problemRepository.save(newProblem);
+        log.info("문제 복사 완료: 원본 ID={}, 새 ID={}, Title={}",
+                sourceProblemId, savedProblem.getId(), problemTitle);
+
+        return savedProblem.getId();
+    }
+
+    /**
+     * Path를 MultipartFile로 변환하는 내부 클래스
+     */
+    private static class PathMultipartFile implements MultipartFile {
+        private final Path path;
+        private final String name;
+
+        public PathMultipartFile(Path path) {
+            this.path = path;
+            this.name = path.getFileName().toString();
+        }
+
+        @Override
+        public String getName() {
+            return name;
+        }
+
+        @Override
+        public String getOriginalFilename() {
+            return name;
+        }
+
+        @Override
+        public String getContentType() {
+            return "application/zip";
+        }
+
+        @Override
+        public boolean isEmpty() {
+            try {
+                return Files.size(path) == 0;
+            } catch (IOException e) {
+                return true;
+            }
+        }
+
+        @Override
+        public long getSize() {
+            try {
+                return Files.size(path);
+            } catch (IOException e) {
+                return 0;
+            }
+        }
+
+        @Override
+        public byte[] getBytes() throws IOException {
+            return Files.readAllBytes(path);
+        }
+
+        @Override
+        public java.io.InputStream getInputStream() throws IOException {
+            return Files.newInputStream(path);
+        }
+
+        @Override
+        public void transferTo(java.io.File dest) throws IOException {
+            Files.copy(path, dest.toPath(), StandardCopyOption.REPLACE_EXISTING);
+        }
+    }
+    /**
+     * MultipartFile의 파일명만 변경하는 래퍼 클래스
+     */
+    private static class RenamedMultipartFile implements MultipartFile {
+        private final MultipartFile delegate;
+        private final String newName;
+
+        public RenamedMultipartFile(MultipartFile delegate, String newName) {
+            this.delegate = delegate;
+            this.newName = newName;
+        }
+
+        @Override
+        public String getName() {
+            return newName;
+        }
+
+        @Override
+        public String getOriginalFilename() {
+            return newName;
+        }
+
+        @Override
+        public String getContentType() {
+            return delegate.getContentType();
+        }
+
+        @Override
+        public boolean isEmpty() {
+            return delegate.isEmpty();
+        }
+
+        @Override
+        public long getSize() {
+            return delegate.getSize();
+        }
+
+        @Override
+        public byte[] getBytes() throws IOException {
+            return delegate.getBytes();
+        }
+
+        @Override
+        public java.io.InputStream getInputStream() throws IOException {
+            return delegate.getInputStream();
+        }
+
+        @Override
+        public void transferTo(java.io.File dest) throws IOException {
+            delegate.transferTo(dest);
+        }
+    }
 }
 
