@@ -17,7 +17,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
-
+import com.project.handongjudge.section.dto.SectionCopyRequest;
 import java.time.LocalDateTime;
 import java.util.Map;
 
@@ -128,6 +128,41 @@ public class SectionController {
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(
                     Map.of("success", false, "message", "서버 오류가 발생했습니다.")
+            );
+        }
+    }
+    /**
+     * Section 복사 (권한 체크 포함)
+     * 원본 Section을 만든 instructor만 복사 가능
+     * Assignment, Problem, Notice 모두 복사
+     */
+    @PostMapping("/{sectionId}/copy")
+    public ResponseEntity<Map<String, Object>> copySection(
+            @PathVariable Long sectionId,
+            @RequestBody SectionCopyRequest request,
+            Authentication authentication) {
+        try {
+            Long instructorId = Long.parseLong(authentication.getName());
+            Long newSectionId = sectionService.copySection(
+                    sectionId,
+                    request.getSectionNumber(),
+                    request.getYear(),
+                    request.getSemester(),
+                    instructorId
+            );
+
+            return ResponseEntity.ok(Map.of(
+                    "success", true,
+                    "message", "수업이 성공적으로 복사되었습니다.",
+                    "newSectionId", newSectionId
+            ));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(
+                    Map.of("success", false, "message", e.getMessage())
+            );
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(
+                    Map.of("success", false, "message", "서버 오류가 발생했습니다: " + e.getMessage())
             );
         }
     }
