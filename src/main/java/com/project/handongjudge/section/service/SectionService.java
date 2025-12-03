@@ -29,10 +29,8 @@ import com.project.handongjudge.notice.repository.NoticeRepository;
 import lombok.extern.slf4j.Slf4j;
 import java.io.IOException;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Optional;
-import java.util.UUID;
+import java.util.*;
+
 @Slf4j
 @Service
 
@@ -65,7 +63,7 @@ public class SectionService {
         Section section = Section.builder()
                 .course(course)
                 .instructor(instructor)
-                .sectionNumber(request.getSectionNumber())
+                .sectionNumber(request.getSectionNumber())  // null 허용
                 .enrollmentCode(enrollmentCode)
                 .year(request.getYear())
                 .semester(request.getSemester())
@@ -73,7 +71,7 @@ public class SectionService {
 
         Section saved = sectionRepository.save(section);
 
-        // courseTitle을 전달
+        // courseTitle을 전달 (sectionNumber는 null일 수 있음)
         domjudgeService.createContest(saved.getId(), request.getSectionNumber(), course.getTitle());
 
         return SectionResponse.builder()
@@ -113,9 +111,22 @@ public class SectionService {
      * 원본 Section을 만든 instructor만 복사 가능
      * Assignment, Problem, Notice 모두 복사
      */
+
+    /**
+     * Section 복사 (권한 체크 포함)
+     * 원본 Section을 만든 instructor만 복사 가능
+     * 옵션에 따라 Assignment, Problem, Notice 선택적 복사
+     */
+    /**
+     * Section 복사 (권한 체크 포함)
+     * 선택된 Assignment와 Problem만 복사
+     */
     @Transactional
     public Long copySection(Long sourceSectionId, Integer newSectionNumber,
-                            Integer newYear, String newSemester, Long instructorId) throws IOException {
+                            Integer newYear, String newSemester, String newCourseTitle,
+                            String newDescription, Boolean copyNotices, Boolean copyAssignments,
+                            List<Long> selectedNoticeIds, List<Long> selectedAssignmentIds,
+                            Map<Long, List<Long>> assignmentProblems, Long instructorId) throws IOException {
         Section sourceSection = sectionRepository.findById(sourceSectionId)
                 .orElseThrow(() -> new IllegalArgumentException("원본 Section을 찾을 수 없습니다: " + sourceSectionId));
 
@@ -124,10 +135,27 @@ public class SectionService {
             throw new IllegalArgumentException("이 수업을 복사할 권한이 없습니다.");
         }
 
+        // ✅ 새 Course 생성
+        String originalCourseTitle = sourceSection.getCourse().getTitle();
+        String finalTitle = (newCourseTitle != null && !newCourseTitle.trim().isEmpty())
+                ? newCourseTitle
+                : originalCourseTitle + " 복사본";
+
+        String finalDescription = (newDescription != null && !newDescription.trim().isEmpty())
+                ? newDescription
+                : sourceSection.getCourse().getDescription();
+
+        Course newCourse = Course.builder()
+                .title(finalTitle)
+                .description(finalDescription)
+                .createdAt(LocalDateTime.now())
+                .build();
+        Course savedCourse = courseRepository.save(newCourse);
+
         // 새 Section 생성
         String enrollmentCode = generateEnrollmentCode();
         Section newSection = Section.builder()
-                .course(sourceSection.getCourse())
+                .course(savedCourse)
                 .instructor(sourceSection.getInstructor())
                 .sectionNumber(newSectionNumber)
                 .enrollmentCode(enrollmentCode)
@@ -142,85 +170,130 @@ public class SectionService {
         domjudgeService.createContest(
                 savedSection.getId(),
                 newSectionNumber,
-                sourceSection.getCourse().getTitle()
+                finalTitle
         );
 
-        // ✨ 1. 공지사항 복사
-        List<Notice> sourceNotices = noticeRepository.findBySectionIdOrderByCreatedAtDesc(sourceSectionId);
-        List<Notice> newNotices = new ArrayList<>();
+        // ✨ 1. 공지사항 복사 (선택된 공지사항만)
+        if (copyNotices != null && copyNotices) {
+            List<Notice> sourceNotices;
 
-        for (Notice sourceNotice : sourceNotices) {
-            Notice newNotice = Notice.builder()
-                    .section(savedSection)
-                    .title(sourceNotice.getTitle())
-                    .content(sourceNotice.getContent())
-                    .difficulty(sourceNotice.getDifficulty())
-                    .isNew(true)  // 새 공지로 표시
-                    .createdAt(LocalDateTime.now())  // 현재 시간으로 설정
-                    .active(sourceNotice.getActive())
-                    .build();
-
-            newNotices.add(newNotice);
-        }
-        noticeRepository.saveAll(newNotices);
-        log.info("공지사항 {}개 복사 완료", newNotices.size());
-
-        // ✨ 2. 원본 Section의 모든 Assignment 복사
-        List<Assignment> sourceAssignments = assignmentRepository.findBySectionId(sourceSectionId);
-        for (Assignment sourceAssignment : sourceAssignments) {
-            Assignment newAssignment = Assignment.builder()
-                    .section(savedSection)
-                    .assignmentNumber(sourceAssignment.getAssignmentNumber())
-                    .title(sourceAssignment.getTitle())
-                    .description(sourceAssignment.getDescription())
-                    .startDate(sourceAssignment.getStartDate())
-                    .endDate(sourceAssignment.getEndDate())
-                    .active(sourceAssignment.getActive())
-                    .build();
-
-            Assignment savedAssignment = assignmentRepository.save(newAssignment);
-
-            // ✨ 3. 원본 Assignment의 모든 Problem 복사
-            List<AssignmentProblem> sourceAssignmentProblems = assignmentProblemRepository
-                    .findByAssignmentId(sourceAssignment.getId());
-
-            List<AssignmentProblem> newAssignmentProblems = new ArrayList<>();
-            int order = 1;
-
-            for (AssignmentProblem sourceAp : sourceAssignmentProblems) {
-                Problem sourceProblem = sourceAp.getProblem();
-
-                // 권한 체크: 문제를 만든 instructor인지 확인
-                if (sourceProblem.getCreatedBy() == null ||
-                        !sourceProblem.getCreatedBy().getId().equals(instructorId)) {
-                    log.warn("문제 {}는 복사할 권한이 없어 건너뜁니다.", sourceProblem.getId());
-                    continue;
+            if (selectedNoticeIds != null && !selectedNoticeIds.isEmpty()) {
+                sourceNotices = noticeRepository.findByIdIn(selectedNoticeIds);
+                // 권한 체크: 선택된 공지사항이 모두 해당 Section에 속하는지 확인
+                for (Notice notice : sourceNotices) {
+                    if (!notice.getSection().getId().equals(sourceSectionId)) {
+                        throw new IllegalArgumentException("선택한 공지사항이 해당 수업에 속하지 않습니다.");
+                    }
                 }
-
-                // ✅ 문제 복사 (DOMJudge에 새 문제로 업로드됨)
-                Long newProblemId = problemService.copyProblem(
-                        sourceProblem.getId(), null, instructorId);
-
-                Problem newProblem = problemRepository.findById(newProblemId)
-                        .orElseThrow(() -> new RuntimeException("복사된 문제를 찾을 수 없습니다: " + newProblemId));
-
-                AssignmentProblem newAp = AssignmentProblem.builder()
-                        .assignment(savedAssignment)
-                        .problem(newProblem)
-                        .problemOrder(order++)
-                        .build();
-
-                newAssignmentProblems.add(newAp);
-
-                // ✅ DOMJudge Contest에 문제 추가
-                domjudgeService.addProblemToContest(savedSection.getId(), newProblem.getDomjudgeProblemId());
+            } else {
+                sourceNotices = noticeRepository.findBySectionIdOrderByCreatedAtDesc(sourceSectionId);
             }
 
-            assignmentProblemRepository.saveAll(newAssignmentProblems);
+            List<Notice> newNotices = new ArrayList<>();
+            for (Notice sourceNotice : sourceNotices) {
+                Notice newNotice = Notice.builder()
+                        .section(savedSection)
+                        .title(sourceNotice.getTitle())
+                        .content(sourceNotice.getContent())
+                        .difficulty(sourceNotice.getDifficulty())
+                        .isNew(true)
+                        .createdAt(LocalDateTime.now())
+                        .active(sourceNotice.getActive())
+                        .build();
+                newNotices.add(newNotice);
+            }
+            noticeRepository.saveAll(newNotices);
+            log.info("공지사항 {}개 복사 완료", newNotices.size());
         }
 
-        log.info("Section 복사 완료: 원본 ID={}, 새 ID={}, 공지사항={}개, 과제={}개",
-                sourceSectionId, savedSection.getId(), newNotices.size(), sourceAssignments.size());
+        // ✨ 2. 선택된 Assignment 및 Problem만 복사
+        if (copyAssignments != null && copyAssignments) {
+            List<Assignment> sourceAssignments;
+
+            // 선택된 과제 ID가 있으면 해당 과제만 조회
+            if (selectedAssignmentIds != null && !selectedAssignmentIds.isEmpty()) {
+                sourceAssignments = assignmentRepository.findByIdIn(selectedAssignmentIds);
+                // 권한 체크: 선택된 과제가 모두 해당 Section에 속하는지 확인
+                for (Assignment assignment : sourceAssignments) {
+                    if (!assignment.getSection().getId().equals(sourceSectionId)) {
+                        throw new IllegalArgumentException("선택한 과제가 해당 수업에 속하지 않습니다.");
+                    }
+                }
+            } else {
+                // 선택된 과제가 없으면 모든 과제 복사
+                sourceAssignments = assignmentRepository.findBySectionId(sourceSectionId);
+            }
+
+            int copiedAssignmentCount = 0;
+            int copiedProblemCount = 0;
+
+            for (Assignment sourceAssignment : sourceAssignments) {
+                Assignment newAssignment = Assignment.builder()
+                        .section(savedSection)
+                        .assignmentNumber(sourceAssignment.getAssignmentNumber())
+                        .title(sourceAssignment.getTitle())
+                        .description(sourceAssignment.getDescription())
+                        .startDate(sourceAssignment.getStartDate())
+                        .endDate(sourceAssignment.getEndDate())
+                        .active(sourceAssignment.getActive())
+                        .build();
+
+                Assignment savedAssignment = assignmentRepository.save(newAssignment);
+                copiedAssignmentCount++;
+
+                // ✨ 3. 선택된 Problem만 복사
+                List<AssignmentProblem> sourceAssignmentProblems = assignmentProblemRepository
+                        .findByAssignmentId(sourceAssignment.getId());
+
+                List<AssignmentProblem> newAssignmentProblems = new ArrayList<>();
+                int order = 1;
+
+                for (AssignmentProblem sourceAp : sourceAssignmentProblems) {
+                    Problem sourceProblem = sourceAp.getProblem();
+
+                    // 선택된 문제만 복사 (assignmentProblems에 해당 과제의 문제 ID가 있는 경우)
+                    if (assignmentProblems != null && assignmentProblems.containsKey(sourceAssignment.getId())) {
+                        List<Long> selectedProblemIds = assignmentProblems.get(sourceAssignment.getId());
+                        if (selectedProblemIds != null && !selectedProblemIds.contains(sourceProblem.getId())) {
+                            log.info("문제 {}는 선택되지 않아 건너뜁니다.", sourceProblem.getId());
+                            continue;
+                        }
+                    }
+
+                    // 권한 체크: 문제를 만든 instructor인지 확인
+                    if (sourceProblem.getCreatedBy() == null ||
+                            !sourceProblem.getCreatedBy().getId().equals(instructorId)) {
+                        log.warn("문제 {}는 복사할 권한이 없어 건너뜁니다.", sourceProblem.getId());
+                        continue;
+                    }
+
+                    // ✅ 문제 복사 (DOMJudge에 새 문제로 업로드됨)
+                    Long newProblemId = problemService.copyProblem(
+                            sourceProblem.getId(), null, instructorId);
+
+                    Problem newProblem = problemRepository.findById(newProblemId)
+                            .orElseThrow(() -> new RuntimeException("복사된 문제를 찾을 수 없습니다: " + newProblemId));
+
+                    AssignmentProblem newAp = AssignmentProblem.builder()
+                            .assignment(savedAssignment)
+                            .problem(newProblem)
+                            .problemOrder(order++)
+                            .build();
+
+                    newAssignmentProblems.add(newAp);
+                    copiedProblemCount++;
+
+                    // ✅ DOMJudge Contest에 문제 추가
+                    domjudgeService.addProblemToContest(savedSection.getId(), newProblem.getDomjudgeProblemId());
+                }
+
+                assignmentProblemRepository.saveAll(newAssignmentProblems);
+            }
+
+            log.info("과제 {}개, 문제 {}개 복사 완료", copiedAssignmentCount, copiedProblemCount);
+        }
+
+        log.info("Section 복사 완료: 원본 ID={}, 새 ID={}", sourceSectionId, savedSection.getId());
         return savedSection.getId();
     }
 }

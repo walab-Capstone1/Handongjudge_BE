@@ -148,6 +148,13 @@ public class SectionController {
                     request.getSectionNumber(),
                     request.getYear(),
                     request.getSemester(),
+                    request.getCourseTitle(),
+                    request.getDescription(),
+                    request.getCopyNotices(),
+                    request.getCopyAssignments(),
+                    request.getSelectedNoticeIds(),
+                    request.getSelectedAssignmentIds(),  // 추가
+                    request.getAssignmentProblems(),     // 추가
                     instructorId
             );
 
@@ -166,4 +173,5 @@ public class SectionController {
             );
         }
     }
+
 }
