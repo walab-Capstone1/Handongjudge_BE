@@ -34,6 +34,7 @@ public class Section {
     @JoinColumn(name = "instructor_id")
     private User instructor;
 
+    @Column(name = "section_number", nullable = true)
     private Integer sectionNumber;
 
     @Column(name = "enrollment_code", length = 50, unique = true)
