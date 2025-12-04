@@ -63,7 +63,13 @@ public class DomjudgeService {
             // 1. contest.json 내용 구성
             Map<String, Object> contestJson = new HashMap<>();
             contestJson.put("id", sectionId.toString()); // external ID = sectionId
-            contestJson.put("name", courseTitle + " " + sectionNumber + "분반"); // name = "오픈소스스튜디오 1분반"
+
+            // sectionNumber가 null이면 제목만 사용
+            String contestName = (sectionNumber != null)
+                    ? courseTitle + " " + sectionNumber + "분반"
+                    : courseTitle;
+            contestJson.put("name", contestName);
+
             contestJson.put("short_name", sectionId.toString()); // short_name = sectionId
 
             DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ssXXX");

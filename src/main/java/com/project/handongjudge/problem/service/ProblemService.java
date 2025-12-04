@@ -192,6 +192,8 @@ public class ProblemService {
     /**
      * 문제 복사 (권한 체크 포함)
      */
+    // Handongjudge_BE/src/main/java/com/project/handongjudge/problem/service/ProblemService.java
+
     public Long copyProblem(Long sourceProblemId, String newTitle, Long instructorId) throws IOException {
         // 원본 문제 조회
         Problem sourceProblem = problemRepository.findById(sourceProblemId)
@@ -205,13 +207,25 @@ public class ProblemService {
             throw new IllegalArgumentException("이 문제를 복사할 권한이 없습니다.");
         }
 
-        // 저장된 ZIP 파일 확인
-        if (sourceProblem.getZipFilePath() == null || !Files.exists(Paths.get(sourceProblem.getZipFilePath()))) {
-            throw new IllegalArgumentException("원본 문제의 ZIP 파일을 찾을 수 없습니다. 복사할 수 없습니다.");
+        // 저장된 ZIP 파일 확인 (상대 경로를 절대 경로로 변환)
+        if (sourceProblem.getZipFilePath() == null) {
+            throw new IllegalArgumentException("원본 문제의 ZIP 파일 경로가 없습니다. 복사할 수 없습니다.");
+        }
+
+        // 상대 경로를 절대 경로로 변환
+        Path zipPath = Paths.get(sourceProblem.getZipFilePath());
+        if (!zipPath.isAbsolute()) {
+            // 상대 경로인 경우 현재 작업 디렉토리 기준으로 절대 경로로 변환
+            zipPath = Paths.get(System.getProperty("user.dir")).resolve(zipPath).normalize();
+        }
+
+        if (!Files.exists(zipPath)) {
+            throw new IllegalArgumentException(
+                    "원본 문제의 ZIP 파일을 찾을 수 없습니다. 경로: " + zipPath + " (원본: " + sourceProblem.getZipFilePath() + ")"
+            );
         }
 
         // 저장된 ZIP 파일을 MultipartFile로 변환
-        Path zipPath = Paths.get(sourceProblem.getZipFilePath());
         MultipartFile originalZipFile = new PathMultipartFile(zipPath);
 
         // ✅ 새로운 고유한 ZIP 파일 이름 생성 (타임스탬프 기반)

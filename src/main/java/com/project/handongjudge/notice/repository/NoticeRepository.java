@@ -23,4 +23,7 @@ public interface NoticeRepository extends JpaRepository<Notice, Long> {
 
     @Query("SELECT n FROM Notice n WHERE n.section.id = :sectionId AND n.active = true ORDER BY n.createdAt DESC")
     List<Notice> findActiveNoticesBySectionId(@Param("sectionId") Long sectionId);
+
+    // 기존 메서드들에 추가
+    List<Notice> findByIdIn(List<Long> ids);
 }
