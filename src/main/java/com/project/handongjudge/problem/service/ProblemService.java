@@ -33,6 +33,7 @@ import com.project.handongjudge.problem.dto.ProblemParseResponse;
 import com.project.handongjudge.problem.dto.ProblemUpdateRequest;
 import java.io.*;
 import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
 import java.util.zip.ZipOutputStream;
 
 @Slf4j
@@ -75,7 +76,9 @@ public class ProblemService {
 
         // DOMjudge에 문제 업로드
         String domjudgeProblemId = domjudgeService.uploadProblemToDomjudge(zipFile);
-        String savedZipPath = saveProblemZip(zipFile, domjudgeProblemId);
+
+        // ZIP 파일을 데이터베이스에 저장
+        byte[] zipFileData = saveProblemZipToDatabase(zipFile);
 
         User instructor = userRepository.findById(instructorId)
                 .orElseThrow(() -> new IllegalArgumentException("Instructor not found: " + instructorId));
@@ -88,7 +91,8 @@ public class ProblemService {
                 .memoryLimit((Integer) limits.get("memoryLimit"))
                 .createdAt(LocalDateTime.now())
                 .createdBy(instructor)
-                .zipFilePath(savedZipPath)
+                .zipFilePath(null) // 더 이상 사용하지 않음
+                .zipFileData(zipFileData) // DB에 저장
                 .build();
 
         problemRepository.save(problem);
@@ -128,7 +132,9 @@ public class ProblemService {
 
         // DOMjudge에 업로드
         String domjudgeProblemId = domjudgeService.uploadProblemToDomjudge(generatedZipFile);
-        String savedZipPath = saveProblemZip(generatedZipFile, domjudgeProblemId);
+
+        // ZIP 파일을 데이터베이스에 저장
+        byte[] zipFileData = saveProblemZipToDatabase(generatedZipFile);
 
         User instructor = userRepository.findById(instructorId)
                 .orElseThrow(() -> new IllegalArgumentException("Instructor not found: " + instructorId));
@@ -141,7 +147,8 @@ public class ProblemService {
                 .memoryLimit(Integer.parseInt(request.getMemoryLimit()))
                 .createdAt(LocalDateTime.now())
                 .createdBy(instructor)
-                .zipFilePath(savedZipPath)
+                .zipFilePath(null) // 더 이상 사용하지 않음
+                .zipFileData(zipFileData) // DB에 저장
                 .build();
 
         problemRepository.save(problem);
@@ -308,24 +315,12 @@ public class ProblemService {
                 .collect(Collectors.toList());
     }
 
+
     /**
-     * 문제 ZIP 파일을 저장
+     * 문제 ZIP 파일을 데이터베이스에 저장
      */
-    private String saveProblemZip(MultipartFile zipFile, String domjudgeProblemId) throws IOException {
-        // 저장 디렉토리 생성
-        Path storageDir = Paths.get(zipStoragePath);
-        if (!Files.exists(storageDir)) {
-            Files.createDirectories(storageDir);
-        }
-
-        // 파일명: domjudgeProblemId.zip
-        String filename = domjudgeProblemId + ".zip";
-        Path filePath = storageDir.resolve(filename);
-
-        // 파일 저장
-        Files.copy(zipFile.getInputStream(), filePath, StandardCopyOption.REPLACE_EXISTING);
-
-        return filePath.toString();
+    private byte[] saveProblemZipToDatabase(MultipartFile zipFile) throws IOException {
+        return zipFile.getBytes();
     }
 
     /**
@@ -346,28 +341,32 @@ public class ProblemService {
             throw new IllegalArgumentException("이 문제를 복사할 권한이 없습니다.");
         }
 
-        // 저장된 ZIP 파일 확인 (상대 경로를 절대 경로로 변환)
-        if (sourceProblem.getZipFilePath() == null) {
-            throw new IllegalArgumentException("원본 문제의 ZIP 파일 경로가 없습니다. 복사할 수 없습니다.");
+        // ZIP 파일 데이터 확인
+        byte[] originalZipData = null;
+
+        // 1. DB에 저장된 경우 (zipFileData)
+        if (sourceProblem.getZipFileData() != null && sourceProblem.getZipFileData().length > 0) {
+            originalZipData = sourceProblem.getZipFileData();
+        }
+        // 2. 기존 파일 경로에 있는 경우 (마이그레이션용)
+        else if (sourceProblem.getZipFilePath() != null) {
+            Path zipPath = Paths.get(sourceProblem.getZipFilePath());
+            if (!zipPath.isAbsolute()) {
+                zipPath = Paths.get(System.getProperty("user.dir")).resolve(zipPath).normalize();
+            }
+            if (Files.exists(zipPath)) {
+                originalZipData = Files.readAllBytes(zipPath);
+            }
         }
 
-        // 상대 경로를 절대 경로로 변환
-        Path zipPath = Paths.get(sourceProblem.getZipFilePath());
-        if (!zipPath.isAbsolute()) {
-            // 상대 경로인 경우 현재 작업 디렉토리 기준으로 절대 경로로 변환
-            zipPath = Paths.get(System.getProperty("user.dir")).resolve(zipPath).normalize();
+        if (originalZipData == null || originalZipData.length == 0) {
+            throw new IllegalArgumentException("원본 문제의 ZIP 파일을 찾을 수 없습니다.");
         }
 
-        if (!Files.exists(zipPath)) {
-            throw new IllegalArgumentException(
-                    "원본 문제의 ZIP 파일을 찾을 수 없습니다. 경로: " + zipPath + " (원본: " + sourceProblem.getZipFilePath() + ")"
-            );
-        }
+        // byte[]를 MultipartFile로 변환
+        MultipartFile originalZipFile = new ByteArrayMultipartFile(originalZipData, "problem.zip");
 
-        // 저장된 ZIP 파일을 MultipartFile로 변환
-        MultipartFile originalZipFile = new PathMultipartFile(zipPath);
-
-        // ✅ 새로운 고유한 ZIP 파일 이름 생성 (타임스탬프 기반)
+        // 새로운 고유한 ZIP 파일 이름 생성
         String timestamp = String.valueOf(System.currentTimeMillis());
         String newZipFileName = "copy_" + timestamp + ".zip";
         MultipartFile zipFileWithNewName = new RenamedMultipartFile(originalZipFile, newZipFileName);
@@ -377,11 +376,11 @@ public class ProblemService {
                 ? newTitle
                 : sourceProblem.getTitle() + " (복사본)";
 
-        // ✅ DOMJudge에 새 문제로 업로드 (새로운 파일 이름으로)
+        // DOMJudge에 새 문제로 업로드
         String newDomjudgeProblemId = domjudgeService.uploadProblemToDomjudge(zipFileWithNewName);
 
-        // 새 ZIP 파일 저장
-        String newZipPath = saveProblemZip(zipFileWithNewName, newDomjudgeProblemId);
+        // 새 ZIP 파일을 데이터베이스에 저장
+        byte[] newZipFileData = saveProblemZipToDatabase(zipFileWithNewName);
 
         // 새 Problem 엔티티 생성
         User instructor = userRepository.findById(instructorId)
@@ -395,7 +394,8 @@ public class ProblemService {
                 .memoryLimit(sourceProblem.getMemoryLimit())
                 .createdAt(LocalDateTime.now())
                 .createdBy(instructor)
-                .zipFilePath(newZipPath)
+                .zipFilePath(null) // 더 이상 사용하지 않음
+                .zipFileData(newZipFileData) // DB에 저장
                 .build();
 
         Problem savedProblem = problemRepository.save(newProblem);
@@ -517,6 +517,63 @@ public class ProblemService {
             delegate.transferTo(dest);
         }
     }
+
+    /**
+     * byte[]를 MultipartFile로 변환하는 헬퍼 클래스
+     */
+    private static class ByteArrayMultipartFile implements MultipartFile {
+        private final byte[] content;
+        private final String name;
+        private final String originalFilename;
+        private final String contentType;
+
+        public ByteArrayMultipartFile(byte[] content, String filename) {
+            this.content = content;
+            this.name = filename;
+            this.originalFilename = filename;
+            this.contentType = "application/zip";
+        }
+
+        @Override
+        public String getName() {
+            return name;
+        }
+
+        @Override
+        public String getOriginalFilename() {
+            return originalFilename;
+        }
+
+        @Override
+        public String getContentType() {
+            return contentType;
+        }
+
+        @Override
+        public boolean isEmpty() {
+            return content == null || content.length == 0;
+        }
+
+        @Override
+        public long getSize() {
+            return content.length;
+        }
+
+        @Override
+        public byte[] getBytes() throws IOException {
+            return content;
+        }
+
+        @Override
+        public java.io.InputStream getInputStream() throws IOException {
+            return new java.io.ByteArrayInputStream(content);
+        }
+
+        @Override
+        public void transferTo(java.io.File dest) throws IOException, IllegalStateException {
+            java.nio.file.Files.write(dest.toPath(), content);
+        }
+    }
     /**
      * ZIP 파일 내용 파싱
      */
@@ -561,45 +618,56 @@ public class ProblemService {
             throw new IllegalArgumentException("이 문제를 수정할 권한이 없습니다.");
         }
 
+        byte[] newZipFileData = null;
+        String newDomjudgeProblemId = null;
+
         // 1. 새 ZIP 파일이 제공된 경우
         if (request.getNewZipFile() != null && !request.getNewZipFile().isEmpty()) {
-            // 기존 ZIP 파일로 새 ZIP 업로드
-            String newDomjudgeProblemId = domjudgeService.uploadProblemToDomjudge(request.getNewZipFile());
-            String newZipPath = saveProblemZip(request.getNewZipFile(), newDomjudgeProblemId);
-
-            // 문제 정보 업데이트
-            updateProblemFields(problem, request.getTitle(), request.getDescription(),
-                    request.getTimeLimit(), request.getMemoryLimit(),
-                    newDomjudgeProblemId, newZipPath);
+            newDomjudgeProblemId = domjudgeService.uploadProblemToDomjudge(request.getNewZipFile());
+            newZipFileData = saveProblemZipToDatabase(request.getNewZipFile());
         }
         // 2. ZIP 파일 없이 정보만 수정
         else {
-            // 기존 ZIP 파일 읽기
-            Path existingZipPath = Paths.get(problem.getZipFilePath());
-            if (!Files.exists(existingZipPath)) {
+            // 기존 ZIP 파일 데이터 가져오기
+            byte[] existingZipData = null;
+
+            if (problem.getZipFileData() != null && problem.getZipFileData().length > 0) {
+                existingZipData = problem.getZipFileData();
+            } else if (problem.getZipFilePath() != null) {
+                // 마이그레이션용: 파일 경로에서 읽기
+                Path existingZipPath = Paths.get(problem.getZipFilePath());
+                if (!existingZipPath.isAbsolute()) {
+                    existingZipPath = Paths.get(System.getProperty("user.dir")).resolve(existingZipPath).normalize();
+                }
+                if (Files.exists(existingZipPath)) {
+                    existingZipData = Files.readAllBytes(existingZipPath);
+                }
+            }
+
+            if (existingZipData == null || existingZipData.length == 0) {
                 throw new IllegalArgumentException("원본 ZIP 파일을 찾을 수 없습니다.");
             }
 
-            // 새 ZIP 파일 생성 (description 등 수정된 내용 반영)
+            // 기존 ZIP을 수정하여 새 ZIP 생성
             byte[] modifiedZipBytes = createModifiedZip(
-                    existingZipPath,
+                    existingZipData,
                     request.getDescription(),
                     request.getTimeLimit(),
                     request.getMemoryLimit()
             );
 
-            // 임시 MultipartFile 생성
+            // MultipartFile로 변환
             MultipartFile modifiedZipFile = createMultipartFile(modifiedZipBytes, "modified.zip");
 
             // DOMjudge에 업로드
-            String newDomjudgeProblemId = domjudgeService.uploadProblemToDomjudge(modifiedZipFile);
-            String newZipPath = saveProblemZip(modifiedZipFile, newDomjudgeProblemId);
-
-            // 문제 정보 업데이트
-            updateProblemFields(problem, request.getTitle(), request.getDescription(),
-                    request.getTimeLimit(), request.getMemoryLimit(),
-                    newDomjudgeProblemId, newZipPath);
+            newDomjudgeProblemId = domjudgeService.uploadProblemToDomjudge(modifiedZipFile);
+            newZipFileData = saveProblemZipToDatabase(modifiedZipFile);
         }
+
+        // 문제 정보 업데이트
+        updateProblemFields(problem, request.getTitle(), request.getDescription(),
+                request.getTimeLimit(), request.getMemoryLimit(),
+                newDomjudgeProblemId, newZipFileData);
 
         problemRepository.save(problem);
         log.info("문제 수정 완료: ID={}, Title={}", problemId, request.getTitle());
@@ -610,8 +678,7 @@ public class ProblemService {
      */
     private void updateProblemFields(Problem problem, String title, String description,
                                      Double timeLimit, Integer memoryLimit,
-                                     String domjudgeProblemId, String zipFilePath) {
-        // Reflection 사용하여 필드 업데이트 (Problem이 @Builder로 immutable인 경우)
+                                     String domjudgeProblemId, byte[] zipFileData) {
         try {
             java.lang.reflect.Field titleField = Problem.class.getDeclaredField("title");
             titleField.setAccessible(true);
@@ -633,9 +700,9 @@ public class ProblemService {
             domjudgeIdField.setAccessible(true);
             domjudgeIdField.set(problem, domjudgeProblemId);
 
-            java.lang.reflect.Field zipPathField = Problem.class.getDeclaredField("zipFilePath");
-            zipPathField.setAccessible(true);
-            zipPathField.set(problem, zipFilePath);
+            java.lang.reflect.Field zipDataField = Problem.class.getDeclaredField("zipFileData");
+            zipDataField.setAccessible(true);
+            zipDataField.set(problem, zipFileData);
 
         } catch (Exception e) {
             throw new RuntimeException("문제 필드 업데이트 실패", e);
@@ -645,15 +712,14 @@ public class ProblemService {
     /**
      * 기존 ZIP 파일을 수정하여 새 ZIP 생성
      */
-    private byte[] createModifiedZip(Path existingZipPath, String newDescription,
+    private byte[] createModifiedZip(byte[] existingZipData, String newDescription,
                                      Double timeLimit, Integer memoryLimit) throws IOException {
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
 
-        try (ZipOutputStream zos = new ZipOutputStream(baos);
-             java.util.zip.ZipInputStream zis = new java.util.zip.ZipInputStream(
-                     Files.newInputStream(existingZipPath))) {
+        try (ZipInputStream zis = new ZipInputStream(new ByteArrayInputStream(existingZipData));
+             ZipOutputStream zos = new ZipOutputStream(baos)) {
 
-            java.util.zip.ZipEntry entry;
+            ZipEntry entry;
             boolean descriptionReplaced = false;
             boolean limitsReplaced = false;
 

@@ -43,9 +43,15 @@ public class Problem {
     @JoinColumn(name = "created_by")
     private User createdBy;
 
-    // 원본 ZIP 파일 경로 (복사 시 재사용)
+    // 원본 ZIP 파일 경로 (기존 호환성 유지, 마이그레이션용)
     @Column(name = "zip_file_path", length = 500)
     private String zipFilePath;
+
+    // ZIP 파일 데이터 (BLOB)
+    @Lob
+    @Column(name = "zip_file_data", columnDefinition = "BLOB")
+    @JsonIgnore
+    private byte[] zipFileData;
 
     @OneToMany(mappedBy = "problem", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<AssignmentProblem> assignmentProblems;
