@@ -3,8 +3,7 @@ package com.project.handongjudge.problem.service;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.project.handongjudge.domjudge.service.DomjudgeService;
-import com.project.handongjudge.problem.dto.ProblemCreateRequest;
-import com.project.handongjudge.problem.dto.ProblemResponse;
+import com.project.handongjudge.problem.dto.*;
 import com.project.handongjudge.problem.entity.Problem;
 import com.project.handongjudge.problem.repository.ProblemRepository;
 import com.project.handongjudge.assignment.entity.Assignment;
@@ -29,8 +28,6 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
-import com.project.handongjudge.problem.dto.ProblemParseResponse;
-import com.project.handongjudge.problem.dto.ProblemUpdateRequest;
 import java.io.*;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
@@ -588,11 +585,17 @@ public class ProblemService {
         // Limits 추출
         Map<String, Object> limits = ProblemFileUtil.extractProblemLimits(zipFile);
 
-        // 파일명에서 제목 추출 (확장자 제거)
-        String filename = zipFile.getOriginalFilename();
-        String title = filename != null && filename.endsWith(".zip")
-                ? filename.substring(0, filename.length() - 4)
-                : filename;
+        // 제목 추출 (problem.yaml의 name 우선, 없으면 파일명)
+        String title = ProblemFileUtil.extractTitleFromZip(zipFile);
+        if (title == null || title.isEmpty()) {
+            String filename = zipFile.getOriginalFilename();
+            title = filename != null && filename.endsWith(".zip")
+                    ? filename.substring(0, filename.length() - 4)
+                    : filename;
+        }
+
+        // 테스트케이스 추출
+        List<TestCaseInfo> testCases = ProblemFileUtil.extractTestCasesFromZip(zipFile);
 
         return ProblemParseResponse.builder()
                 .title(title)
@@ -602,9 +605,9 @@ public class ProblemService {
                 .author((String) limits.get("author"))
                 .source((String) limits.get("source"))
                 .difficulty(limits.get("difficulty") != null ? limits.get("difficulty").toString() : null)
+                .testCases(testCases)
                 .build();
     }
-
     /**
      * 문제 수정
      */

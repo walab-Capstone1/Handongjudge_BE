@@ -1,29 +1,28 @@
 package com.project.handongjudge.problem.util;
 
+import com.project.handongjudge.problem.dto.TestCaseInfo;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.compress.archivers.zip.ZipArchiveEntry;
 import org.apache.commons.compress.archivers.zip.ZipArchiveInputStream;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.io.BufferedReader;
-import java.io.ByteArrayInputStream;
-import java.io.IOException;
-import java.io.InputStreamReader;
+import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 
 @Slf4j
 public class ProblemFileUtil {
 
-    // 지원하는 파일 확장자 (우선순위 순: tex -> md -> txt)
-    private static final List<String> SUPPORTED_EXTENSIONS = Arrays.asList(".tex", ".md", ".txt");
+    // 지원하는 파일 확장자에 .html 추가 (우선순위: tex -> md -> html -> txt)
+    private static final List<String> SUPPORTED_EXTENSIONS = Arrays.asList(".tex", ".md", ".html", ".txt");
 
     // problem_statement 폴더명 (대소문자 무관)
     private static final String PROBLEM_STATEMENT_FOLDER = "problem_statement";
 
     /**
      * ZIP 파일에서 problem_statement 폴더의 description 파일을 추출합니다.
-     * 우선순위: .tex -> .md -> .txt
+     * 우선순위: .tex -> .md -> .html -> .txt
+     * problem_statement 폴더가 없으면 루트나 다른 경로에서도 찾기
      */
     public static String extractDescriptionFromZip(MultipartFile zipFile) throws IOException {
         if (zipFile == null || zipFile.isEmpty()) {
@@ -33,14 +32,17 @@ public class ProblemFileUtil {
 
         log.info("ZIP 파일에서 description 추출 시작: {}", zipFile.getOriginalFilename());
 
+        byte[] zipBytes = zipFile.getBytes();
+        String bestMatch = null;
+        String bestContent = null;
+        int bestPriority = Integer.MAX_VALUE;
+        boolean foundInProblemStatement = false;
+
+        // 첫 번째 패스: problem_statement 폴더에서 찾기
         try (ZipArchiveInputStream zipInputStream = new ZipArchiveInputStream(
-                new ByteArrayInputStream(zipFile.getBytes()), StandardCharsets.UTF_8.name())) {
+                new ByteArrayInputStream(zipBytes), StandardCharsets.UTF_8.name())) {
 
             ZipArchiveEntry entry;
-            String bestMatch = null;
-            String bestContent = null;
-            int bestPriority = Integer.MAX_VALUE;
-
             while ((entry = zipInputStream.getNextZipEntry()) != null) {
                 if (entry.isDirectory()) {
                     continue;
@@ -51,11 +53,11 @@ public class ProblemFileUtil {
 
                 // problem_statement 폴더 내의 파일인지 확인
                 if (isProblemStatementFile(entryName)) {
+                    foundInProblemStatement = true;
                     String extension = getFileExtension(entryName);
                     int priority = SUPPORTED_EXTENSIONS.indexOf(extension);
 
                     if (priority != -1 && priority < bestPriority) {
-                        // 더 높은 우선순위 파일 발견
                         bestMatch = entryName;
                         bestPriority = priority;
                         bestContent = readZipEntryContent(zipInputStream);
@@ -63,19 +65,48 @@ public class ProblemFileUtil {
                     }
                 }
             }
+        }
 
-            if (bestContent != null) {
-                log.info("ZIP에서 description 추출 성공: {} ({} bytes)",
-                        bestMatch, bestContent.length());
-                return bestContent;
-            } else {
-                log.info("ZIP 파일에서 problem_statement 폴더의 지원 파일을 찾을 수 없습니다.");
-                return "";
+        // problem_statement에서 찾지 못한 경우, 루트나 다른 경로에서 찾기
+        if (bestContent == null) {
+            log.info("problem_statement 폴더에서 파일을 찾지 못했습니다. 다른 경로에서 검색합니다.");
+
+            try (ZipArchiveInputStream zipInputStream = new ZipArchiveInputStream(
+                    new ByteArrayInputStream(zipBytes), StandardCharsets.UTF_8.name())) {
+
+                ZipArchiveEntry entry;
+                while ((entry = zipInputStream.getNextZipEntry()) != null) {
+                    if (entry.isDirectory()) {
+                        continue;
+                    }
+
+                    String entryName = entry.getName();
+                    String extension = getFileExtension(entryName);
+
+                    // 지원하는 확장자이고, 숨김 파일이 아닌 경우
+                    if (SUPPORTED_EXTENSIONS.contains(extension) &&
+                            !entryName.contains("__MACOSX") &&
+                            !entryName.contains(".DS_Store")) {
+
+                        int priority = SUPPORTED_EXTENSIONS.indexOf(extension);
+                        if (priority < bestPriority) {
+                            bestMatch = entryName;
+                            bestPriority = priority;
+                            bestContent = readZipEntryContent(zipInputStream);
+                            log.info("대체 경로에서 우선순위 {} 파일 발견: {}", priority + 1, entryName);
+                        }
+                    }
+                }
             }
+        }
 
-        } catch (IOException e) {
-            log.error("ZIP 파일 처리 중 오류 발생: {}", e.getMessage(), e);
-            throw new IOException("ZIP 파일에서 description을 추출하는 중 오류가 발생했습니다: " + e.getMessage(), e);
+        if (bestContent != null) {
+            log.info("ZIP에서 description 추출 성공: {} ({} bytes)",
+                    bestMatch, bestContent.length());
+            return bestContent;
+        } else {
+            log.warn("ZIP 파일에서 description 파일을 찾을 수 없습니다.");
+            return "";
         }
     }
 
@@ -351,26 +382,33 @@ public class ProblemFileUtil {
     }
 
     /**
-     * ZIP 엔트리의 내용을 UTF-8 문자열로 읽기
+     * ZIP 엔트리의 내용을 UTF-8 문자열로 읽기 (개선된 버전)
      */
     private static String readZipEntryContent(ZipArchiveInputStream zipInputStream) throws IOException {
         StringBuilder content = new StringBuilder();
 
-        try (BufferedReader reader = new BufferedReader(
-                new InputStreamReader(zipInputStream, StandardCharsets.UTF_8))) {
+        // 바이트 배열로 먼저 읽기
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        byte[] buffer = new byte[1024];
+        int len;
+        while ((len = zipInputStream.read(buffer)) > 0) {
+            baos.write(buffer, 0, len);
+        }
 
-            String line;
-            while ((line = reader.readLine()) != null) {
-                content.append(line).append("\n");
+        byte[] bytes = baos.toByteArray();
+
+        // UTF-8로 디코딩 시도
+        try {
+            return new String(bytes, StandardCharsets.UTF_8);
+        } catch (Exception e) {
+            // UTF-8 실패 시 다른 인코딩 시도
+            try {
+                return new String(bytes, "ISO-8859-1");
+            } catch (Exception e2) {
+                log.warn("인코딩 변환 실패, 기본 인코딩 사용");
+                return new String(bytes);
             }
         }
-
-        // 마지막 개행문자 제거
-        if (content.length() > 0 && content.charAt(content.length() - 1) == '\n') {
-            content.setLength(content.length() - 1);
-        }
-
-        return content.toString();
     }
 
     /**
@@ -393,4 +431,170 @@ public class ProblemFileUtil {
                 return "unknown";
         }
     }
+    // ProblemFileUtil.java에 추가할 메서드들
+
+    /**
+     * ZIP 파일에서 문제 제목 추출 (problem.yaml의 name 필드 우선)
+     */
+    /**
+     * ZIP 파일에서 문제 제목 추출 (problem.yaml의 name 필드 우선)
+     */
+    public static String extractTitleFromZip(MultipartFile zipFile) throws IOException {
+        if (zipFile == null || zipFile.isEmpty()) {
+            return null;
+        }
+
+        try (ZipArchiveInputStream zipInputStream = new ZipArchiveInputStream(
+                new ByteArrayInputStream(zipFile.getBytes()), StandardCharsets.UTF_8.name())) {
+
+            ZipArchiveEntry entry;
+            while ((entry = zipInputStream.getNextZipEntry()) != null) {
+                if (entry.isDirectory()) {
+                    continue;
+                }
+
+                String entryName = entry.getName();
+                String fileName = entryName.toLowerCase();
+
+                // problem.yaml 파일에서 name 추출
+                if (fileName.endsWith("problem.yaml") || fileName.endsWith("problem.yml")) {
+                    try (BufferedReader reader = new BufferedReader(
+                            new InputStreamReader(zipInputStream, StandardCharsets.UTF_8))) {
+
+                        String line;
+                        while ((line = reader.readLine()) != null) {
+                            String trimmedLine = line.trim();
+                            if (trimmedLine.startsWith("name:")) {
+                                String title = extractYamlValue(trimmedLine);
+                                if (title != null && !title.isEmpty()) {
+                                    log.info("ZIP에서 제목 추출: {}", title);
+                                    return title;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (IOException e) {
+            log.error("ZIP 파일에서 제목 추출 중 오류 발생: {}", e.getMessage(), e);
+        }
+
+        // problem.yaml에서 찾지 못한 경우 파일명에서 추출
+        String filename = zipFile.getOriginalFilename();
+        if (filename != null && filename.endsWith(".zip")) {
+            return filename.substring(0, filename.length() - 4);
+        }
+        return filename;
+    }
+
+    /**
+     * ZIP 파일에서 테스트케이스 추출
+     * DOMjudge 형식: data/sample/*.in, data/sample/*.ans 또는 data/secret/*.in, data/secret/*.ans
+     */
+    /**
+     * ZIP 파일에서 테스트케이스 추출 (개선된 버전)
+     * 다양한 경로 구조 지원
+     */
+    public static List<TestCaseInfo> extractTestCasesFromZip(MultipartFile zipFile) throws IOException {
+        List<TestCaseInfo> testCases = new ArrayList<>();
+
+        if (zipFile == null || zipFile.isEmpty()) {
+            return testCases;
+        }
+
+        log.info("ZIP 파일에서 테스트케이스 추출 시작: {}", zipFile.getOriginalFilename());
+
+        // 입력/출력 파일을 임시로 저장할 맵
+        Map<String, TestCaseInfo> testCaseMap = new HashMap<>();
+
+        try (ZipArchiveInputStream zipInputStream = new ZipArchiveInputStream(
+                new ByteArrayInputStream(zipFile.getBytes()), StandardCharsets.UTF_8.name())) {
+
+            ZipArchiveEntry entry;
+            while ((entry = zipInputStream.getNextZipEntry()) != null) {
+                if (entry.isDirectory()) {
+                    continue;
+                }
+
+                String entryName = entry.getName();
+                String normalizedPath = entryName.replace('\\', '/');
+
+                // 숨김 파일이나 시스템 파일 무시
+                if (normalizedPath.contains("__MACOSX") ||
+                        normalizedPath.contains(".DS_Store") ||
+                        normalizedPath.contains(".git")) {
+                    continue;
+                }
+
+                // data/sample/, data/secret/, 또는 루트의 .in/.ans 파일
+                boolean isTestCaseFile = false;
+                String type = "secret"; // 기본값
+                String baseName = "";
+                String extension = "";
+
+                if (normalizedPath.startsWith("data/sample/")) {
+                    isTestCaseFile = true;
+                    type = "sample";
+                } else if (normalizedPath.startsWith("data/secret/")) {
+                    isTestCaseFile = true;
+                    type = "secret";
+                } else if (normalizedPath.endsWith(".in") ||
+                        normalizedPath.endsWith(".ans") ||
+                        normalizedPath.endsWith(".out")) {
+                    // 루트나 다른 경로의 테스트케이스 파일
+                    isTestCaseFile = true;
+                    type = "secret"; // 경로가 없으면 secret로 간주
+                }
+
+                if (isTestCaseFile) {
+                    String fileName = entryName.substring(entryName.lastIndexOf('/') + 1);
+                    int lastDotIndex = fileName.lastIndexOf('.');
+
+                    if (lastDotIndex > 0) {
+                        baseName = fileName.substring(0, lastDotIndex);
+                        extension = fileName.substring(lastDotIndex + 1).toLowerCase();
+                    } else {
+                        baseName = fileName;
+                    }
+
+                    // 테스트케이스 키 생성 (타입_베이스명)
+                    String testCaseKey = type + "_" + baseName;
+
+                    TestCaseInfo testCase = testCaseMap.getOrDefault(testCaseKey,
+                            TestCaseInfo.builder()
+                                    .name(baseName)
+                                    .type(type)
+                                    .build());
+                    testCaseMap.put(testCaseKey, testCase);
+
+                    // 입력 파일 (.in)
+                    if (extension.equals("in")) {
+                        String input = readZipEntryContent(zipInputStream);
+                        testCase.setInput(input);
+                        log.debug("테스트케이스 입력 파일 발견: {} ({} bytes)", entryName, input.length());
+                    }
+                    // 출력 파일 (.ans, .out)
+                    else if (extension.equals("ans") || extension.equals("out")) {
+                        String output = readZipEntryContent(zipInputStream);
+                        testCase.setOutput(output);
+                        log.debug("테스트케이스 출력 파일 발견: {} ({} bytes)", entryName, output.length());
+                    }
+                }
+            }
+        } catch (IOException e) {
+            log.error("ZIP 파일에서 테스트케이스 추출 중 오류 발생: {}", e.getMessage(), e);
+        }
+
+        // 맵을 리스트로 변환 (입력과 출력이 모두 있는 것만)
+        for (TestCaseInfo testCase : testCaseMap.values()) {
+            if (testCase.getInput() != null && testCase.getOutput() != null &&
+                    !testCase.getInput().isEmpty() && !testCase.getOutput().isEmpty()) {
+                testCases.add(testCase);
+            }
+        }
+
+        log.info("추출된 테스트케이스 개수: {}", testCases.size());
+        return testCases;
+    }
+
 }
