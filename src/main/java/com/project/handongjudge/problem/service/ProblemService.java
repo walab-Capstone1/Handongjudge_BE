@@ -1,8 +1,9 @@
 package com.project.handongjudge.problem.service;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.project.handongjudge.domjudge.service.DomjudgeService;
-import com.project.handongjudge.problem.dto.ProblemCreateRequest;
-import com.project.handongjudge.problem.dto.ProblemResponse;
+import com.project.handongjudge.problem.dto.*;
 import com.project.handongjudge.problem.entity.Problem;
 import com.project.handongjudge.problem.repository.ProblemRepository;
 import com.project.handongjudge.assignment.entity.Assignment;
@@ -16,6 +17,8 @@ import lombok.extern.slf4j.Slf4j;
 import com.project.handongjudge.user.entity.User;
 import com.project.handongjudge.user.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Value;
+
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -25,6 +28,10 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import java.io.*;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
+import java.util.zip.ZipOutputStream;
 
 @Slf4j
 @Service
@@ -41,87 +48,223 @@ public class ProblemService {
     private String zipStoragePath;
 
 
+
+
+
     public Long createProblem(ProblemCreateRequest request, Long instructorId) throws IOException {
         String title = request.getTitle();
-        MultipartFile descriptionFile = request.getDescriptionFile();
         MultipartFile zipFile = request.getZipFile();
 
-        // Description 우선순위 처리
-        String description = "";
-
-        // 1. 별도 업로드한 description 파일이 최우선
-        if (descriptionFile != null && !descriptionFile.isEmpty()) {
-            description = new String(descriptionFile.getBytes(), "UTF-8");
-            log.info("별도 업로드 description 파일 사용: {} ({} bytes)",
-                    descriptionFile.getOriginalFilename(), description.length());
-        }
-        // 2. ZIP 파일 내부에서 description 추출 시도
-        else if (zipFile != null && !zipFile.isEmpty()) {
-            try {
-                description = ProblemFileUtil.extractDescriptionFromZip(zipFile);
-                if (!description.isEmpty()) {
-                    log.info("ZIP 파일에서 description 추출 성공 ({} bytes)", description.length());
-                } else {
-                    log.info("ZIP 파일에 description 파일이 없습니다.");
-                }
-            } catch (IOException e) {
-                log.error("ZIP 파일에서 description 추출 실패: {}", e.getMessage());
-                // ZIP에서 추출 실패해도 문제 생성은 계속 진행
-                description = "";
-            }
-        } else {
-            log.info("description 파일과 ZIP 파일이 모두 제공되지 않았습니다.");
-        }
-
-        // *** 새로 추가: ZIP 파일에서 제한 설정 추출 ***
-        Double timeLimit = null;
-        Integer memoryLimit = null;
-        String specialRun = null;
-        String specialCompare = null;
-
+        // 1. ZIP 파일이 제공된 경우 - 기존 로직 사용
         if (zipFile != null && !zipFile.isEmpty()) {
-            try {
-                Map<String, Object> limits = ProblemFileUtil.extractProblemLimits(zipFile);
-
-                timeLimit = (Double) limits.get("timeLimit");
-                memoryLimit = (Integer) limits.get("memoryLimit");
-                specialRun = (String) limits.get("specialRun");
-                specialCompare = (String) limits.get("specialCompare");
-
-                log.info("ZIP에서 추출된 제한 설정 - Time: {}초, Memory: {}MB, SpecialRun: {}, SpecialCompare: {}",
-                        timeLimit, memoryLimit, specialRun, specialCompare);
-
-            } catch (IOException e) {
-                log.error("ZIP 파일에서 제한 설정 추출 실패: {}", e.getMessage());
-                // 제한 설정 추출 실패해도 문제 생성은 계속 진행
-            }
+            return createProblemFromZip(request, instructorId, zipFile);
         }
+
+        // 2. ZIP 파일이 없는 경우 - 새로 생성
+        return createProblemFromForm(request, instructorId);
+    }
+
+    /**
+     * 기존 ZIP 파일로 문제 생성
+     */
+    private Long createProblemFromZip(ProblemCreateRequest request, Long instructorId, MultipartFile zipFile) throws IOException {
+        String description = ProblemFileUtil.extractDescriptionFromZip(zipFile);
+        Map<String, Object> limits = ProblemFileUtil.extractProblemLimits(zipFile);
 
         // DOMjudge에 문제 업로드
         String domjudgeProblemId = domjudgeService.uploadProblemToDomjudge(zipFile);
 
-// ✨ ZIP 파일 저장
-        String savedZipPath = saveProblemZip(zipFile, domjudgeProblemId);
+        // ZIP 파일을 데이터베이스에 저장
+        byte[] zipFileData = saveProblemZipToDatabase(zipFile);
 
-// Instructor 조회
         User instructor = userRepository.findById(instructorId)
                 .orElseThrow(() -> new IllegalArgumentException("Instructor not found: " + instructorId));
 
         Problem problem = Problem.builder()
-                .title(title)
+                .title(request.getTitle())
                 .description(description)
                 .domjudgeProblemId(domjudgeProblemId)
-                .timeLimit(timeLimit)
-                .memoryLimit(memoryLimit)
+                .timeLimit((Double) limits.get("timeLimit"))
+                .memoryLimit((Integer) limits.get("memoryLimit"))
                 .createdAt(LocalDateTime.now())
                 .createdBy(instructor)
-                .zipFilePath(savedZipPath)  // ✨ ZIP 파일 경로 저장
+                .zipFilePath(null) // 더 이상 사용하지 않음
+                .zipFileData(zipFileData) // DB에 저장
                 .build();
+
         problemRepository.save(problem);
-        log.info("문제 생성 완료: ID={}, Title={}, Description Length={}, Time Limit={}초, Memory Limit={}MB",
-                problem.getId(), title, description.length(), timeLimit, memoryLimit);
+        return problem.getId();
+    }
+
+    /**
+     * 폼 데이터로 문제 생성 (ZIP 생성 포함)
+     */
+    private Long createProblemFromForm(ProblemCreateRequest request, Long instructorId) throws IOException {
+        ObjectMapper mapper = new ObjectMapper();
+
+        // JSON 파싱
+        List<String> tags = mapper.readValue(request.getTags(), new TypeReference<List<String>>(){});
+        List<Map<String, String>> sampleInputs = mapper.readValue(request.getSampleInputs(),
+                new TypeReference<List<Map<String, String>>>(){});
+
+        // 전체 설명 생성 (description + inputFormat + outputFormat + samples)
+        String fullDescription = buildFullDescription(
+                request.getDescription(),
+                request.getInputFormat(),
+                request.getOutputFormat(),
+                sampleInputs
+        );
+
+        // DOMjudge 형식의 ZIP 파일 생성
+        byte[] zipBytes = createDomjudgeZip(
+                request.getTitle(),
+                fullDescription,
+                request.getTimeLimit(),
+                request.getMemoryLimit(),
+                request.getTestcaseFiles()
+        );
+
+        // MultipartFile로 변환
+        MultipartFile generatedZipFile = createMultipartFile(zipBytes, request.getTitle() + ".zip");
+
+        // DOMjudge에 업로드
+        String domjudgeProblemId = domjudgeService.uploadProblemToDomjudge(generatedZipFile);
+
+        // ZIP 파일을 데이터베이스에 저장
+        byte[] zipFileData = saveProblemZipToDatabase(generatedZipFile);
+
+        User instructor = userRepository.findById(instructorId)
+                .orElseThrow(() -> new IllegalArgumentException("Instructor not found: " + instructorId));
+
+        Problem problem = Problem.builder()
+                .title(request.getTitle())
+                .description(fullDescription)
+                .domjudgeProblemId(domjudgeProblemId)
+                .timeLimit(Double.parseDouble(request.getTimeLimit()))
+                .memoryLimit(Integer.parseInt(request.getMemoryLimit()))
+                .createdAt(LocalDateTime.now())
+                .createdBy(instructor)
+                .zipFilePath(null) // 더 이상 사용하지 않음
+                .zipFileData(zipFileData) // DB에 저장
+                .build();
+
+        problemRepository.save(problem);
+        log.info("문제 생성 완료: ID={}, Title={}", problem.getId(), request.getTitle());
 
         return problem.getId();
+    }
+
+    /**
+     * 전체 설명 생성
+     */
+    private String buildFullDescription(String description, String inputFormat,
+                                        String outputFormat, List<Map<String, String>> sampleInputs) {
+        StringBuilder sb = new StringBuilder(description);
+
+        if (inputFormat != null && !inputFormat.trim().isEmpty()) {
+            sb.append("\n\n## 입력 형식\n").append(inputFormat);
+        }
+
+        if (outputFormat != null && !outputFormat.trim().isEmpty()) {
+            sb.append("\n\n## 출력 형식\n").append(outputFormat);
+        }
+
+        if (sampleInputs != null && !sampleInputs.isEmpty()) {
+            sb.append("\n\n## 예제");
+            for (int i = 0; i < sampleInputs.size(); i++) {
+                Map<String, String> sample = sampleInputs.get(i);
+                String input = sample.get("input");
+                String output = sample.get("output");
+
+                if ((input != null && !input.isEmpty()) || (output != null && !output.isEmpty())) {
+                    sb.append("\n\n### 예제 입력 ").append(i + 1);
+                    sb.append("\n```\n").append(input != null ? input : "").append("\n```");
+                    sb.append("\n\n### 예제 출력 ").append(i + 1);
+                    sb.append("\n```\n").append(output != null ? output : "").append("\n```");
+                }
+            }
+        }
+
+        return sb.toString();
+    }
+
+    /**
+     * DOMjudge 형식의 ZIP 파일 생성
+     */
+    private byte[] createDomjudgeZip(String title, String description, String timeLimit,
+                                     String memoryLimit, List<MultipartFile> testcaseFiles) throws IOException {
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+
+        try (ZipOutputStream zos = new ZipOutputStream(baos)) {
+            // 1. problem.yaml 생성
+            zos.putNextEntry(new ZipEntry("problem.yaml"));
+            String yaml = createProblemYaml(title, timeLimit, memoryLimit);
+            zos.write(yaml.getBytes(StandardCharsets.UTF_8));
+            zos.closeEntry();
+
+            // 2. problem_statement/problem.md 생성
+            zos.putNextEntry(new ZipEntry("problem_statement/problem.md"));
+            zos.write(description.getBytes(StandardCharsets.UTF_8));
+            zos.closeEntry();
+
+            // 3. domjudge-problem.ini 생성
+            zos.putNextEntry(new ZipEntry("domjudge-problem.ini"));
+            String ini = createProblemIni(timeLimit, memoryLimit);
+            zos.write(ini.getBytes(StandardCharsets.UTF_8));
+            zos.closeEntry();
+
+            // 4. 테스트케이스 파일 추가
+            if (testcaseFiles != null && !testcaseFiles.isEmpty()) {
+                for (MultipartFile testcase : testcaseFiles) {
+                    String filename = testcase.getOriginalFilename();
+                    // data/sample/ 또는 data/secret/ 폴더에 배치
+                    String folder = filename.contains("sample") ? "data/sample/" : "data/secret/";
+                    zos.putNextEntry(new ZipEntry(folder + filename));
+                    zos.write(testcase.getBytes());
+                    zos.closeEntry();
+                }
+            }
+        }
+
+        return baos.toByteArray();
+    }
+
+    /**
+     * problem.yaml 내용 생성
+     */
+    private String createProblemYaml(String title, String timeLimit, String memoryLimit) {
+        StringBuilder yaml = new StringBuilder();
+        yaml.append("name: ").append(title).append("\n");
+        yaml.append("author: HandongJudge\n");
+        yaml.append("source: HandongJudge\n");
+        yaml.append("limits:\n");
+
+        if (timeLimit != null && !timeLimit.isEmpty()) {
+            yaml.append("  time: ").append(timeLimit).append("\n");
+        }
+
+        if (memoryLimit != null && !memoryLimit.isEmpty()) {
+            yaml.append("  memory: ").append(memoryLimit).append("\n");
+        }
+
+        return yaml.toString();
+    }
+
+    /**
+     * domjudge-problem.ini 내용 생성
+     */
+    private String createProblemIni(String timeLimit, String memoryLimit) {
+        StringBuilder ini = new StringBuilder();
+
+        if (timeLimit != null && !timeLimit.isEmpty()) {
+            ini.append("timelimit=").append(timeLimit).append("\n");
+        }
+
+        if (memoryLimit != null && !memoryLimit.isEmpty()) {
+            ini.append("memorylimit=").append(memoryLimit).append("\n");
+        }
+
+        return ini.toString();
     }
 
     // convertToProblemResponse 메소드도 수정
@@ -169,24 +312,12 @@ public class ProblemService {
                 .collect(Collectors.toList());
     }
 
+
     /**
-     * 문제 ZIP 파일을 저장
+     * 문제 ZIP 파일을 데이터베이스에 저장
      */
-    private String saveProblemZip(MultipartFile zipFile, String domjudgeProblemId) throws IOException {
-        // 저장 디렉토리 생성
-        Path storageDir = Paths.get(zipStoragePath);
-        if (!Files.exists(storageDir)) {
-            Files.createDirectories(storageDir);
-        }
-
-        // 파일명: domjudgeProblemId.zip
-        String filename = domjudgeProblemId + ".zip";
-        Path filePath = storageDir.resolve(filename);
-
-        // 파일 저장
-        Files.copy(zipFile.getInputStream(), filePath, StandardCopyOption.REPLACE_EXISTING);
-
-        return filePath.toString();
+    private byte[] saveProblemZipToDatabase(MultipartFile zipFile) throws IOException {
+        return zipFile.getBytes();
     }
 
     /**
@@ -207,28 +338,32 @@ public class ProblemService {
             throw new IllegalArgumentException("이 문제를 복사할 권한이 없습니다.");
         }
 
-        // 저장된 ZIP 파일 확인 (상대 경로를 절대 경로로 변환)
-        if (sourceProblem.getZipFilePath() == null) {
-            throw new IllegalArgumentException("원본 문제의 ZIP 파일 경로가 없습니다. 복사할 수 없습니다.");
+        // ZIP 파일 데이터 확인
+        byte[] originalZipData = null;
+
+        // 1. DB에 저장된 경우 (zipFileData)
+        if (sourceProblem.getZipFileData() != null && sourceProblem.getZipFileData().length > 0) {
+            originalZipData = sourceProblem.getZipFileData();
+        }
+        // 2. 기존 파일 경로에 있는 경우 (마이그레이션용)
+        else if (sourceProblem.getZipFilePath() != null) {
+            Path zipPath = Paths.get(sourceProblem.getZipFilePath());
+            if (!zipPath.isAbsolute()) {
+                zipPath = Paths.get(System.getProperty("user.dir")).resolve(zipPath).normalize();
+            }
+            if (Files.exists(zipPath)) {
+                originalZipData = Files.readAllBytes(zipPath);
+            }
         }
 
-        // 상대 경로를 절대 경로로 변환
-        Path zipPath = Paths.get(sourceProblem.getZipFilePath());
-        if (!zipPath.isAbsolute()) {
-            // 상대 경로인 경우 현재 작업 디렉토리 기준으로 절대 경로로 변환
-            zipPath = Paths.get(System.getProperty("user.dir")).resolve(zipPath).normalize();
+        if (originalZipData == null || originalZipData.length == 0) {
+            throw new IllegalArgumentException("원본 문제의 ZIP 파일을 찾을 수 없습니다.");
         }
 
-        if (!Files.exists(zipPath)) {
-            throw new IllegalArgumentException(
-                    "원본 문제의 ZIP 파일을 찾을 수 없습니다. 경로: " + zipPath + " (원본: " + sourceProblem.getZipFilePath() + ")"
-            );
-        }
+        // byte[]를 MultipartFile로 변환
+        MultipartFile originalZipFile = new ByteArrayMultipartFile(originalZipData, "problem.zip");
 
-        // 저장된 ZIP 파일을 MultipartFile로 변환
-        MultipartFile originalZipFile = new PathMultipartFile(zipPath);
-
-        // ✅ 새로운 고유한 ZIP 파일 이름 생성 (타임스탬프 기반)
+        // 새로운 고유한 ZIP 파일 이름 생성
         String timestamp = String.valueOf(System.currentTimeMillis());
         String newZipFileName = "copy_" + timestamp + ".zip";
         MultipartFile zipFileWithNewName = new RenamedMultipartFile(originalZipFile, newZipFileName);
@@ -238,11 +373,11 @@ public class ProblemService {
                 ? newTitle
                 : sourceProblem.getTitle() + " (복사본)";
 
-        // ✅ DOMJudge에 새 문제로 업로드 (새로운 파일 이름으로)
+        // DOMJudge에 새 문제로 업로드
         String newDomjudgeProblemId = domjudgeService.uploadProblemToDomjudge(zipFileWithNewName);
 
-        // 새 ZIP 파일 저장
-        String newZipPath = saveProblemZip(zipFileWithNewName, newDomjudgeProblemId);
+        // 새 ZIP 파일을 데이터베이스에 저장
+        byte[] newZipFileData = saveProblemZipToDatabase(zipFileWithNewName);
 
         // 새 Problem 엔티티 생성
         User instructor = userRepository.findById(instructorId)
@@ -256,7 +391,8 @@ public class ProblemService {
                 .memoryLimit(sourceProblem.getMemoryLimit())
                 .createdAt(LocalDateTime.now())
                 .createdBy(instructor)
-                .zipFilePath(newZipPath)
+                .zipFilePath(null) // 더 이상 사용하지 않음
+                .zipFileData(newZipFileData) // DB에 저장
                 .build();
 
         Problem savedProblem = problemRepository.save(newProblem);
@@ -377,6 +513,316 @@ public class ProblemService {
         public void transferTo(java.io.File dest) throws IOException {
             delegate.transferTo(dest);
         }
+    }
+
+    /**
+     * byte[]를 MultipartFile로 변환하는 헬퍼 클래스
+     */
+    private static class ByteArrayMultipartFile implements MultipartFile {
+        private final byte[] content;
+        private final String name;
+        private final String originalFilename;
+        private final String contentType;
+
+        public ByteArrayMultipartFile(byte[] content, String filename) {
+            this.content = content;
+            this.name = filename;
+            this.originalFilename = filename;
+            this.contentType = "application/zip";
+        }
+
+        @Override
+        public String getName() {
+            return name;
+        }
+
+        @Override
+        public String getOriginalFilename() {
+            return originalFilename;
+        }
+
+        @Override
+        public String getContentType() {
+            return contentType;
+        }
+
+        @Override
+        public boolean isEmpty() {
+            return content == null || content.length == 0;
+        }
+
+        @Override
+        public long getSize() {
+            return content.length;
+        }
+
+        @Override
+        public byte[] getBytes() throws IOException {
+            return content;
+        }
+
+        @Override
+        public java.io.InputStream getInputStream() throws IOException {
+            return new java.io.ByteArrayInputStream(content);
+        }
+
+        @Override
+        public void transferTo(java.io.File dest) throws IOException, IllegalStateException {
+            java.nio.file.Files.write(dest.toPath(), content);
+        }
+    }
+    /**
+     * ZIP 파일 내용 파싱
+     */
+    public ProblemParseResponse parseZipFile(MultipartFile zipFile) throws IOException {
+        if (zipFile == null || zipFile.isEmpty()) {
+            throw new IllegalArgumentException("ZIP 파일이 필요합니다.");
+        }
+
+        // Description 추출
+        String description = ProblemFileUtil.extractDescriptionFromZip(zipFile);
+
+        // Limits 추출
+        Map<String, Object> limits = ProblemFileUtil.extractProblemLimits(zipFile);
+
+        // 제목 추출 (problem.yaml의 name 우선, 없으면 파일명)
+        String title = ProblemFileUtil.extractTitleFromZip(zipFile);
+        if (title == null || title.isEmpty()) {
+            String filename = zipFile.getOriginalFilename();
+            title = filename != null && filename.endsWith(".zip")
+                    ? filename.substring(0, filename.length() - 4)
+                    : filename;
+        }
+
+        // 테스트케이스 추출
+        List<TestCaseInfo> testCases = ProblemFileUtil.extractTestCasesFromZip(zipFile);
+
+        return ProblemParseResponse.builder()
+                .title(title)
+                .description(description)
+                .timeLimit((Double) limits.get("timeLimit"))
+                .memoryLimit((Integer) limits.get("memoryLimit"))
+                .author((String) limits.get("author"))
+                .source((String) limits.get("source"))
+                .difficulty(limits.get("difficulty") != null ? limits.get("difficulty").toString() : null)
+                .testCases(testCases)
+                .build();
+    }
+    /**
+     * 문제 수정
+     */
+    public void updateProblem(Long problemId, ProblemUpdateRequest request, Long instructorId) throws IOException {
+        // 기존 문제 조회
+        Problem problem = problemRepository.findById(problemId)
+                .orElseThrow(() -> new IllegalArgumentException("문제를 찾을 수 없습니다: " + problemId));
+
+        // 권한 체크
+        if (problem.getCreatedBy() == null || !problem.getCreatedBy().getId().equals(instructorId)) {
+            throw new IllegalArgumentException("이 문제를 수정할 권한이 없습니다.");
+        }
+
+        byte[] newZipFileData = null;
+        String newDomjudgeProblemId = null;
+
+        // 1. 새 ZIP 파일이 제공된 경우
+        if (request.getNewZipFile() != null && !request.getNewZipFile().isEmpty()) {
+            newDomjudgeProblemId = domjudgeService.uploadProblemToDomjudge(request.getNewZipFile());
+            newZipFileData = saveProblemZipToDatabase(request.getNewZipFile());
+        }
+        // 2. ZIP 파일 없이 정보만 수정
+        else {
+            // 기존 ZIP 파일 데이터 가져오기
+            byte[] existingZipData = null;
+
+            if (problem.getZipFileData() != null && problem.getZipFileData().length > 0) {
+                existingZipData = problem.getZipFileData();
+            } else if (problem.getZipFilePath() != null) {
+                // 마이그레이션용: 파일 경로에서 읽기
+                Path existingZipPath = Paths.get(problem.getZipFilePath());
+                if (!existingZipPath.isAbsolute()) {
+                    existingZipPath = Paths.get(System.getProperty("user.dir")).resolve(existingZipPath).normalize();
+                }
+                if (Files.exists(existingZipPath)) {
+                    existingZipData = Files.readAllBytes(existingZipPath);
+                }
+            }
+
+            if (existingZipData == null || existingZipData.length == 0) {
+                throw new IllegalArgumentException("원본 ZIP 파일을 찾을 수 없습니다.");
+            }
+
+            // 기존 ZIP을 수정하여 새 ZIP 생성
+            byte[] modifiedZipBytes = createModifiedZip(
+                    existingZipData,
+                    request.getDescription(),
+                    request.getTimeLimit(),
+                    request.getMemoryLimit()
+            );
+
+            // MultipartFile로 변환
+            MultipartFile modifiedZipFile = createMultipartFile(modifiedZipBytes, "modified.zip");
+
+            // DOMjudge에 업로드
+            newDomjudgeProblemId = domjudgeService.uploadProblemToDomjudge(modifiedZipFile);
+            newZipFileData = saveProblemZipToDatabase(modifiedZipFile);
+        }
+
+        // 문제 정보 업데이트
+        updateProblemFields(problem, request.getTitle(), request.getDescription(),
+                request.getTimeLimit(), request.getMemoryLimit(),
+                newDomjudgeProblemId, newZipFileData);
+
+        problemRepository.save(problem);
+        log.info("문제 수정 완료: ID={}, Title={}", problemId, request.getTitle());
+    }
+
+    /**
+     * Problem 필드 업데이트 헬퍼 메서드
+     */
+    private void updateProblemFields(Problem problem, String title, String description,
+                                     Double timeLimit, Integer memoryLimit,
+                                     String domjudgeProblemId, byte[] zipFileData) {
+        try {
+            java.lang.reflect.Field titleField = Problem.class.getDeclaredField("title");
+            titleField.setAccessible(true);
+            titleField.set(problem, title);
+
+            java.lang.reflect.Field descField = Problem.class.getDeclaredField("description");
+            descField.setAccessible(true);
+            descField.set(problem, description);
+
+            java.lang.reflect.Field timeLimitField = Problem.class.getDeclaredField("timeLimit");
+            timeLimitField.setAccessible(true);
+            timeLimitField.set(problem, timeLimit);
+
+            java.lang.reflect.Field memoryLimitField = Problem.class.getDeclaredField("memoryLimit");
+            memoryLimitField.setAccessible(true);
+            memoryLimitField.set(problem, memoryLimit);
+
+            java.lang.reflect.Field domjudgeIdField = Problem.class.getDeclaredField("domjudgeProblemId");
+            domjudgeIdField.setAccessible(true);
+            domjudgeIdField.set(problem, domjudgeProblemId);
+
+            java.lang.reflect.Field zipDataField = Problem.class.getDeclaredField("zipFileData");
+            zipDataField.setAccessible(true);
+            zipDataField.set(problem, zipFileData);
+
+        } catch (Exception e) {
+            throw new RuntimeException("문제 필드 업데이트 실패", e);
+        }
+    }
+
+    /**
+     * 기존 ZIP 파일을 수정하여 새 ZIP 생성
+     */
+    private byte[] createModifiedZip(byte[] existingZipData, String newDescription,
+                                     Double timeLimit, Integer memoryLimit) throws IOException {
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+
+        try (ZipInputStream zis = new ZipInputStream(new ByteArrayInputStream(existingZipData));
+             ZipOutputStream zos = new ZipOutputStream(baos)) {
+
+            ZipEntry entry;
+            boolean descriptionReplaced = false;
+            boolean limitsReplaced = false;
+
+            // 기존 ZIP 엔트리 복사 (description과 limits는 수정)
+            while ((entry = zis.getNextEntry()) != null) {
+                String entryName = entry.getName();
+
+                // problem_statement 폴더의 .md 파일 교체
+                if (entryName.toLowerCase().contains("problem_statement") && entryName.endsWith(".md")) {
+                    zos.putNextEntry(new ZipEntry(entryName));
+                    zos.write(newDescription.getBytes(StandardCharsets.UTF_8));
+                    zos.closeEntry();
+                    descriptionReplaced = true;
+                }
+                // domjudge-problem.ini 교체
+                else if (entryName.endsWith("domjudge-problem.ini") || entryName.endsWith("problem.ini")) {
+                    zos.putNextEntry(new ZipEntry(entryName));
+                    String iniContent = createIniContent(timeLimit, memoryLimit);
+                    zos.write(iniContent.getBytes(StandardCharsets.UTF_8));
+                    zos.closeEntry();
+                    limitsReplaced = true;
+                }
+                // 나머지 파일은 그대로 복사
+                else {
+                    zos.putNextEntry(new ZipEntry(entryName));
+                    byte[] buffer = new byte[1024];
+                    int len;
+                    while ((len = zis.read(buffer)) > 0) {
+                        zos.write(buffer, 0, len);
+                    }
+                    zos.closeEntry();
+                }
+            }
+
+            // description 파일이 없었다면 새로 추가
+            if (!descriptionReplaced && newDescription != null) {
+                zos.putNextEntry(new ZipEntry("problem_statement/problem.md"));
+                zos.write(newDescription.getBytes(StandardCharsets.UTF_8));
+                zos.closeEntry();
+            }
+
+            // limits 파일이 없었다면 새로 추가
+            if (!limitsReplaced && (timeLimit != null || memoryLimit != null)) {
+                zos.putNextEntry(new ZipEntry("domjudge-problem.ini"));
+                String iniContent = createIniContent(timeLimit, memoryLimit);
+                zos.write(iniContent.getBytes(StandardCharsets.UTF_8));
+                zos.closeEntry();
+            }
+        }
+
+        return baos.toByteArray();
+    }
+
+    /**
+     * INI 파일 내용 생성
+     */
+    private String createIniContent(Double timeLimit, Integer memoryLimit) {
+        StringBuilder sb = new StringBuilder();
+        if (timeLimit != null) {
+            sb.append("timelimit=").append(timeLimit).append("\n");
+        }
+        if (memoryLimit != null) {
+            sb.append("memorylimit=").append(memoryLimit).append("\n");
+        }
+        return sb.toString();
+    }
+
+    /**
+     * byte[]를 MultipartFile로 변환
+     */
+    private MultipartFile createMultipartFile(byte[] content, String filename) {
+        return new MultipartFile() {
+            @Override
+            public String getName() { return "file"; }
+
+            @Override
+            public String getOriginalFilename() { return filename; }
+
+            @Override
+            public String getContentType() { return "application/zip"; }
+
+            @Override
+            public boolean isEmpty() { return content.length == 0; }
+
+            @Override
+            public long getSize() { return content.length; }
+
+            @Override
+            public byte[] getBytes() { return content; }
+
+            @Override
+            public InputStream getInputStream() {
+                return new ByteArrayInputStream(content);
+            }
+
+            @Override
+            public void transferTo(File dest) throws IOException {
+                Files.write(dest.toPath(), content);
+            }
+        };
     }
 }
 

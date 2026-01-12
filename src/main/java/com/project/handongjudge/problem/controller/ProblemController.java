@@ -1,15 +1,16 @@
 package com.project.handongjudge.problem.controller;
 
-import com.project.handongjudge.problem.dto.ProblemCreateRequest;
-import com.project.handongjudge.problem.dto.ProblemResponse;
+import com.project.handongjudge.problem.dto.*;
 import com.project.handongjudge.problem.service.ProblemService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-import com.project.handongjudge.problem.dto.ProblemCopyRequest;
 import org.springframework.security.core.Authentication;
+import org.springframework.web.multipart.MultipartFile;
+
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.List;
 
 @RestController
@@ -19,10 +20,37 @@ public class ProblemController {
 
     private final ProblemService problemService;
 
+
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<Long> createProblem(
             @ModelAttribute ProblemCreateRequest request,
+            @RequestParam(value = "testcase_0", required = false) MultipartFile testcase0,
+            @RequestParam(value = "testcase_1", required = false) MultipartFile testcase1,
+            @RequestParam(value = "testcase_2", required = false) MultipartFile testcase2,
+            @RequestParam(value = "testcase_3", required = false) MultipartFile testcase3,
+            @RequestParam(value = "testcase_4", required = false) MultipartFile testcase4,
+            @RequestParam(value = "testcase_5", required = false) MultipartFile testcase5,
+            @RequestParam(value = "testcase_6", required = false) MultipartFile testcase6,
+            @RequestParam(value = "testcase_7", required = false) MultipartFile testcase7,
+            @RequestParam(value = "testcase_8", required = false) MultipartFile testcase8,
+            @RequestParam(value = "testcase_9", required = false) MultipartFile testcase9,
             Authentication authentication) throws IOException {
+
+        // 테스트케이스 파일들 수집
+        List<MultipartFile> testcaseFiles = new ArrayList<>();
+        if (testcase0 != null && !testcase0.isEmpty()) testcaseFiles.add(testcase0);
+        if (testcase1 != null && !testcase1.isEmpty()) testcaseFiles.add(testcase1);
+        if (testcase2 != null && !testcase2.isEmpty()) testcaseFiles.add(testcase2);
+        if (testcase3 != null && !testcase3.isEmpty()) testcaseFiles.add(testcase3);
+        if (testcase4 != null && !testcase4.isEmpty()) testcaseFiles.add(testcase4);
+        if (testcase5 != null && !testcase5.isEmpty()) testcaseFiles.add(testcase5);
+        if (testcase6 != null && !testcase6.isEmpty()) testcaseFiles.add(testcase6);
+        if (testcase7 != null && !testcase7.isEmpty()) testcaseFiles.add(testcase7);
+        if (testcase8 != null && !testcase8.isEmpty()) testcaseFiles.add(testcase8);
+        if (testcase9 != null && !testcase9.isEmpty()) testcaseFiles.add(testcase9);
+
+        request.setTestcaseFiles(testcaseFiles);
+
         Long instructorId = Long.parseLong(authentication.getName());
         Long problemId = problemService.createProblem(request, instructorId);
         return ResponseEntity.ok(problemId);
@@ -47,5 +75,30 @@ public class ProblemController {
         String newTitle = (request != null) ? request.getNewTitle() : null;
         Long newProblemId = problemService.copyProblem(problemId, newTitle, instructorId);
         return ResponseEntity.ok(newProblemId);
+    }
+    // Handongjudge_BE/src/main/java/com/project/handongjudge/problem/controller/ProblemController.java
+// 다음 메서드들을 ProblemController 클래스 안에 추가:
+
+    /**
+     * ZIP 파일 내용 파싱 (미리보기)
+     */
+    @PostMapping("/parse-zip")
+    public ResponseEntity<ProblemParseResponse> parseZipFile(
+            @RequestParam("zipFile") MultipartFile zipFile) throws IOException {
+        ProblemParseResponse response = problemService.parseZipFile(zipFile);
+        return ResponseEntity.ok(response);
+    }
+
+    /**
+     * 문제 수정
+     */
+    @PutMapping(value = "/{problemId}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<Void> updateProblem(
+            @PathVariable Long problemId,
+            @ModelAttribute ProblemUpdateRequest request,
+            Authentication authentication) throws IOException {
+        Long instructorId = Long.parseLong(authentication.getName());
+        problemService.updateProblem(problemId, request, instructorId);
+        return ResponseEntity.ok().build();
     }
 }
