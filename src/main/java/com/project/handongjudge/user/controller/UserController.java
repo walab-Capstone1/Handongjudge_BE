@@ -187,7 +187,7 @@ public class UserController {
     /**
      * 특정 학생의 특정 분반 과제 진도율 조회
      */
-    @GetMapping("/students/{userId}/sections/{sectionId}/assignments-progress")
+    @GetMapping("/studen    sts/{userId}/sections/{sectionId}/assignments-progress")
     public ResponseEntity<Map<String, Object>> getStudentAssignmentsProgress(
             @PathVariable Long userId,
             @PathVariable Long sectionId,

@@ -1,5 +1,6 @@
 package com.project.handongjudge.user.repository;
 
+import com.project.handongjudge.section.entity.Section;
 import com.project.handongjudge.user.dto.DashboardCourseDto;
 import com.project.handongjudge.user.dto.StudentDto;
 import com.project.handongjudge.user.entity.Enrollment;
@@ -114,4 +115,7 @@ public interface EnrollmentRepository extends CrudRepository<Enrollment, Long> {
             "WHERE e.user.id = :userId " +
             "GROUP BY c.id, c.title, s.id, s.sectionNumber, u.name, s.createdAt, s.year, s.semester, s.enrollmentCode, s.active")
     List<DashboardCourseDto> findDashboardCoursesByUserId(@Param("userId") Long userId);
+
+    // 섹션별 수강생 조회 (알림 발송용)
+    List<Enrollment> findBySection(Section section);
 }
