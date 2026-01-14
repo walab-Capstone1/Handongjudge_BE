@@ -29,12 +29,16 @@ public interface NotificationRepository extends JpaRepository<Notification, Long
     void markAllAsReadByRecipient(@Param("recipient") User recipient);
 
     // 섹션별 알림 조회 (질문의 섹션, 공지사항의 섹션, 과제의 섹션을 확인)
+    // LEFT JOIN을 사용하여 한 번의 쿼리로 처리
     @Query("SELECT n FROM Notification n " +
+           "LEFT JOIN n.question q " +
+           "LEFT JOIN n.notice nt " +
+           "LEFT JOIN n.assignment a " +
            "WHERE n.recipient = :recipient " +
            "AND (" +
-           "  (n.question IS NOT NULL AND n.question.section = :section) OR " +
-           "  (n.notice IS NOT NULL AND n.notice.section = :section) OR " +
-           "  (n.assignment IS NOT NULL AND n.assignment.section = :section)" +
+           "  (q IS NOT NULL AND q.section = :section) OR " +
+           "  (nt IS NOT NULL AND nt.section = :section) OR " +
+           "  (a IS NOT NULL AND a.section = :section)" +
            ") " +
            "ORDER BY n.createdAt DESC")
     Page<Notification> findByRecipientAndSectionOrderByCreatedAtDesc(
