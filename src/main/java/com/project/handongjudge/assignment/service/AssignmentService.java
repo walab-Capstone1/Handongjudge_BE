@@ -5,6 +5,7 @@ import com.project.handongjudge.assignment.entity.Assignment;
 import com.project.handongjudge.assignment.entity.AssignmentProblem;
 import com.project.handongjudge.assignment.repository.AssignmentRepository;
 import com.project.handongjudge.assignment.repository.AssignmentProblemRepository;
+import com.project.handongjudge.community.service.NotificationService;
 import com.project.handongjudge.problem.entity.Problem;
 import com.project.handongjudge.problem.repository.ProblemRepository;
 import com.project.handongjudge.domjudge.service.DomjudgeService;
@@ -38,7 +39,8 @@ public class AssignmentService {
     private final SectionRepository sectionRepository;
     private final DomjudgeService domjudgeService;
     private final SubmissionRepository submissionRepository;
-    private final EnrollmentRepository enrollmentRepository;  // 이 줄 추가
+    private final EnrollmentRepository enrollmentRepository;
+    private final NotificationService notificationService;
 
     public AssignmentResponse createAssignment(Long sectionId, AssignmentRequest request, Long userId) {
         // 1. Section 조회
@@ -83,6 +85,9 @@ public class AssignmentService {
 
             assignmentProblemRepository.saveAll(assignmentProblems);
         }
+
+        // 알림 발송 (모든 수강생에게)
+        notificationService.notifyAssignmentCreated(savedAssignment, section);
 
         return toResponse(savedAssignment);
     }

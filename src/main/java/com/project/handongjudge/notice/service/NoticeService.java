@@ -1,5 +1,6 @@
 package com.project.handongjudge.notice.service;
 
+import com.project.handongjudge.community.service.NotificationService;
 import com.project.handongjudge.notice.dto.NoticeRequestDto;
 import com.project.handongjudge.notice.dto.NoticeResponseDto;
 import com.project.handongjudge.notice.entity.Notice;
@@ -25,6 +26,7 @@ public class NoticeService {
     private final NoticeRepository noticeRepository;
     private final SectionRepository sectionRepository;
     private final EnrollmentRepository enrollmentRepository;
+    private final NotificationService notificationService;
 
     public NoticeResponseDto createNotice(NoticeRequestDto requestDto, Long instructorId) {
         // 분반 조회
@@ -49,6 +51,9 @@ public class NoticeService {
 
         Notice savedNotice = noticeRepository.save(notice);
         log.info("공지사항 생성 완료 - ID: {}, 제목: {}", savedNotice.getId(), savedNotice.getTitle());
+
+        // 알림 발송 (모든 수강생에게)
+        notificationService.notifyNoticeCreated(savedNotice, section);
 
         return convertToResponse(savedNotice);
     }
