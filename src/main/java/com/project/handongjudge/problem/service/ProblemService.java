@@ -305,8 +305,19 @@ public class ProblemService {
     }
     // ProblemService.java에 추가
     public List<ProblemResponse> getAllProblems(Long instructorId) {
-        // instructorId로 필터링하여 해당 instructor가 만든 문제만 조회
-        List<Problem> problems = problemRepository.findByCreatedBy_Id(instructorId);
+        // 사용자 조회
+        User user = userRepository.findById(instructorId)
+                .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다: " + instructorId));
+
+        List<Problem> problems;
+        // 시스템 관리자는 모든 문제 조회 가능
+        if (user.getRole() == User.Role.SUPER_ADMIN) {
+            problems = problemRepository.findAll();
+        } else {
+            // 일반 교수는 자신이 만든 문제만 조회
+            problems = problemRepository.findByCreatedBy_Id(instructorId);
+        }
+        
         return problems.stream()
                 .map(this::convertToProblemResponse)
                 .collect(Collectors.toList());
@@ -330,11 +341,15 @@ public class ProblemService {
         Problem sourceProblem = problemRepository.findById(sourceProblemId)
                 .orElseThrow(() -> new IllegalArgumentException("원본 문제를 찾을 수 없습니다: " + sourceProblemId));
 
-        // 권한 체크
-        if (sourceProblem.getCreatedBy() == null) {
-            throw new IllegalArgumentException("원본 문제의 생성자 정보가 없어 복사할 수 없습니다.");
-        }
-        if (!sourceProblem.getCreatedBy().getId().equals(instructorId)) {
+        // 사용자 조회
+        User user = userRepository.findById(instructorId)
+                .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다: " + instructorId));
+
+        // 권한 체크: 문제 생성자이거나 시스템 관리자인지 확인
+        boolean isAuthorized = (sourceProblem.getCreatedBy() != null && sourceProblem.getCreatedBy().getId().equals(instructorId)) ||
+                user.getRole() == User.Role.SUPER_ADMIN;
+        
+        if (!isAuthorized) {
             throw new IllegalArgumentException("이 문제를 복사할 권한이 없습니다.");
         }
 
@@ -616,8 +631,15 @@ public class ProblemService {
         Problem problem = problemRepository.findById(problemId)
                 .orElseThrow(() -> new IllegalArgumentException("문제를 찾을 수 없습니다: " + problemId));
 
-        // 권한 체크
-        if (problem.getCreatedBy() == null || !problem.getCreatedBy().getId().equals(instructorId)) {
+        // 사용자 조회
+        User user = userRepository.findById(instructorId)
+                .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다: " + instructorId));
+
+        // 권한 체크: 문제 생성자이거나 시스템 관리자인지 확인
+        boolean isAuthorized = (problem.getCreatedBy() != null && problem.getCreatedBy().getId().equals(instructorId)) ||
+                user.getRole() == User.Role.SUPER_ADMIN;
+        
+        if (!isAuthorized) {
             throw new IllegalArgumentException("이 문제를 수정할 권한이 없습니다.");
         }
 

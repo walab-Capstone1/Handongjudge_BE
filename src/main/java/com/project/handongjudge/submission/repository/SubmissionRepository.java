@@ -108,4 +108,13 @@ public interface SubmissionRepository extends JpaRepository<Submission, Long> {
     Optional<LocalDateTime> findFirstAcceptedSubmissionTime(@Param("userId") Long userId,
                                                             @Param("problemId") Long problemId,
                                                             @Param("sectionId") Long sectionId);
+
+    // 시스템 관리자용: 모든 제출 조회 (관계 엔티티 포함)
+    @Query("SELECT s FROM Submission s " +
+            "JOIN FETCH s.user u " +
+            "JOIN FETCH s.problem p " +
+            "JOIN FETCH s.section sec " +
+            "JOIN FETCH sec.course c " +
+            "ORDER BY s.submittedAt DESC")
+    List<Submission> findAllWithDetails();
 }

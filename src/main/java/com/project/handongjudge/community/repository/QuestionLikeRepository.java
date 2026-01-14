@@ -24,3 +24,4 @@ public interface QuestionLikeRepository extends JpaRepository<QuestionLike, Long
     boolean existsByQuestionIdAndUserId(Long questionId, Long userId);
 }
 
+

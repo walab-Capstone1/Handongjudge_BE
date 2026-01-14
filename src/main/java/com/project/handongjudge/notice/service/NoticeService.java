@@ -7,7 +7,9 @@ import com.project.handongjudge.notice.entity.Notice;
 import com.project.handongjudge.notice.repository.NoticeRepository;
 import com.project.handongjudge.section.entity.Section;
 import com.project.handongjudge.section.repository.SectionRepository;
+import com.project.handongjudge.user.entity.User;
 import com.project.handongjudge.user.repository.EnrollmentRepository;
+import com.project.handongjudge.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -27,14 +29,22 @@ public class NoticeService {
     private final SectionRepository sectionRepository;
     private final EnrollmentRepository enrollmentRepository;
     private final NotificationService notificationService;
+    private final UserRepository userRepository;
 
     public NoticeResponseDto createNotice(NoticeRequestDto requestDto, Long instructorId) {
         // 분반 조회
         Section section = sectionRepository.findById(requestDto.getSectionId())
                 .orElseThrow(() -> new IllegalArgumentException("분반을 찾을 수 없습니다: " + requestDto.getSectionId()));
 
-        // 권한 확인: 해당 분반의 교수인지 확인
-        if (!section.getInstructor().getId().equals(instructorId)) {
+        // 사용자 조회
+        User user = userRepository.findById(instructorId)
+                .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다: " + instructorId));
+
+        // 권한 확인: 해당 분반의 교수이거나 시스템 관리자인지 확인
+        boolean isAuthorized = section.getInstructor().getId().equals(instructorId) ||
+                user.getRole() == User.Role.SUPER_ADMIN;
+        
+        if (!isAuthorized) {
             throw new IllegalArgumentException("해당 분반의 공지사항을 작성할 권한이 없습니다");
         }
 
@@ -84,8 +94,15 @@ public class NoticeService {
         Notice notice = noticeRepository.findById(noticeId)
                 .orElseThrow(() -> new IllegalArgumentException("공지사항을 찾을 수 없습니다: " + noticeId));
 
-        // 권한 확인: 해당 분반의 교수인지 확인
-        if (!notice.getSection().getInstructor().getId().equals(instructorId)) {
+        // 사용자 조회
+        User user = userRepository.findById(instructorId)
+                .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다: " + instructorId));
+
+        // 권한 확인: 해당 분반의 교수이거나 시스템 관리자인지 확인
+        boolean isAuthorized = notice.getSection().getInstructor().getId().equals(instructorId) ||
+                user.getRole() == User.Role.SUPER_ADMIN;
+        
+        if (!isAuthorized) {
             throw new IllegalArgumentException("해당 공지사항을 수정할 권한이 없습니다");
         }
 
@@ -104,8 +121,15 @@ public class NoticeService {
         Notice notice = noticeRepository.findById(noticeId)
                 .orElseThrow(() -> new IllegalArgumentException("공지사항을 찾을 수 없습니다: " + noticeId));
 
-        // 권한 확인: 해당 분반의 교수인지 확인
-        if (!notice.getSection().getInstructor().getId().equals(instructorId)) {
+        // 사용자 조회
+        User user = userRepository.findById(instructorId)
+                .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다: " + instructorId));
+
+        // 권한 확인: 해당 분반의 교수이거나 시스템 관리자인지 확인
+        boolean isAuthorized = notice.getSection().getInstructor().getId().equals(instructorId) ||
+                user.getRole() == User.Role.SUPER_ADMIN;
+        
+        if (!isAuthorized) {
             throw new IllegalArgumentException("해당 공지사항을 삭제할 권한이 없습니다");
         }
 
@@ -149,8 +173,15 @@ public class NoticeService {
         Notice notice = noticeRepository.findById(noticeId)
                 .orElseThrow(() -> new IllegalArgumentException("공지사항을 찾을 수 없습니다: " + noticeId));
 
-        // 권한 확인
-        if (!notice.getSection().getInstructor().getId().equals(instructorId)) {
+        // 사용자 조회
+        User user = userRepository.findById(instructorId)
+                .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다: " + instructorId));
+
+        // 권한 확인: 해당 분반의 교수이거나 시스템 관리자인지 확인
+        boolean isAuthorized = notice.getSection().getInstructor().getId().equals(instructorId) ||
+                user.getRole() == User.Role.SUPER_ADMIN;
+        
+        if (!isAuthorized) {
             throw new IllegalArgumentException("해당 공지사항을 수정할 권한이 없습니다");
         }
 

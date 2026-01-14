@@ -61,3 +61,4 @@ public interface QuestionRepository extends JpaRepository<Question, Long> {
     List<Question> findBySectionAndIsPinnedTrueOrderByCreatedAtDesc(Section section);
 }
 
+

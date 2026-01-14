@@ -116,6 +116,32 @@ public interface EnrollmentRepository extends CrudRepository<Enrollment, Long> {
             "GROUP BY c.id, c.title, s.id, s.sectionNumber, u.name, s.createdAt, s.year, s.semester, s.enrollmentCode, s.active")
     List<DashboardCourseDto> findDashboardCoursesByUserId(@Param("userId") Long userId);
 
+    // 시스템 관리자용: 모든 수업 조회
+    @Query("SELECT new com.project.handongjudge.user.dto.DashboardCourseDto(" +
+            "c.id, " +                              // courseId
+            "c.title, " +                           // courseTitle
+            "s.id, " +                              // sectionId
+            "s.sectionNumber, " +                    // sectionNumber
+            "u.name, " +                             // instructorName
+            "CAST(COALESCE(SUM(CASE WHEN n.isNew = true THEN 1 ELSE 0 END), 0) AS long), " +  // newNoticeCount
+            "CAST(COALESCE(SUM(CASE WHEN a.isNew = true THEN 1 ELSE 0 END), 0) AS long), " +  // newAssignmentCount
+            "CAST(COUNT(DISTINCT a.id) AS long), " +  // assignmentCount
+            "CAST(COUNT(DISTINCT n.id) AS long), " +  // noticeCount
+            "CAST((SELECT COUNT(e2.id) FROM Enrollment e2 WHERE e2.section.id = s.id) AS long), " +  // studentCount
+            "s.createdAt, " +                       // createdAt
+            "s.year, " +                            // year
+            "s.semester, " +                        // semester
+            "s.enrollmentCode, " +                  // enrollmentCode
+            "COALESCE(s.active, true)) " +          // active
+            "FROM Section s " +
+            "JOIN Course c ON s.course.id = c.id " +
+            "JOIN User u ON s.instructor.id = u.id " +
+            "LEFT JOIN Notice n ON n.section.id = s.id " +
+            "LEFT JOIN Assignment a ON a.section.id = s.id " +
+            "GROUP BY c.id, c.title, s.id, s.sectionNumber, u.name, s.createdAt, s.year, s.semester, s.enrollmentCode, s.active " +
+            "ORDER BY s.year DESC, s.semester, c.title, s.sectionNumber")
+    List<DashboardCourseDto> findAllDashboardCourses();
+
     // 섹션별 수강생 조회 (알림 발송용)
     List<Enrollment> findBySection(Section section);
 }
