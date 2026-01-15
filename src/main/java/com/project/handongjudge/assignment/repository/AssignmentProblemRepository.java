@@ -21,4 +21,7 @@ public interface AssignmentProblemRepository extends JpaRepository<AssignmentPro
     void deleteByAssignmentId(@Param("assignmentId") Long assignmentId);
     @Query("SELECT ap.problem.id FROM AssignmentProblem ap WHERE ap.assignment.id = :assignmentId")
     List<Long> findProblemIdsByAssignmentId(@Param("assignmentId") Long assignmentId);
+    
+    // 문제 ID로 AssignmentProblem 목록 조회
+    List<AssignmentProblem> findByProblemId(Long problemId);
 }

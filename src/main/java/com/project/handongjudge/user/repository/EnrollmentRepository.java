@@ -144,4 +144,10 @@ public interface EnrollmentRepository extends CrudRepository<Enrollment, Long> {
 
     // 섹션별 수강생 조회 (알림 발송용)
     List<Enrollment> findBySection(Section section);
+    
+    // 사용자 ID로 Enrollment 목록 조회
+    List<Enrollment> findByUserId(Long userId);
+    
+    // 특정 분반의 수강생 수
+    long countBySectionId(Long sectionId);
 }

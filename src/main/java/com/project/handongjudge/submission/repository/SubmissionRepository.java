@@ -117,4 +117,15 @@ public interface SubmissionRepository extends JpaRepository<Submission, Long> {
             "JOIN FETCH sec.course c " +
             "ORDER BY s.submittedAt DESC")
     List<Submission> findAllWithDetails();
+    
+    // 특정 날짜 이후 제출 수
+    @Query("SELECT COUNT(s) FROM Submission s WHERE s.submittedAt >= :date")
+    long countBySubmittedAtAfter(@Param("date") LocalDateTime date);
+    
+    // 특정 문제들에 제출한 고유 사용자 수
+    @Query("SELECT COUNT(DISTINCT s.user.id) FROM Submission s " +
+            "WHERE s.problem.id IN :problemIds AND s.section.id = :sectionId")
+    long countDistinctUsersByProblemIdsAndSectionId(@Param("problemIds") List<Long> problemIds, 
+                                                     @Param("sectionId") Long sectionId);
+    
 }

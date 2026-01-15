@@ -450,4 +450,118 @@ public class UserService {
 
         return problemStatusList;
     }
+
+    /**
+     * 관리자 대시보드 통계 조회
+     */
+    public AdminDashboardStatsDto getAdminDashboardStats(Long instructorId) {
+        // 사용자 조회 및 권한 확인
+        User user = userRepository.findById(instructorId)
+                .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다: " + instructorId));
+
+        if (user.getRole() != User.Role.ADMIN && user.getRole() != User.Role.SUPER_ADMIN) {
+            throw new IllegalArgumentException("관리자 권한이 필요합니다.");
+        }
+
+        // 담당하는 모든 분반 조회
+        List<DashboardCourseDto> sections = enrollmentRepository.findDashboardCoursesByInstructorId(instructorId);
+        List<Long> sectionIds = sections.stream()
+                .map(DashboardCourseDto::getSectionId)
+                .collect(java.util.stream.Collectors.toList());
+
+        // 전체 통계 계산
+        long totalSections = sections.size();
+        long totalAssignments = sections.stream()
+                .mapToLong(DashboardCourseDto::getAssignmentCount)
+                .sum();
+        long totalProblems = problemRepository.countByCreatedById(instructorId);
+        long totalStudents = sections.stream()
+                .mapToLong(DashboardCourseDto::getStudentCount)
+                .sum();
+
+        // 최근 7일 활동
+        LocalDateTime sevenDaysAgo = LocalDateTime.now().minusDays(7);
+        long recentSubmissions = submissionRepository.countBySubmittedAtAfter(sevenDaysAgo);
+        long recentAssignments = assignmentRepository.countByCreatedAtAfterAndSectionInstructorId(sevenDaysAgo, instructorId);
+
+        // 과제별 통계
+        List<AdminDashboardStatsDto.AssignmentStatsDto> assignmentStats = new ArrayList<>();
+        if (!sectionIds.isEmpty()) {
+            List<Assignment> assignments = assignmentRepository.findBySectionIdIn(sectionIds);
+            for (Assignment assignment : assignments) {
+                Long sectionId = assignment.getSection().getId();
+                Long totalStudentsInSection = enrollmentRepository.countBySectionId(sectionId);
+                
+                // 과제의 문제 수
+                List<Long> problemIds = assignmentProblemRepository.findProblemIdsByAssignmentId(assignment.getId());
+                
+                // 제출한 학생 수 (과제의 문제 중 하나라도 제출한 학생)
+                long submittedStudents = submissionRepository.countDistinctUsersByProblemIdsAndSectionId(problemIds, sectionId);
+                
+                // 완료한 학생 수 (과제의 모든 문제를 정답으로 제출한 학생)
+                // 간단하게 계산: 각 학생이 푼 문제 수를 확인
+                long completedStudents = 0;
+                if (!problemIds.isEmpty()) {
+                    // 분반의 모든 학생 조회
+                    List<User> students = enrollmentRepository.findUsersBySectionId(sectionId);
+                    for (User student : students) {
+                        // 학생이 푼 문제 ID 목록 (정답만)
+                        List<Long> solvedProblemIds = submissionRepository.findAcceptedProblemIdsByUserAndProblems(
+                            student.getId(), problemIds);
+                        // 모든 문제를 다 풀었는지 확인
+                        if (solvedProblemIds.size() == problemIds.size() && 
+                            solvedProblemIds.containsAll(problemIds)) {
+                            completedStudents++;
+                        }
+                    }
+                }
+
+                double submissionRate = totalStudentsInSection > 0 
+                    ? (double) submittedStudents / totalStudentsInSection * 100 
+                    : 0.0;
+                double completionRate = totalStudentsInSection > 0 
+                    ? (double) completedStudents / totalStudentsInSection * 100 
+                    : 0.0;
+
+                assignmentStats.add(AdminDashboardStatsDto.AssignmentStatsDto.builder()
+                        .assignmentId(assignment.getId())
+                        .assignmentTitle(assignment.getTitle())
+                        .sectionId(sectionId)
+                        .sectionTitle(sections.stream()
+                                .filter(s -> s.getSectionId().equals(sectionId))
+                                .findFirst()
+                                .map(DashboardCourseDto::getCourseTitle)
+                                .orElse(""))
+                        .totalStudents(totalStudentsInSection)
+                        .submittedStudents(submittedStudents)
+                        .completedStudents(completedStudents)
+                        .submissionRate(submissionRate)
+                        .completionRate(completionRate)
+                        .build());
+            }
+        }
+
+        // 수업별 통계
+        List<AdminDashboardStatsDto.SectionStatsDto> sectionStats = sections.stream()
+                .map(section -> AdminDashboardStatsDto.SectionStatsDto.builder()
+                        .sectionId(section.getSectionId())
+                        .sectionTitle(section.getCourseTitle() + " " + section.getSectionNumber() + "분반")
+                        .studentCount(section.getStudentCount())
+                        .assignmentCount(section.getAssignmentCount())
+                        .activeAssignmentCount(assignmentRepository.countActiveBySectionId(section.getSectionId()))
+                        .noticeCount(section.getNoticeCount())
+                        .build())
+                .collect(java.util.stream.Collectors.toList());
+
+        return AdminDashboardStatsDto.builder()
+                .totalSections(totalSections)
+                .totalAssignments(totalAssignments)
+                .totalProblems(totalProblems)
+                .totalStudents(totalStudents)
+                .recentSubmissions(recentSubmissions)
+                .recentAssignments(recentAssignments)
+                .assignmentStats(assignmentStats)
+                .sectionStats(sectionStats)
+                .build();
+    }
 }

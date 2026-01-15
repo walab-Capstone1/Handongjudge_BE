@@ -27,4 +27,16 @@ public interface AssignmentRepository extends JpaRepository<Assignment, Long> {
     List<Assignment> findAllAssignmentsBySectionId(@Param("sectionId") Long sectionId);
     // 기존 메서드들에 추가
     List<Assignment> findByIdIn(List<Long> ids);
+    
+    // sectionId 리스트로 과제 조회
+    @Query("SELECT a FROM Assignment a WHERE a.section.id IN :sectionIds")
+    List<Assignment> findBySectionIdIn(@Param("sectionIds") List<Long> sectionIds);
+    
+    // 특정 날짜 이후 생성된 과제 수 (특정 교수의 분반) - startDate 사용
+    @Query("SELECT COUNT(a) FROM Assignment a WHERE a.startDate >= :date AND a.section.instructor.id = :instructorId")
+    long countByCreatedAtAfterAndSectionInstructorId(@Param("date") java.time.LocalDateTime date, @Param("instructorId") Long instructorId);
+    
+    // 특정 분반의 활성 과제 수
+    @Query("SELECT COUNT(a) FROM Assignment a WHERE a.section.id = :sectionId AND a.active = true")
+    long countActiveBySectionId(@Param("sectionId") Long sectionId);
 }

@@ -43,6 +43,7 @@ public class ProblemService {
     private final AssignmentProblemService assignmentProblemService;
     private final AssignmentRepository assignmentRepository;
     private final UserRepository userRepository;
+    private final com.project.handongjudge.assignment.repository.AssignmentProblemRepository assignmentProblemRepository;
 
     @Value("${problem.zip.storage.path:./problem-zips}")
     private String zipStoragePath;
@@ -845,6 +846,42 @@ public class ProblemService {
                 Files.write(dest.toPath(), content);
             }
         };
+    }
+
+    /**
+     * 문제 삭제
+     */
+    @org.springframework.transaction.annotation.Transactional
+    public void deleteProblem(Long problemId, Long instructorId) {
+        // 문제 조회
+        Problem problem = problemRepository.findById(problemId)
+                .orElseThrow(() -> new IllegalArgumentException("문제를 찾을 수 없습니다: " + problemId));
+
+        // 사용자 조회
+        User user = userRepository.findById(instructorId)
+                .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다: " + instructorId));
+
+        // 권한 확인: 문제를 만든 교수이거나 시스템 관리자인지 확인
+        boolean isAuthorized = problem.getCreatedBy().getId().equals(instructorId) ||
+                user.getRole() == User.Role.SUPER_ADMIN;
+
+        if (!isAuthorized) {
+            throw new IllegalArgumentException("해당 문제를 삭제할 권한이 없습니다");
+        }
+
+        // 문제가 과제에 연결되어 있는지 확인
+        List<com.project.handongjudge.assignment.entity.AssignmentProblem> assignmentProblems = 
+                assignmentProblemRepository.findByProblemId(problemId);
+        
+        if (!assignmentProblems.isEmpty()) {
+            throw new IllegalArgumentException("과제에 연결된 문제는 삭제할 수 없습니다. 먼저 과제에서 문제를 제거해주세요.");
+        }
+
+        // DOMjudge에서 문제 삭제는 하지 않음 (DOMjudge API에 문제 삭제 기능이 없을 수 있음)
+        // 필요시 domjudgeService.deleteProblem(problem.getDomjudgeProblemId()) 호출
+
+        // 데이터베이스에서 문제 삭제
+        problemRepository.delete(problem);
     }
 }
 

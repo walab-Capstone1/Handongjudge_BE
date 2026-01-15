@@ -455,4 +455,37 @@ public class AssignmentService {
 
         return toResponse(updatedAssignment);
     }
+
+    /**
+     * 과제 삭제
+     */
+    @Transactional
+    public void deleteAssignment(Long sectionId, Long assignmentId, Long userId) {
+        // 과제 조회
+        Assignment assignment = assignmentRepository.findById(assignmentId)
+                .orElseThrow(() -> new IllegalArgumentException("Assignment not found"));
+
+        // Section 확인
+        if (!assignment.getSection().getId().equals(sectionId)) {
+            throw new IllegalArgumentException("Section ID가 일치하지 않습니다.");
+        }
+
+        // 사용자 조회
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다: " + userId));
+
+        // 권한 확인: 해당 Section의 교수이거나 시스템 관리자인지 확인
+        boolean isAuthorized = assignment.getSection().getInstructor().getId().equals(userId) ||
+                user.getRole() == User.Role.SUPER_ADMIN;
+
+        if (!isAuthorized) {
+            throw new IllegalArgumentException("해당 과제를 삭제할 권한이 없습니다");
+        }
+
+        // 과제에 연결된 문제 관계 삭제
+        assignmentProblemRepository.deleteByAssignmentId(assignmentId);
+
+        // 과제 삭제
+        assignmentRepository.delete(assignment);
+    }
 }

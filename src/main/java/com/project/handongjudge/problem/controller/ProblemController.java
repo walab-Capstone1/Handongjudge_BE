@@ -101,4 +101,16 @@ public class ProblemController {
         problemService.updateProblem(problemId, request, instructorId);
         return ResponseEntity.ok().build();
     }
+
+    /**
+     * 문제 삭제
+     */
+    @DeleteMapping("/{problemId}")
+    public ResponseEntity<Void> deleteProblem(
+            @PathVariable Long problemId,
+            Authentication authentication) {
+        Long instructorId = Long.parseLong(authentication.getName());
+        problemService.deleteProblem(problemId, instructorId);
+        return ResponseEntity.ok().build();
+    }
 }

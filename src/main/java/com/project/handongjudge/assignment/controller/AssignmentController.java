@@ -130,4 +130,17 @@ public class AssignmentController {
         AssignmentResponse response = assignmentService.toggleAssignmentActive(assignmentId, active, instructorId);
         return ResponseEntity.ok(response);
     }
+
+    /**
+     * 과제 삭제
+     */
+    @DeleteMapping("/{assignmentId}")
+    public ResponseEntity<Void> deleteAssignment(
+            @PathVariable Long sectionId,
+            @PathVariable Long assignmentId,
+            Authentication authentication) {
+        Long userId = Long.parseLong(authentication.getName());
+        assignmentService.deleteAssignment(sectionId, assignmentId, userId);
+        return ResponseEntity.ok().build();
+    }
 }
