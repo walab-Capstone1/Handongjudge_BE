@@ -199,8 +199,12 @@ public class UserController {
             User requestUser = userRepository.findById(requestUserId)
                     .orElseThrow(() -> new RuntimeException("User not found"));
 
-            // 권한 검증 로직 (선택사항)
-            if (requestUser.getRole() != User.Role.ADMIN && !requestUserId.equals(userId)) {
+            // 권한 검증 로직: 교수이거나 시스템 관리자이거나 자기 자신인 경우만 조회 가능
+            boolean isAuthorized = requestUser.getRole() == User.Role.ADMIN ||
+                    requestUser.getRole() == User.Role.SUPER_ADMIN ||
+                    requestUserId.equals(userId);
+            
+            if (!isAuthorized) {
                 return buildErrorResponse("권한이 없습니다.");
             }
 
@@ -233,7 +237,12 @@ public class UserController {
             User requestUser = userRepository.findById(requestUserId)
                     .orElseThrow(() -> new RuntimeException("User not found"));
 
-            if (requestUser.getRole() != User.Role.ADMIN && !requestUserId.equals(userId)) {
+            // 권한 검증: 교수이거나 시스템 관리자이거나 자기 자신인 경우만 조회 가능
+            boolean isAuthorized = requestUser.getRole() == User.Role.ADMIN ||
+                    requestUser.getRole() == User.Role.SUPER_ADMIN ||
+                    requestUserId.equals(userId);
+            
+            if (!isAuthorized) {
                 return buildErrorResponse("권한이 없습니다.");
             }
 

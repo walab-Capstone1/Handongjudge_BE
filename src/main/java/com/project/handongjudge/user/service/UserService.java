@@ -27,7 +27,9 @@ import com.project.handongjudge.domjudge.service.DomjudgeService;
 import java.util.ArrayList;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 @Service
@@ -148,8 +150,8 @@ public class UserService {
         List<DashboardCourseDto> result = new ArrayList<>();
 
         // 사용자 역할에 따라 다른 쿼리 사용
-        if (user.getRole() == User.Role.ADMIN) {
-            // 교수인 경우: 담당하는 분반들 + 학생으로 등록된 분반들 모두 조회
+        if (user.getRole() == User.Role.ADMIN || user.getRole() == User.Role.SUPER_ADMIN) {
+            // 교수 또는 시스템 관리자인 경우: 담당하는 분반들 + 학생으로 등록된 분반들 모두 조회
 
             // 1. 자신이 instructor인 분반들
             List<DashboardCourseDto> instructorSections = enrollmentRepository.findDashboardCoursesByInstructorId(userId);
@@ -177,7 +179,7 @@ public class UserService {
 
 
         // 학생인 경우에만 읽지 않은 공지사항 수를 수동으로 계산
-        if (user.getRole() != User.Role.ADMIN) {
+        if (user.getRole() != User.Role.ADMIN && user.getRole() != User.Role.SUPER_ADMIN) {
             for (DashboardCourseDto dto : result) {
                 // 해당 분반의 새로운 공지사항 중 읽지 않은 것들의 수 계산
                 long unreadNoticeCount = noticeRepository.findNewNoticesBySectionId(dto.getSectionId())

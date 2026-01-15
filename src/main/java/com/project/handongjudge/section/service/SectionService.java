@@ -130,8 +130,15 @@ public class SectionService {
         Section sourceSection = sectionRepository.findById(sourceSectionId)
                 .orElseThrow(() -> new IllegalArgumentException("원본 Section을 찾을 수 없습니다: " + sourceSectionId));
 
-        // ✅ 권한 체크
-        if (!sourceSection.getInstructor().getId().equals(instructorId)) {
+        // 사용자 조회
+        User user = userRepository.findById(instructorId)
+                .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다: " + instructorId));
+
+        // ✅ 권한 체크: 해당 Section의 교수이거나 시스템 관리자인지 확인
+        boolean isAuthorized = sourceSection.getInstructor().getId().equals(instructorId) ||
+                user.getRole() == User.Role.SUPER_ADMIN;
+        
+        if (!isAuthorized) {
             throw new IllegalArgumentException("이 수업을 복사할 권한이 없습니다.");
         }
 

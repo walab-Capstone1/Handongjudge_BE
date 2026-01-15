@@ -35,3 +35,4 @@ public interface UserNicknameRepository extends JpaRepository<UserNickname, Long
             @Param("userId") Long userId);
 }
 
+
