@@ -155,7 +155,10 @@ public class SectionController {
                     request.getSelectedNoticeIds(),
                     request.getSelectedAssignmentIds(),  // 추가
                     request.getAssignmentProblems(),     // 추가
-                    instructorId
+                    instructorId,
+                    request.getNoticeEdits(),            // 수정된 공지사항 데이터
+                    request.getAssignmentEdits(),        // 수정된 과제 데이터
+                    request.getProblemEdits()           // 수정된 문제 데이터
             );
 
             return ResponseEntity.ok(Map.of(

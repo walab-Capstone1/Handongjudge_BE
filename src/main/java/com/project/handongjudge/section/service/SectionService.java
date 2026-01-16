@@ -5,8 +5,10 @@ import com.project.handongjudge.course.repository.CourseRepository;
 import com.project.handongjudge.section.dto.SectionInfoDto;
 import com.project.handongjudge.section.dto.SectionRequest;
 import com.project.handongjudge.section.dto.SectionResponse;
-
 import com.project.handongjudge.section.dto.SectionWithCourseRequest;
+import com.project.handongjudge.section.dto.NoticeEditData;
+import com.project.handongjudge.section.dto.AssignmentEditData;
+import com.project.handongjudge.section.dto.ProblemEditData;
 import com.project.handongjudge.section.entity.Section;
 
 import com.project.handongjudge.section.repository.SectionRepository;
@@ -67,6 +69,7 @@ public class SectionService {
                 .enrollmentCode(enrollmentCode)
                 .year(request.getYear())
                 .semester(request.getSemester())
+                .active(false) // 새로 생성된 수업은 초기에 비활성화 상태로 생성
                 .build();
 
         Section saved = sectionRepository.save(section);
@@ -126,7 +129,10 @@ public class SectionService {
                             Integer newYear, String newSemester, String newCourseTitle,
                             String newDescription, Boolean copyNotices, Boolean copyAssignments,
                             List<Long> selectedNoticeIds, List<Long> selectedAssignmentIds,
-                            Map<Long, List<Long>> assignmentProblems, Long instructorId) throws IOException {
+                            Map<Long, List<Long>> assignmentProblems, Long instructorId,
+                            Map<Long, NoticeEditData> noticeEdits,
+                            Map<Long, AssignmentEditData> assignmentEdits,
+                            Map<Long, ProblemEditData> problemEdits) throws IOException {
         Section sourceSection = sectionRepository.findById(sourceSectionId)
                 .orElseThrow(() -> new IllegalArgumentException("원본 Section을 찾을 수 없습니다: " + sourceSectionId));
 
@@ -168,7 +174,7 @@ public class SectionService {
                 .enrollmentCode(enrollmentCode)
                 .year(newYear)
                 .semester(newSemester)
-                .active(true)
+                .active(false) // 복사된 수업도 초기에 비활성화 상태로 생성
                 .build();
 
         Section savedSection = sectionRepository.save(newSection);
@@ -198,14 +204,29 @@ public class SectionService {
 
             List<Notice> newNotices = new ArrayList<>();
             for (Notice sourceNotice : sourceNotices) {
+                // 수정된 제목/내용이 있으면 사용, 없으면 원본 사용
+                String noticeTitle = sourceNotice.getTitle();
+                String noticeContent = sourceNotice.getContent();
+                if (noticeEdits != null && noticeEdits.containsKey(sourceNotice.getId())) {
+                    NoticeEditData editData = noticeEdits.get(sourceNotice.getId());
+                    if (editData != null) {
+                        if (editData.getTitle() != null && !editData.getTitle().trim().isEmpty()) {
+                            noticeTitle = editData.getTitle();
+                        }
+                        if (editData.getContent() != null && !editData.getContent().trim().isEmpty()) {
+                            noticeContent = editData.getContent();
+                        }
+                    }
+                }
+                
                 Notice newNotice = Notice.builder()
                         .section(savedSection)
-                        .title(sourceNotice.getTitle())
-                        .content(sourceNotice.getContent())
+                        .title(noticeTitle)
+                        .content(noticeContent)
                         .difficulty(sourceNotice.getDifficulty())
                         .isNew(true)
                         .createdAt(LocalDateTime.now())
-                        .active(sourceNotice.getActive())
+                        .active(false) // 복사된 공지사항은 초기에 비활성화 상태로 생성
                         .build();
                 newNotices.add(newNotice);
             }
@@ -235,14 +256,29 @@ public class SectionService {
             int copiedProblemCount = 0;
 
             for (Assignment sourceAssignment : sourceAssignments) {
+                // 수정된 제목/내용이 있으면 사용, 없으면 원본 사용
+                String assignmentTitle = sourceAssignment.getTitle();
+                String assignmentDescription = sourceAssignment.getDescription();
+                if (assignmentEdits != null && assignmentEdits.containsKey(sourceAssignment.getId())) {
+                    AssignmentEditData editData = assignmentEdits.get(sourceAssignment.getId());
+                    if (editData != null) {
+                        if (editData.getTitle() != null && !editData.getTitle().trim().isEmpty()) {
+                            assignmentTitle = editData.getTitle();
+                        }
+                        if (editData.getDescription() != null && !editData.getDescription().trim().isEmpty()) {
+                            assignmentDescription = editData.getDescription();
+                        }
+                    }
+                }
+                
                 Assignment newAssignment = Assignment.builder()
                         .section(savedSection)
                         .assignmentNumber(sourceAssignment.getAssignmentNumber())
-                        .title(sourceAssignment.getTitle())
-                        .description(sourceAssignment.getDescription())
+                        .title(assignmentTitle)
+                        .description(assignmentDescription)
                         .startDate(sourceAssignment.getStartDate())
                         .endDate(sourceAssignment.getEndDate())
-                        .active(sourceAssignment.getActive())
+                        .active(false) // 복사된 과제는 초기에 비활성화 상태로 생성
                         .build();
 
                 Assignment savedAssignment = assignmentRepository.save(newAssignment);
@@ -274,9 +310,18 @@ public class SectionService {
                         continue;
                     }
 
+                    // 수정된 제목이 있으면 사용, 없으면 null (원본 제목 사용)
+                    String problemTitle = null;
+                    if (problemEdits != null && problemEdits.containsKey(sourceProblem.getId())) {
+                        ProblemEditData editData = problemEdits.get(sourceProblem.getId());
+                        if (editData != null && editData.getTitle() != null && !editData.getTitle().trim().isEmpty()) {
+                            problemTitle = editData.getTitle();
+                        }
+                    }
+                    
                     // ✅ 문제 복사 (DOMJudge에 새 문제로 업로드됨)
                     Long newProblemId = problemService.copyProblem(
-                            sourceProblem.getId(), null, instructorId);
+                            sourceProblem.getId(), problemTitle, instructorId);
 
                     Problem newProblem = problemRepository.findById(newProblemId)
                             .orElseThrow(() -> new RuntimeException("복사된 문제를 찾을 수 없습니다: " + newProblemId));
