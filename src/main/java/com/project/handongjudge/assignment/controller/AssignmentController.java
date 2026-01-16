@@ -3,12 +3,12 @@ package com.project.handongjudge.assignment.controller;
 import com.project.handongjudge.assignment.dto.AssignmentRequest;
 import com.project.handongjudge.assignment.dto.AssignmentResponse;
 import com.project.handongjudge.assignment.dto.AssignmentSubmissionStatsResponse;
+import com.project.handongjudge.assignment.dto.UpcomingAssignmentResponse;
 import com.project.handongjudge.assignment.dto.UserSubmissionStatusResponse;
 import com.project.handongjudge.assignment.service.AssignmentService;
 import com.project.handongjudge.problem.entity.Problem;
 import com.project.handongjudge.problem.service.ProblemService;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
@@ -142,5 +142,20 @@ public class AssignmentController {
         Long userId = Long.parseLong(authentication.getName());
         assignmentService.deleteAssignment(sectionId, assignmentId, userId);
         return ResponseEntity.ok().build();
+    }
+
+    /**
+     * 마감 직전 과제 조회
+     * @param sectionId 분반 ID
+     * @param days 마감일까지 남은 일수 (기본값: 3일)
+     * @return 마감 직전 과제 목록 (제출률 포함)
+     */
+    @GetMapping("/upcoming")
+    public ResponseEntity<List<UpcomingAssignmentResponse>> getUpcomingAssignments(
+            @PathVariable Long sectionId,
+            @RequestParam(required = false, defaultValue = "3") Integer days) {
+        List<UpcomingAssignmentResponse> upcomingAssignments =
+                assignmentService.getUpcomingAssignments(sectionId, days);
+        return ResponseEntity.ok(upcomingAssignments);
     }
 }

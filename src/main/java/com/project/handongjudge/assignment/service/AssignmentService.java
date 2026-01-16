@@ -17,7 +17,6 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import com.project.handongjudge.submission.repository.SubmissionRepository;
-import com.project.handongjudge.assignment.dto.StudentProgressResponse;
 
 import java.time.LocalDateTime;
 import java.util.*;
@@ -26,7 +25,6 @@ import com.project.handongjudge.problem.dto.ProblemDto;
 import java.util.ArrayList;
 import java.util.stream.Collectors;
 import com.project.handongjudge.user.repository.EnrollmentRepository;
-import com.project.handongjudge.assignment.dto.StudentProgressResponse;
 
 @Transactional
 @Service
@@ -487,5 +485,61 @@ public class AssignmentService {
 
         // 과제 삭제
         assignmentRepository.delete(assignment);
+    }
+
+    /**
+     * 마감 직전 과제 조회
+     * @param sectionId 분반 ID
+     * @param days 마감일까지 남은 일수 (기본값: 3일)
+     * @return 마감 직전 과제 목록 (제출률 포함)
+     */
+    public List<UpcomingAssignmentResponse> getUpcomingAssignments(Long sectionId, Integer days) {
+        // Section 존재 여부 확인
+        sectionRepository.findById(sectionId)
+                .orElseThrow(() -> new IllegalArgumentException("Section not found"));
+
+        // days가 null이면 기본값 3일 사용
+        int daysToCheck = (days != null && days > 0) ? days : 3;
+
+        // 현재 시간
+        LocalDateTime now = LocalDateTime.now();
+        // 마감일 기준 (현재 시간 + 지정된 일수)
+        LocalDateTime deadline = now.plusDays(daysToCheck);
+
+        // 마감 직전 과제 조회
+        List<Assignment> upcomingAssignments = assignmentRepository
+                .findUpcomingAssignmentsBySectionId(sectionId, now, deadline);
+
+        // 각 과제별 제출 통계 조회하여 응답 생성
+        List<UpcomingAssignmentResponse> responses = new ArrayList<>();
+
+        for (Assignment assignment : upcomingAssignments) {
+            try {
+                // 제출 통계 조회
+                AssignmentSubmissionStatsResponse stats = getAssignmentSubmissionStats(
+                        assignment.getId(), sectionId);
+
+                UpcomingAssignmentResponse response = UpcomingAssignmentResponse.builder()
+                        .assignmentId(assignment.getId())
+                        .title(assignment.getTitle())
+                        .endDate(assignment.getEndDate())
+                        .submissionRate(stats.getSubmissionRate())
+                        .build();
+
+                responses.add(response);
+            } catch (Exception e) {
+                // 통계 조회 실패 시 제출률을 0으로 설정
+                UpcomingAssignmentResponse response = UpcomingAssignmentResponse.builder()
+                        .assignmentId(assignment.getId())
+                        .title(assignment.getTitle())
+                        .endDate(assignment.getEndDate())
+                        .submissionRate(0.0)
+                        .build();
+
+                responses.add(response);
+            }
+        }
+
+        return responses;
     }
 }

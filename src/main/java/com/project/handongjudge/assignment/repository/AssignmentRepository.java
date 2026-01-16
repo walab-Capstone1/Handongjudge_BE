@@ -39,4 +39,15 @@ public interface AssignmentRepository extends JpaRepository<Assignment, Long> {
     // 특정 분반의 활성 과제 수
     @Query("SELECT COUNT(a) FROM Assignment a WHERE a.section.id = :sectionId AND a.active = true")
     long countActiveBySectionId(@Param("sectionId") Long sectionId);
+    
+    // 마감 직전 과제 조회 (현재 시간부터 지정된 일수 이내에 마감되는 과제)
+    @Query("SELECT a FROM Assignment a WHERE a.section.id = :sectionId " +
+           "AND a.active = true " +
+           "AND a.endDate > :now " +
+           "AND a.endDate <= :deadline " +
+           "ORDER BY a.endDate ASC")
+    List<Assignment> findUpcomingAssignmentsBySectionId(
+            @Param("sectionId") Long sectionId,
+            @Param("now") java.time.LocalDateTime now,
+            @Param("deadline") java.time.LocalDateTime deadline);
 }
