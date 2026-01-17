@@ -916,7 +916,18 @@ public class ProblemService {
                 assignmentProblemRepository.findByProblemId(problemId);
 
         return assignmentProblems.stream()
-                .<ProblemAssignmentUsageDto>map(ap -> {
+                .filter(ap -> {
+                    // Assignment와 Section이 존재하는지 확인 (CASCADE로 삭제된 경우 필터링)
+                    com.project.handongjudge.assignment.entity.Assignment assignment = ap.getAssignment();
+                    if (assignment == null) return false;
+                    
+                    com.project.handongjudge.section.entity.Section section = assignment.getSection();
+                    if (section == null) return false;
+                    
+                    com.project.handongjudge.course.entity.Course course = section.getCourse();
+                    return course != null;
+                })
+                .map(ap -> {
                     com.project.handongjudge.assignment.entity.Assignment assignment = ap.getAssignment();
                     com.project.handongjudge.section.entity.Section section = assignment.getSection();
                     com.project.handongjudge.course.entity.Course course = section.getCourse();
