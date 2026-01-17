@@ -90,6 +90,18 @@ public class ProblemController {
     }
 
     /**
+     * 문제의 ZIP 파일 파싱 (수정 페이지용)
+     */
+    @GetMapping("/{problemId}/parse")
+    public ResponseEntity<ProblemParseResponse> parseProblemZip(
+            @PathVariable Long problemId,
+            Authentication authentication) throws IOException {
+        Long instructorId = Long.parseLong(authentication.getName());
+        ProblemParseResponse response = problemService.parseProblemZip(problemId, instructorId);
+        return ResponseEntity.ok(response);
+    }
+
+    /**
      * 문제 수정
      */
     @PutMapping(value = "/{problemId}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)

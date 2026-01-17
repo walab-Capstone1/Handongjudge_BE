@@ -632,6 +632,60 @@ public class ProblemService {
                 .testCases(testCases)
                 .build();
     }
+
+    /**
+     * 문제의 ZIP 파일을 파싱하여 ProblemParseResponse 반환
+     */
+    public ProblemParseResponse parseProblemZip(Long problemId, Long instructorId) throws IOException {
+        // 문제 조회
+        Problem problem = problemRepository.findById(problemId)
+                .orElseThrow(() -> new IllegalArgumentException("문제를 찾을 수 없습니다: " + problemId));
+
+        // 사용자 조회
+        User user = userRepository.findById(instructorId)
+                .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다: " + instructorId));
+
+        // 권한 체크: 문제 생성자이거나 시스템 관리자인지 확인
+        boolean isAuthorized = (problem.getCreatedBy() != null && problem.getCreatedBy().getId().equals(instructorId)) ||
+                user.getRole() == User.Role.SUPER_ADMIN;
+        
+        if (!isAuthorized) {
+            throw new IllegalArgumentException("이 문제를 조회할 권한이 없습니다.");
+        }
+
+        // ZIP 파일 데이터 가져오기
+        byte[] zipFileData = null;
+
+        if (problem.getZipFileData() != null && problem.getZipFileData().length > 0) {
+            zipFileData = problem.getZipFileData();
+        } else if (problem.getZipFilePath() != null) {
+            // 마이그레이션용: 파일 경로에서 읽기
+            Path zipPath = Paths.get(problem.getZipFilePath());
+            if (!zipPath.isAbsolute()) {
+                zipPath = Paths.get(System.getProperty("user.dir")).resolve(zipPath).normalize();
+            }
+            if (Files.exists(zipPath)) {
+                zipFileData = Files.readAllBytes(zipPath);
+            }
+        }
+
+        if (zipFileData == null || zipFileData.length == 0) {
+            throw new IllegalArgumentException("문제의 ZIP 파일을 찾을 수 없습니다.");
+        }
+
+        // byte[]를 MultipartFile로 변환
+        MultipartFile zipFile = new ByteArrayMultipartFile(zipFileData, "problem.zip");
+
+        // ZIP 파일 파싱
+        ProblemParseResponse response = parseZipFile(zipFile);
+        
+        // Problem 엔티티에서 tags 가져오기 (현재는 엔티티에 필드가 없으므로 null)
+        // TODO: Problem 엔티티에 tags 필드 추가 시 구현
+        // String tags = problem.getTags();
+        // response.setTags(tags);
+        
+        return response;
+    }
     /**
      * 문제 수정
      * 안전한 순서: 업로드 → DB 갱신 → 기존 문제 삭제
@@ -662,8 +716,22 @@ public class ProblemService {
         // 기존 DOMjudge 문제 ID 저장 (나중에 삭제하기 위해)
         String oldDomjudgeProblemId = problem.getDomjudgeProblemId();
 
-        // 난이도/태그만 변경되는지 확인
-        boolean isOnlyMetadataChange = isOnlyDifficultyOrTagsChange(problem, request);
+        // metadataUpdated 플래그 확인 (프론트엔드에서 명시적으로 전송)
+        boolean isOnlyMetadataChange = false;
+        if (request.getMetadataUpdated() != null) {
+            // "true" 문자열이면 메타데이터만 업데이트 (얕은 업데이트)
+            isOnlyMetadataChange = "true".equalsIgnoreCase(request.getMetadataUpdated().trim());
+        } else {
+            // 플래그가 없으면 기존 로직 사용 (하위 호환성)
+            isOnlyMetadataChange = isOnlyDifficultyOrTagsChange(problem, request);
+        }
+        
+        log.info("문제 수정 요청 분석: ID={}, metadataUpdated={}, isOnlyMetadataChange={}, title={}, description 길이={}, timeLimit={}, memoryLimit={}, difficulty={}, tags={}", 
+                problemId, request.getMetadataUpdated(), isOnlyMetadataChange, 
+                request.getTitle(), 
+                request.getDescription() != null ? request.getDescription().length() : 0,
+                request.getTimeLimit(), request.getMemoryLimit(), 
+                request.getDifficulty(), request.getTags() != null ? "있음" : "없음");
 
         byte[] newZipFileData = null;
         String newDomjudgeProblemId = null;
@@ -677,10 +745,26 @@ public class ProblemService {
                 newZipFileData = problem.getZipFileData(); // 기존 ZIP 파일 데이터 유지
             } else {
                 // 2. 새 ZIP 파일 준비 및 DOMjudge에 업로드 (기존 문제는 아직 유지)
+                // 고유한 식별자를 추가하여 ID 충돌 방지
+                String timestamp = String.valueOf(System.currentTimeMillis());
+                
                 if (request.getNewZipFile() != null && !request.getNewZipFile().isEmpty()) {
-                    // 새 ZIP 파일이 제공된 경우
-                    newDomjudgeProblemId = domjudgeService.uploadProblemToDomjudge(request.getNewZipFile());
-                    newZipFileData = saveProblemZipToDatabase(request.getNewZipFile());
+                    // 새 ZIP 파일이 제공된 경우 - 고유한 파일명으로 변경
+                    String originalFileName = request.getNewZipFile().getOriginalFilename();
+                    String baseFileName = originalFileName != null && originalFileName.endsWith(".zip") 
+                            ? originalFileName.substring(0, originalFileName.length() - 4) 
+                            : "problem";
+                    String uniqueFileName = baseFileName + "_" + problemId + "_" + timestamp + ".zip";
+                    MultipartFile uniqueZipFile = new RenamedMultipartFile(request.getNewZipFile(), uniqueFileName);
+                    
+                    log.info("고유 식별자가 추가된 ZIP 파일로 Domjudge 업로드: original={}, unique={}", 
+                            originalFileName, uniqueFileName);
+                    
+                    // DOMjudge에 새 문제로 먼저 업로드 (고유한 이름으로)
+                    newDomjudgeProblemId = domjudgeService.uploadProblemToDomjudge(uniqueZipFile);
+                    newZipFileData = saveProblemZipToDatabase(request.getNewZipFile()); // 원본 파일명으로 저장
+                    
+                    log.info("Domjudge에 새 문제 업로드 완료: newProblemId={}", newDomjudgeProblemId);
                 } else {
                     // ZIP 파일 없이 정보만 수정하는 경우
                     // 기존 ZIP 파일 데이터 가져오기
@@ -708,20 +792,27 @@ public class ProblemService {
                             existingZipData,
                             request.getDescription(),
                             request.getTimeLimit(),
-                            request.getMemoryLimit()
+                            request.getMemoryLimit(),
+                            null  // externalid 제거
                     );
 
-                    // MultipartFile로 변환
-                    MultipartFile modifiedZipFile = createMultipartFile(modifiedZipBytes, "modified.zip");
+                    // 고유한 파일명으로 MultipartFile 생성
+                    String uniqueFileName = "problem_" + problemId + "_" + timestamp + ".zip";
+                    MultipartFile modifiedZipFile = createMultipartFile(modifiedZipBytes, uniqueFileName);
 
-                    // DOMjudge에 업로드
+                    log.info("수정된 ZIP 파일로 Domjudge 업로드: fileName={}", uniqueFileName);
+
+                    // DOMjudge에 새 문제로 먼저 업로드 (고유한 이름으로)
                     newDomjudgeProblemId = domjudgeService.uploadProblemToDomjudge(modifiedZipFile);
                     newZipFileData = saveProblemZipToDatabase(modifiedZipFile);
+                    
+                    log.info("Domjudge에 새 문제 업로드 완료: newProblemId={}", newDomjudgeProblemId);
                 }
 
-                // 4. DB 저장 성공 후 기존 문제 삭제 (실패해도 치명적이지 않음)
+                // 3. 새 문제 업로드 성공 후 기존 문제 삭제 (실패해도 치명적이지 않음)
                 if (oldDomjudgeProblemId != null && !oldDomjudgeProblemId.equals(newDomjudgeProblemId)) {
                     try {
+                        log.info("기존 Domjudge 문제 삭제 시도: oldProblemId={}", oldDomjudgeProblemId);
                         domjudgeService.deleteProblemFromDomjudge(oldDomjudgeProblemId);
                         log.info("기존 DOMjudge 문제 삭제 완료: oldProblemId={}", oldDomjudgeProblemId);
                     } catch (Exception e) {
@@ -733,8 +824,13 @@ public class ProblemService {
             }
 
             // 3. DB에 새 정보 저장 (트랜잭션 보장)
-            updateProblemFields(problem, request.getTitle(), request.getDescription(),
-                    request.getTimeLimit(), request.getMemoryLimit(),
+            // 메타데이터만 업데이트하는 경우 description, timeLimit, memoryLimit은 null로 전달하여 기존 값 유지
+            String descriptionToUpdate = isOnlyMetadataChange ? null : request.getDescription();
+            Double timeLimitToUpdate = isOnlyMetadataChange ? null : request.getTimeLimit();
+            Integer memoryLimitToUpdate = isOnlyMetadataChange ? null : request.getMemoryLimit();
+            
+            updateProblemFields(problem, request.getTitle(), descriptionToUpdate,
+                    timeLimitToUpdate, memoryLimitToUpdate,
                     request.getDifficulty(), request.getTags(),
                     newDomjudgeProblemId, newZipFileData);
 
@@ -762,37 +858,48 @@ public class ProblemService {
     private boolean isOnlyDifficultyOrTagsChange(Problem problem, ProblemUpdateRequest request) {
         // 새 ZIP 파일이 있으면 DOMjudge 작업 필요
         if (request.getNewZipFile() != null && !request.getNewZipFile().isEmpty()) {
+            log.debug("새 ZIP 파일이 제공됨: DOMjudge 작업 필요");
             return false;
         }
 
-        // 제목이 변경되었는지 확인
-        if (request.getTitle() != null && !request.getTitle().equals(problem.getTitle())) {
+        // 제목이 실제로 변경되었는지 확인 (null이 아니고 실제로 다를 때만)
+        if (request.getTitle() != null && problem.getTitle() != null 
+                && !request.getTitle().trim().equals(problem.getTitle().trim())) {
+            log.debug("제목이 변경됨: request='{}', problem='{}'", request.getTitle(), problem.getTitle());
             return false;
         }
 
-        // 설명이 변경되었는지 확인
-        if (request.getDescription() != null && !request.getDescription().equals(problem.getDescription())) {
+        // 설명이 실제로 변경되었는지 확인
+        String requestDesc = request.getDescription() != null ? request.getDescription().trim() : "";
+        String problemDesc = problem.getDescription() != null ? problem.getDescription().trim() : "";
+        if (!requestDesc.equals(problemDesc)) {
+            log.debug("설명이 변경됨: request 길이={}, problem 길이={}", requestDesc.length(), problemDesc.length());
             return false;
         }
 
-        // 시간 제한이 변경되었는지 확인
-        if (request.getTimeLimit() != null && !request.getTimeLimit().equals(problem.getTimeLimit())) {
+        // 시간 제한이 실제로 변경되었는지 확인
+        if (request.getTimeLimit() != null && problem.getTimeLimit() != null
+                && !request.getTimeLimit().equals(problem.getTimeLimit())) {
+            log.debug("시간 제한이 변경됨: request={}, problem={}", request.getTimeLimit(), problem.getTimeLimit());
             return false;
         }
 
-        // 메모리 제한이 변경되었는지 확인
-        if (request.getMemoryLimit() != null && !request.getMemoryLimit().equals(problem.getMemoryLimit())) {
+        // 메모리 제한이 실제로 변경되었는지 확인
+        if (request.getMemoryLimit() != null && problem.getMemoryLimit() != null
+                && !request.getMemoryLimit().equals(problem.getMemoryLimit())) {
+            log.debug("메모리 제한이 변경됨: request={}, problem={}", request.getMemoryLimit(), problem.getMemoryLimit());
             return false;
         }
 
         // 위 항목들이 모두 변경되지 않았고, 난이도나 태그만 변경된 경우
-        boolean difficultyChanged = request.getDifficulty() != null && 
-                !request.getDifficulty().equals(problem.getDifficulty());
+        boolean difficultyChanged = request.getDifficulty() != null 
+                && !request.getDifficulty().equals(problem.getDifficulty());
         
-        // tags 비교: Problem 엔티티에 tags 필드가 없을 수 있으므로, 
-        // request에 tags가 있고 null이 아닌 경우에만 변경된 것으로 간주
-        // (실제 tags 필드가 Problem 엔티티에 추가되면 더 정확한 비교 가능)
         boolean tagsChanged = request.getTags() != null && request.getTags().trim().length() > 0;
+
+        if (difficultyChanged || tagsChanged) {
+            log.debug("난이도/태그만 변경됨: difficultyChanged={}, tagsChanged={}", difficultyChanged, tagsChanged);
+        }
 
         return difficultyChanged || tagsChanged;
     }
@@ -864,7 +971,7 @@ public class ProblemService {
      * 기존 ZIP 파일을 수정하여 새 ZIP 생성
      */
     private byte[] createModifiedZip(byte[] existingZipData, String newDescription,
-                                     Double timeLimit, Integer memoryLimit) throws IOException {
+                                     Double timeLimit, Integer memoryLimit, String externalId) throws IOException {
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
 
         try (ZipInputStream zis = new ZipInputStream(new ByteArrayInputStream(existingZipData));
@@ -892,6 +999,22 @@ public class ProblemService {
                     zos.write(iniContent.getBytes(StandardCharsets.UTF_8));
                     zos.closeEntry();
                     limitsReplaced = true;
+                }
+                // problem.yaml 파일 처리: externalid 제거
+                else if (entryName.equals("problem.yaml") || entryName.endsWith("/problem.yaml")) {
+                    zos.putNextEntry(new ZipEntry(entryName));
+                    // 기존 YAML 내용 읽기
+                    ByteArrayOutputStream yamlBuffer = new ByteArrayOutputStream();
+                    byte[] buffer = new byte[1024];
+                    int len;
+                    while ((len = zis.read(buffer)) > 0) {
+                        yamlBuffer.write(buffer, 0, len);
+                    }
+                    String yamlContent = yamlBuffer.toString(StandardCharsets.UTF_8.name());
+                    // externalid 줄 제거
+                    String cleanedYaml = removeExternalIdFromYaml(yamlContent);
+                    zos.write(cleanedYaml.getBytes(StandardCharsets.UTF_8));
+                    zos.closeEntry();
                 }
                 // 나머지 파일은 그대로 복사
                 else {
@@ -937,6 +1060,31 @@ public class ProblemService {
         }
         return sb.toString();
     }
+
+    /**
+     * YAML 내용에서 externalid 제거 (DOMjudge 업로드 시 충돌 방지)
+     */
+    private String removeExternalIdFromYaml(String yamlContent) {
+        if (yamlContent == null || yamlContent.isEmpty()) {
+            return yamlContent;
+        }
+
+        StringBuilder result = new StringBuilder();
+        String[] lines = yamlContent.split("\n");
+        
+        for (String line : lines) {
+            // externalid로 시작하는 줄 제거 (대소문자 무관, 앞뒤 공백 무시)
+            String trimmedLine = line.trim();
+            if (trimmedLine.toLowerCase().startsWith("externalid:")) {
+                log.debug("problem.yaml에서 externalid 제거: {}", trimmedLine);
+                continue; // 이 줄을 건너뛰기
+            }
+            result.append(line).append("\n");
+        }
+        
+        return result.toString();
+    }
+
 
     /**
      * byte[]를 MultipartFile로 변환

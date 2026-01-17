@@ -189,6 +189,56 @@ public class DomjudgeService {
     }
 
     /**
+     * DOMjudge에서 기존 문제 업데이트
+     * @param domjudgeProblemId 업데이트할 문제의 DOMjudge ID
+     * @param zipFile 업데이트할 ZIP 파일
+     * @return 업데이트된 문제의 DOMjudge ID (기존 ID와 동일)
+     * @throws IOException 파일 처리 오류
+     */
+    public String updateProblemInDomjudge(String domjudgeProblemId, MultipartFile zipFile) throws IOException {
+        HttpHeaders headers = createAuthHeaders();
+        headers.setContentType(MediaType.MULTIPART_FORM_DATA);
+
+        MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
+        body.add("zip", new MultipartInputStreamFileResource(
+                zipFile.getInputStream(), zipFile.getOriginalFilename()
+        ));
+        // problem ID를 문자열로 body에 추가
+        body.add("problem", domjudgeProblemId);
+
+        HttpEntity<MultiValueMap<String, Object>> requestEntity = new HttpEntity<>(body, headers);
+
+        try {
+            // POST 방식으로 업데이트 (uploadProblemToDomjudge와 유사한 방식)
+            ResponseEntity<JsonNode> response = restTemplate.postForEntity(
+                    DOMJUDGE_API_URL + "/api/v4/problems",
+                    requestEntity,
+                    JsonNode.class
+            );
+
+            JsonNode responseBody = response.getBody();
+            if (responseBody == null || !responseBody.has("messages")) {
+                throw new RuntimeException("DOMjudge 응답에서 메시지를 찾을 수 없습니다.");
+            }
+
+            // 업데이트된 문제 ID 반환 (기존 ID와 동일)
+            String updatedProblemId = responseBody.path("problem_id").asText();
+            if (updatedProblemId == null || updatedProblemId.isEmpty()) {
+                // 응답에 problem_id가 없으면 기존 ID 반환
+                return domjudgeProblemId;
+            }
+
+            log.info("DOMjudge 문제 업데이트 완료: problemId={}", updatedProblemId);
+            return updatedProblemId;
+        } catch (HttpClientErrorException e) {
+            String errorResponse = e.getResponseBodyAsString();
+            log.error("DOMjudge 문제 업데이트 실패: problemId={}, status={}, response={}", 
+                    domjudgeProblemId, e.getStatusCode(), errorResponse);
+            throw new RuntimeException("DOMjudge 문제 업데이트 실패: " + errorResponse, e);
+        }
+    }
+
+    /**
      * DOMjudge에서 문제 삭제
      * @param domjudgeProblemId 삭제할 문제의 DOMjudge ID
      */
