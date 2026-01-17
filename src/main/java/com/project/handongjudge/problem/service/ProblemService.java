@@ -270,6 +270,12 @@ public class ProblemService {
 
     // convertToProblemResponse 메소드도 수정
     private ProblemResponse convertToProblemResponse(Problem problem) {
+        // 문제가 사용되는 과제 개수 조회
+        List<com.project.handongjudge.assignment.entity.AssignmentProblem> assignmentProblems = 
+                assignmentProblemRepository.findByProblemId(problem.getId());
+        int assignmentCount = assignmentProblems.size();
+        boolean isUsed = assignmentCount > 0;
+        
         return ProblemResponse.builder()
                 .id(problem.getId())
                 .title(problem.getTitle())
@@ -277,7 +283,8 @@ public class ProblemService {
                 .difficulty(problem.getDifficulty())
                 .memoryLimit(problem.getMemoryLimit())     // 새로 추가
                 .timeLimit(problem.getTimeLimit())         // 새로 추가
-
+                .isUsed(isUsed)
+                .assignmentCount(assignmentCount)
                 .createdAt(problem.getCreatedAt())
                 .build();
     }
@@ -882,6 +889,52 @@ public class ProblemService {
 
         // 데이터베이스에서 문제 삭제
         problemRepository.delete(problem);
+    }
+
+    /**
+     * 문제가 사용되는 과제 목록 조회
+     */
+    public List<ProblemAssignmentUsageDto> getAssignmentsByProblemId(Long problemId, Long instructorId) {
+        // 문제 조회
+        Problem problem = problemRepository.findById(problemId)
+                .orElseThrow(() -> new IllegalArgumentException("문제를 찾을 수 없습니다: " + problemId));
+
+        // 사용자 조회
+        User user = userRepository.findById(instructorId)
+                .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다: " + instructorId));
+
+        // 권한 확인: 문제를 만든 교수이거나 시스템 관리자인지 확인
+        boolean isAuthorized = (problem.getCreatedBy() != null && problem.getCreatedBy().getId().equals(instructorId)) ||
+                user.getRole() == User.Role.SUPER_ADMIN;
+
+        if (!isAuthorized) {
+            throw new IllegalArgumentException("해당 문제를 조회할 권한이 없습니다");
+        }
+
+        // 문제가 사용되는 과제 목록 조회
+        List<com.project.handongjudge.assignment.entity.AssignmentProblem> assignmentProblems = 
+                assignmentProblemRepository.findByProblemId(problemId);
+
+        return assignmentProblems.stream()
+                .<ProblemAssignmentUsageDto>map(ap -> {
+                    com.project.handongjudge.assignment.entity.Assignment assignment = ap.getAssignment();
+                    com.project.handongjudge.section.entity.Section section = assignment.getSection();
+                    com.project.handongjudge.course.entity.Course course = section.getCourse();
+
+                    return ProblemAssignmentUsageDto.builder()
+                            .assignmentId(assignment.getId())
+                            .assignmentTitle(assignment.getTitle())
+                            .assignmentNumber(assignment.getAssignmentNumber())
+                            .assignmentStartDate(assignment.getStartDate())
+                            .assignmentEndDate(assignment.getEndDate())
+                            .sectionId(section.getId())
+                            .courseTitle(course.getTitle())
+                            .sectionNumber(section.getSectionNumber())
+                            .year(section.getYear())
+                            .semester(section.getSemester())
+                            .build();
+                })
+                .collect(Collectors.toList());
     }
 }
 

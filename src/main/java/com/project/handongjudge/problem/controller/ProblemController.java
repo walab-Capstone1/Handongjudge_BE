@@ -113,4 +113,16 @@ public class ProblemController {
         problemService.deleteProblem(problemId, instructorId);
         return ResponseEntity.ok().build();
     }
+
+    /**
+     * 문제가 사용되는 과제 목록 조회
+     */
+    @GetMapping("/{problemId}/assignments")
+    public ResponseEntity<List<ProblemAssignmentUsageDto>> getAssignmentsByProblemId(
+            @PathVariable Long problemId,
+            Authentication authentication) {
+        Long instructorId = Long.parseLong(authentication.getName());
+        List<ProblemAssignmentUsageDto> assignments = problemService.getAssignmentsByProblemId(problemId, instructorId);
+        return ResponseEntity.ok(assignments);
+    }
 }
