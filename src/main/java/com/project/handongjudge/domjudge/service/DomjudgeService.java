@@ -188,6 +188,42 @@ public class DomjudgeService {
         return domjudgeProblemId;
     }
 
+    /**
+     * DOMjudge에서 문제 삭제
+     * @param domjudgeProblemId 삭제할 문제의 DOMjudge ID
+     */
+    public void deleteProblemFromDomjudge(String domjudgeProblemId) {
+        try {
+            HttpHeaders headers = createAuthHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+
+            String url = DOMJUDGE_API_URL + "/api/v4/problems/" + domjudgeProblemId;
+
+            HttpEntity<Void> requestEntity = new HttpEntity<>(headers);
+
+            restTemplate.exchange(
+                    url,
+                    HttpMethod.DELETE,
+                    requestEntity,
+                    String.class
+            );
+
+            log.info("DOMjudge 문제 삭제 완료: problemId={}", domjudgeProblemId);
+        } catch (HttpClientErrorException e) {
+            if (e.getStatusCode().value() == 404) {
+                log.warn("DOMjudge에서 문제를 찾을 수 없음 (이미 삭제되었을 수 있음): problemId={}", domjudgeProblemId);
+                // 404는 이미 삭제된 것으로 간주하고 정상 처리
+                return;
+            }
+            log.error("DOMjudge 문제 삭제 실패: problemId={}, status={}, response={}", 
+                    domjudgeProblemId, e.getStatusCode(), e.getResponseBodyAsString());
+            throw new RuntimeException("DOMjudge 문제 삭제 실패: " + e.getMessage(), e);
+        } catch (Exception e) {
+            log.error("DOMjudge 문제 삭제 중 예외 발생: problemId={}", domjudgeProblemId, e);
+            throw new RuntimeException("DOMjudge 문제 삭제 실패: " + e.getMessage(), e);
+        }
+    }
+
     private String extractProblemId(String infoMessage) {
         Pattern pattern = Pattern.compile("Saved problem (\\d+)");
         Matcher matcher = pattern.matcher(infoMessage);

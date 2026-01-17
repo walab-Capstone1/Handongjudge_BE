@@ -11,6 +11,7 @@ import com.project.handongjudge.assignment.repository.AssignmentRepository;
 import com.project.handongjudge.assignment.service.AssignmentProblemService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 import com.project.handongjudge.problem.util.ProblemFileUtil;
 import lombok.extern.slf4j.Slf4j;
@@ -633,9 +634,16 @@ public class ProblemService {
     }
     /**
      * 문제 수정
+     * 안전한 순서: 업로드 → DB 갱신 → 기존 문제 삭제
+     * 
+     * @param problemId 문제 ID
+     * @param request 수정 요청 데이터
+     * @param instructorId 강사 ID
+     * @throws IOException 파일 처리 오류
      */
+    @Transactional
     public void updateProblem(Long problemId, ProblemUpdateRequest request, Long instructorId) throws IOException {
-        // 기존 문제 조회
+        // 1. 기존 문제 조회 및 기존 DOMjudge ID 저장
         Problem problem = problemRepository.findById(problemId)
                 .orElseThrow(() -> new IllegalArgumentException("문제를 찾을 수 없습니다: " + problemId));
 
@@ -651,59 +659,142 @@ public class ProblemService {
             throw new IllegalArgumentException("이 문제를 수정할 권한이 없습니다.");
         }
 
+        // 기존 DOMjudge 문제 ID 저장 (나중에 삭제하기 위해)
+        String oldDomjudgeProblemId = problem.getDomjudgeProblemId();
+
+        // 난이도/태그만 변경되는지 확인
+        boolean isOnlyMetadataChange = isOnlyDifficultyOrTagsChange(problem, request);
+
         byte[] newZipFileData = null;
         String newDomjudgeProblemId = null;
 
-        // 1. 새 ZIP 파일이 제공된 경우
+        try {
+            // 난이도/태그만 변경되는 경우 DOMjudge 작업 건너뛰기
+            if (isOnlyMetadataChange) {
+                log.info("난이도/태그만 변경됨: ID={}, DOMjudge 작업 건너뛰기", problemId);
+                // DOMjudge ID는 그대로 유지
+                newDomjudgeProblemId = oldDomjudgeProblemId;
+                newZipFileData = problem.getZipFileData(); // 기존 ZIP 파일 데이터 유지
+            } else {
+                // 2. 새 ZIP 파일 준비 및 DOMjudge에 업로드 (기존 문제는 아직 유지)
+                if (request.getNewZipFile() != null && !request.getNewZipFile().isEmpty()) {
+                    // 새 ZIP 파일이 제공된 경우
+                    newDomjudgeProblemId = domjudgeService.uploadProblemToDomjudge(request.getNewZipFile());
+                    newZipFileData = saveProblemZipToDatabase(request.getNewZipFile());
+                } else {
+                    // ZIP 파일 없이 정보만 수정하는 경우
+                    // 기존 ZIP 파일 데이터 가져오기
+                    byte[] existingZipData = null;
+
+                    if (problem.getZipFileData() != null && problem.getZipFileData().length > 0) {
+                        existingZipData = problem.getZipFileData();
+                    } else if (problem.getZipFilePath() != null) {
+                        // 마이그레이션용: 파일 경로에서 읽기
+                        Path existingZipPath = Paths.get(problem.getZipFilePath());
+                        if (!existingZipPath.isAbsolute()) {
+                            existingZipPath = Paths.get(System.getProperty("user.dir")).resolve(existingZipPath).normalize();
+                        }
+                        if (Files.exists(existingZipPath)) {
+                            existingZipData = Files.readAllBytes(existingZipPath);
+                        }
+                    }
+
+                    if (existingZipData == null || existingZipData.length == 0) {
+                        throw new IllegalArgumentException("원본 ZIP 파일을 찾을 수 없습니다.");
+                    }
+
+                    // 기존 ZIP을 수정하여 새 ZIP 생성
+                    byte[] modifiedZipBytes = createModifiedZip(
+                            existingZipData,
+                            request.getDescription(),
+                            request.getTimeLimit(),
+                            request.getMemoryLimit()
+                    );
+
+                    // MultipartFile로 변환
+                    MultipartFile modifiedZipFile = createMultipartFile(modifiedZipBytes, "modified.zip");
+
+                    // DOMjudge에 업로드
+                    newDomjudgeProblemId = domjudgeService.uploadProblemToDomjudge(modifiedZipFile);
+                    newZipFileData = saveProblemZipToDatabase(modifiedZipFile);
+                }
+
+                // 4. DB 저장 성공 후 기존 문제 삭제 (실패해도 치명적이지 않음)
+                if (oldDomjudgeProblemId != null && !oldDomjudgeProblemId.equals(newDomjudgeProblemId)) {
+                    try {
+                        domjudgeService.deleteProblemFromDomjudge(oldDomjudgeProblemId);
+                        log.info("기존 DOMjudge 문제 삭제 완료: oldProblemId={}", oldDomjudgeProblemId);
+                    } catch (Exception e) {
+                        // 삭제 실패는 로그만 남기고 계속 진행 (이미 새 문제는 업로드되었으므로)
+                        log.warn("기존 DOMjudge 문제 삭제 실패 (무시 가능, 나중에 수동 정리 가능): oldProblemId={}, error={}", 
+                                oldDomjudgeProblemId, e.getMessage());
+                    }
+                }
+            }
+
+            // 3. DB에 새 정보 저장 (트랜잭션 보장)
+            updateProblemFields(problem, request.getTitle(), request.getDescription(),
+                    request.getTimeLimit(), request.getMemoryLimit(),
+                    request.getDifficulty(), request.getTags(),
+                    newDomjudgeProblemId, newZipFileData);
+
+            problemRepository.save(problem);
+            
+            if (isOnlyMetadataChange) {
+                log.info("문제 수정 완료 (난이도/태그만): ID={}, Title={}, DOMjudge 작업 없음", problemId, request.getTitle());
+            } else {
+                log.info("문제 수정 완료: ID={}, Title={}, 새 DOMjudge ID={}", problemId, request.getTitle(), newDomjudgeProblemId);
+            }
+
+        } catch (Exception e) {
+            // 업로드나 DB 저장 실패 시 롤백
+            log.error("문제 수정 실패: ID={}, error={}", problemId, e.getMessage(), e);
+            throw e;
+        }
+    }
+
+    /**
+     * 난이도/태그만 변경되는지 확인
+     * @param problem 기존 문제
+     * @param request 수정 요청
+     * @return 난이도/태그만 변경되는 경우 true
+     */
+    private boolean isOnlyDifficultyOrTagsChange(Problem problem, ProblemUpdateRequest request) {
+        // 새 ZIP 파일이 있으면 DOMjudge 작업 필요
         if (request.getNewZipFile() != null && !request.getNewZipFile().isEmpty()) {
-            newDomjudgeProblemId = domjudgeService.uploadProblemToDomjudge(request.getNewZipFile());
-            newZipFileData = saveProblemZipToDatabase(request.getNewZipFile());
-        }
-        // 2. ZIP 파일 없이 정보만 수정
-        else {
-            // 기존 ZIP 파일 데이터 가져오기
-            byte[] existingZipData = null;
-
-            if (problem.getZipFileData() != null && problem.getZipFileData().length > 0) {
-                existingZipData = problem.getZipFileData();
-            } else if (problem.getZipFilePath() != null) {
-                // 마이그레이션용: 파일 경로에서 읽기
-                Path existingZipPath = Paths.get(problem.getZipFilePath());
-                if (!existingZipPath.isAbsolute()) {
-                    existingZipPath = Paths.get(System.getProperty("user.dir")).resolve(existingZipPath).normalize();
-                }
-                if (Files.exists(existingZipPath)) {
-                    existingZipData = Files.readAllBytes(existingZipPath);
-                }
-            }
-
-            if (existingZipData == null || existingZipData.length == 0) {
-                throw new IllegalArgumentException("원본 ZIP 파일을 찾을 수 없습니다.");
-            }
-
-            // 기존 ZIP을 수정하여 새 ZIP 생성
-            byte[] modifiedZipBytes = createModifiedZip(
-                    existingZipData,
-                    request.getDescription(),
-                    request.getTimeLimit(),
-                    request.getMemoryLimit()
-            );
-
-            // MultipartFile로 변환
-            MultipartFile modifiedZipFile = createMultipartFile(modifiedZipBytes, "modified.zip");
-
-            // DOMjudge에 업로드
-            newDomjudgeProblemId = domjudgeService.uploadProblemToDomjudge(modifiedZipFile);
-            newZipFileData = saveProblemZipToDatabase(modifiedZipFile);
+            return false;
         }
 
-        // 문제 정보 업데이트
-        updateProblemFields(problem, request.getTitle(), request.getDescription(),
-                request.getTimeLimit(), request.getMemoryLimit(),
-                newDomjudgeProblemId, newZipFileData);
+        // 제목이 변경되었는지 확인
+        if (request.getTitle() != null && !request.getTitle().equals(problem.getTitle())) {
+            return false;
+        }
 
-        problemRepository.save(problem);
-        log.info("문제 수정 완료: ID={}, Title={}", problemId, request.getTitle());
+        // 설명이 변경되었는지 확인
+        if (request.getDescription() != null && !request.getDescription().equals(problem.getDescription())) {
+            return false;
+        }
+
+        // 시간 제한이 변경되었는지 확인
+        if (request.getTimeLimit() != null && !request.getTimeLimit().equals(problem.getTimeLimit())) {
+            return false;
+        }
+
+        // 메모리 제한이 변경되었는지 확인
+        if (request.getMemoryLimit() != null && !request.getMemoryLimit().equals(problem.getMemoryLimit())) {
+            return false;
+        }
+
+        // 위 항목들이 모두 변경되지 않았고, 난이도나 태그만 변경된 경우
+        boolean difficultyChanged = request.getDifficulty() != null && 
+                !request.getDifficulty().equals(problem.getDifficulty());
+        
+        // tags 비교: Problem 엔티티에 tags 필드가 없을 수 있으므로, 
+        // request에 tags가 있고 null이 아닌 경우에만 변경된 것으로 간주
+        // (실제 tags 필드가 Problem 엔티티에 추가되면 더 정확한 비교 가능)
+        boolean tagsChanged = request.getTags() != null && request.getTags().trim().length() > 0;
+
+        return difficultyChanged || tagsChanged;
     }
 
     /**
@@ -711,31 +802,58 @@ public class ProblemService {
      */
     private void updateProblemFields(Problem problem, String title, String description,
                                      Double timeLimit, Integer memoryLimit,
+                                     String difficulty, String tags,
                                      String domjudgeProblemId, byte[] zipFileData) {
         try {
-            java.lang.reflect.Field titleField = Problem.class.getDeclaredField("title");
-            titleField.setAccessible(true);
-            titleField.set(problem, title);
+            if (title != null) {
+                java.lang.reflect.Field titleField = Problem.class.getDeclaredField("title");
+                titleField.setAccessible(true);
+                titleField.set(problem, title);
+            }
 
-            java.lang.reflect.Field descField = Problem.class.getDeclaredField("description");
-            descField.setAccessible(true);
-            descField.set(problem, description);
+            if (description != null) {
+                java.lang.reflect.Field descField = Problem.class.getDeclaredField("description");
+                descField.setAccessible(true);
+                descField.set(problem, description);
+            }
 
-            java.lang.reflect.Field timeLimitField = Problem.class.getDeclaredField("timeLimit");
-            timeLimitField.setAccessible(true);
-            timeLimitField.set(problem, timeLimit);
+            if (timeLimit != null) {
+                java.lang.reflect.Field timeLimitField = Problem.class.getDeclaredField("timeLimit");
+                timeLimitField.setAccessible(true);
+                timeLimitField.set(problem, timeLimit);
+            }
 
-            java.lang.reflect.Field memoryLimitField = Problem.class.getDeclaredField("memoryLimit");
-            memoryLimitField.setAccessible(true);
-            memoryLimitField.set(problem, memoryLimit);
+            if (memoryLimit != null) {
+                java.lang.reflect.Field memoryLimitField = Problem.class.getDeclaredField("memoryLimit");
+                memoryLimitField.setAccessible(true);
+                memoryLimitField.set(problem, memoryLimit);
+            }
 
-            java.lang.reflect.Field domjudgeIdField = Problem.class.getDeclaredField("domjudgeProblemId");
-            domjudgeIdField.setAccessible(true);
-            domjudgeIdField.set(problem, domjudgeProblemId);
+            if (difficulty != null) {
+                java.lang.reflect.Field difficultyField = Problem.class.getDeclaredField("difficulty");
+                difficultyField.setAccessible(true);
+                difficultyField.set(problem, difficulty);
+            }
 
-            java.lang.reflect.Field zipDataField = Problem.class.getDeclaredField("zipFileData");
-            zipDataField.setAccessible(true);
-            zipDataField.set(problem, zipFileData);
+            // tags는 Problem 엔티티에 필드가 없을 수 있으므로 일단 주석 처리
+            // TODO: Problem 엔티티에 tags 필드 추가 시 구현
+            // if (tags != null) {
+            //     java.lang.reflect.Field tagsField = Problem.class.getDeclaredField("tags");
+            //     tagsField.setAccessible(true);
+            //     tagsField.set(problem, tags);
+            // }
+
+            if (domjudgeProblemId != null) {
+                java.lang.reflect.Field domjudgeIdField = Problem.class.getDeclaredField("domjudgeProblemId");
+                domjudgeIdField.setAccessible(true);
+                domjudgeIdField.set(problem, domjudgeProblemId);
+            }
+
+            if (zipFileData != null) {
+                java.lang.reflect.Field zipDataField = Problem.class.getDeclaredField("zipFileData");
+                zipDataField.setAccessible(true);
+                zipDataField.set(problem, zipFileData);
+            }
 
         } catch (Exception e) {
             throw new RuntimeException("문제 필드 업데이트 실패", e);

@@ -12,5 +12,7 @@ public class ProblemUpdateRequest {
     private String description;     // 수정된 markdown 내용
     private Double timeLimit;
     private Integer memoryLimit;
+    private String difficulty;     // 난이도 ("1", "2", "3", etc.)
+    private String tags;            // 태그 (JSON string)
     private MultipartFile newZipFile;  // 선택적: 완전히 새로운 ZIP 파일
 }
