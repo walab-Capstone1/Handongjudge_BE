@@ -177,4 +177,14 @@ public class SectionController {
         }
     }
 
+    // 분반 삭제
+    @DeleteMapping("/{sectionId}")
+    public ResponseEntity<Void> deleteSection(
+            @PathVariable Long sectionId,
+            Authentication authentication) {
+        Long instructorId = Long.parseLong(authentication.getName());
+        sectionService.deleteSection(sectionId, instructorId);
+        return ResponseEntity.ok().build();
+    }
+
 }

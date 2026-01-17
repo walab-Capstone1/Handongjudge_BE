@@ -52,10 +52,11 @@ public class CourseService {
         Course course = courseRepository.findById(courseId)
                 .orElseThrow(() -> new IllegalArgumentException("수업을 찾을 수 없습니다: " + courseId));
 
-        // 관련된 Section이 있는지 확인
+        // 관련된 Section이 있으면 함께 삭제 (1대1 매핑이므로)
         List<com.project.handongjudge.section.entity.Section> sections = sectionRepository.findByCourseId(courseId);
         if (!sections.isEmpty()) {
-            throw new IllegalArgumentException("해당 수업에 연결된 분반이 있어 삭제할 수 없습니다. 먼저 모든 분반을 삭제해주세요.");
+            // 관련된 모든 Section 삭제
+            sectionRepository.deleteAll(sections);
         }
 
         courseRepository.delete(course);

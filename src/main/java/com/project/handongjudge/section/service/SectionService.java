@@ -109,6 +109,28 @@ public class SectionService {
         section.setActive(active);
         return sectionRepository.save(section);
     }
+
+    @Transactional
+    public void deleteSection(Long sectionId, Long instructorId) {
+        Section section = sectionRepository.findById(sectionId)
+                .orElseThrow(() -> new IllegalArgumentException("분반을 찾을 수 없습니다: " + sectionId));
+
+        // 사용자 조회
+        User user = userRepository.findById(instructorId)
+                .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다: " + instructorId));
+
+        // 권한 확인: 해당 분반의 교수이거나 시스템 관리자인지 확인
+        boolean isAuthorized = section.getInstructor().getId().equals(instructorId) ||
+                user.getRole() == User.Role.SUPER_ADMIN;
+        
+        if (!isAuthorized) {
+            throw new IllegalArgumentException("해당 분반을 삭제할 권한이 없습니다");
+        }
+
+        // Section 삭제 (CASCADE 설정에 따라 관련 데이터도 함께 삭제됨)
+        sectionRepository.delete(section);
+        log.info("분반 삭제 완료 - ID: {}", sectionId);
+    }
     /**
      * Section 복사 (권한 체크 포함)
      * 원본 Section을 만든 instructor만 복사 가능
