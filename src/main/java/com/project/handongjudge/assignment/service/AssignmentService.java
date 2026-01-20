@@ -17,6 +17,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import com.project.handongjudge.submission.repository.SubmissionRepository;
+import com.project.handongjudge.submission.entity.Submission;
 
 import java.time.LocalDateTime;
 import java.util.*;
@@ -541,5 +542,76 @@ public class AssignmentService {
         }
 
         return responses;
+    }
+
+    /**
+     * 튜터가 학생의 accept된 코드를 조회
+     * @param sectionId 분반 ID
+     * @param assignmentId 과제 ID
+     * @param userId 학생 ID
+     * @param problemId 문제 ID
+     * @param instructorId 튜터 ID (권한 확인용)
+     * @return 학생의 accept된 코드 정보
+     */
+    public StudentAcceptedCodeResponse getStudentAcceptedCode(
+            Long sectionId, Long assignmentId, Long userId, Long problemId, Long instructorId) {
+        // 1. Section 조회 및 권한 확인
+        Section section = sectionRepository.findById(sectionId)
+                .orElseThrow(() -> new IllegalArgumentException("Section not found"));
+
+        User instructor = userRepository.findById(instructorId)
+                .orElseThrow(() -> new IllegalArgumentException("Instructor not found"));
+
+        // 권한 확인: 해당 Section의 교수이거나 시스템 관리자인지 확인
+        boolean isAuthorized = section.getInstructor().getId().equals(instructorId) ||
+                instructor.getRole() == User.Role.SUPER_ADMIN;
+
+        if (!isAuthorized) {
+            throw new IllegalArgumentException("해당 분반의 학생 코드를 조회할 권한이 없습니다");
+        }
+
+        // 2. 학생 조회
+        User student = userRepository.findById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("Student not found"));
+
+        // 3. 문제 조회
+        Problem problem = problemRepository.findById(problemId)
+                .orElseThrow(() -> new IllegalArgumentException("Problem not found"));
+
+        // 4. 과제에 해당 문제가 포함되어 있는지 확인
+        Assignment assignment = assignmentRepository.findById(assignmentId)
+                .orElseThrow(() -> new IllegalArgumentException("Assignment not found"));
+
+        List<AssignmentProblem> assignmentProblems = assignmentProblemRepository.findByAssignmentId(assignmentId);
+        boolean problemInAssignment = assignmentProblems.stream()
+                .anyMatch(ap -> ap.getProblem().getId().equals(problemId));
+
+        if (!problemInAssignment) {
+            throw new IllegalArgumentException("해당 문제는 이 과제에 포함되어 있지 않습니다");
+        }
+
+        // 5. 학생의 accept된 제출 조회 (첫 번째 accept된 제출)
+        List<Submission> acceptedSubmissions = submissionRepository
+                .findAcceptedSubmissionsByUserAndProblem(userId, problemId, sectionId);
+
+        if (acceptedSubmissions.isEmpty()) {
+            throw new IllegalArgumentException("해당 학생은 이 문제를 아직 정답으로 제출하지 않았습니다");
+        }
+
+        Submission firstAcceptedSubmission = acceptedSubmissions.get(0);
+
+        // 6. DTO 생성 및 반환
+        return StudentAcceptedCodeResponse.builder()
+                .submissionId(firstAcceptedSubmission.getId())
+                .userId(student.getId())
+                .studentId(student.getEmail())
+                .studentName(student.getName())
+                .problemId(problem.getId())
+                .problemTitle(problem.getTitle())
+                .code(firstAcceptedSubmission.getCode())
+                .language(firstAcceptedSubmission.getLanguage())
+                .submittedAt(firstAcceptedSubmission.getSubmittedAt())
+                .result(firstAcceptedSubmission.getResult())
+                .build();
     }
 }

@@ -13,6 +13,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import com.project.handongjudge.assignment.dto.StudentProgressResponse;
+import com.project.handongjudge.assignment.dto.StudentAcceptedCodeResponse;
 
 import java.util.List;
 import java.util.Map;
@@ -157,5 +158,27 @@ public class AssignmentController {
         List<UpcomingAssignmentResponse> upcomingAssignments =
                 assignmentService.getUpcomingAssignments(sectionId, days);
         return ResponseEntity.ok(upcomingAssignments);
+    }
+
+    /**
+     * 튜터가 학생의 accept된 코드 조회
+     * @param sectionId 분반 ID
+     * @param assignmentId 과제 ID
+     * @param userId 학생 ID
+     * @param problemId 문제 ID
+     * @param authentication 인증 정보 (튜터)
+     * @return 학생의 accept된 코드 정보
+     */
+    @GetMapping("/{assignmentId}/students/{userId}/problems/{problemId}/accepted-code")
+    public ResponseEntity<StudentAcceptedCodeResponse> getStudentAcceptedCode(
+            @PathVariable Long sectionId,
+            @PathVariable Long assignmentId,
+            @PathVariable Long userId,
+            @PathVariable Long problemId,
+            Authentication authentication) {
+        Long instructorId = Long.parseLong(authentication.getName());
+        StudentAcceptedCodeResponse response = assignmentService.getStudentAcceptedCode(
+                sectionId, assignmentId, userId, problemId, instructorId);
+        return ResponseEntity.ok(response);
     }
 }
