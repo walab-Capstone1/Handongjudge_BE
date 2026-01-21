@@ -32,7 +32,7 @@ public interface EnrollmentRepository extends CrudRepository<Enrollment, Long> {
             "u.id, u.name, u.email, '', e.teamId, s.id, " +
             "CONCAT(c.title, ' - Section ', s.sectionNumber), c.title, s.sectionNumber, " +
             "e.joinedAt, u.updatedAt, " +
-            "CAST(0.0 AS double), CAST(0 AS int), CAST(0 AS int)) " +
+            "0.0, 0, 0) " +
             "FROM Enrollment e " +
             "JOIN e.user u " +
             "JOIN e.section s " +
@@ -44,7 +44,7 @@ public interface EnrollmentRepository extends CrudRepository<Enrollment, Long> {
             "u.id, u.name, u.email, '', e.teamId, s.id, " +
             "CONCAT(c.title, ' - Section ', s.sectionNumber), c.title, s.sectionNumber, " +
             "e.joinedAt, u.updatedAt, " +
-            "CAST(0.0 AS double), CAST(0 AS int), CAST(0 AS int)) " +
+            "0.0, 0, 0) " +
             "FROM Enrollment e " +
             "JOIN e.user u " +
             "JOIN e.section s " +
