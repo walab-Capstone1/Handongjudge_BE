@@ -19,4 +19,7 @@ public interface ProblemRepository extends JpaRepository<Problem, Long> {
 
     // ✨ 추가: instructor가 만든 문제만 조회
     List<Problem> findByCreatedBy_Id(Long instructorId);
+    
+    // instructor가 만든 문제 수
+    long countByCreatedById(Long instructorId);
 }

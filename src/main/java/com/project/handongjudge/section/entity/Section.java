@@ -11,6 +11,8 @@ import org.hibernate.annotations.CreationTimestamp;
 
 import javax.persistence.*;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 
 @Entity
 @Getter
@@ -55,4 +57,35 @@ public class Section {
     @Column(name = "active", nullable = false)
     @Builder.Default
     private Boolean active = true;
+
+    // CASCADE 관계 설정 - Section 삭제 시 함께 삭제될 엔티티들
+    @JsonIgnore
+    @OneToMany(mappedBy = "section", cascade = CascadeType.ALL, orphanRemoval = true)
+    @Builder.Default
+    private List<com.project.handongjudge.assignment.entity.Assignment> assignments = new ArrayList<>();
+
+    @JsonIgnore
+    @OneToMany(mappedBy = "section", cascade = CascadeType.ALL, orphanRemoval = true)
+    @Builder.Default
+    private List<com.project.handongjudge.notice.entity.Notice> notices = new ArrayList<>();
+
+    @JsonIgnore
+    @OneToMany(mappedBy = "section", cascade = CascadeType.ALL, orphanRemoval = true)
+    @Builder.Default
+    private List<com.project.handongjudge.community.entity.Question> questions = new ArrayList<>();
+
+    @JsonIgnore
+    @OneToMany(mappedBy = "section", cascade = CascadeType.ALL, orphanRemoval = true)
+    @Builder.Default
+    private List<com.project.handongjudge.user.entity.Enrollment> enrollments = new ArrayList<>();
+
+    @JsonIgnore
+    @OneToMany(mappedBy = "section", cascade = CascadeType.ALL, orphanRemoval = true)
+    @Builder.Default
+    private List<com.project.handongjudge.community.entity.UserNickname> userNicknames = new ArrayList<>();
+
+    @JsonIgnore
+    @OneToMany(mappedBy = "section", cascade = CascadeType.ALL, orphanRemoval = true)
+    @Builder.Default
+    private List<com.project.handongjudge.submission.entity.Submission> submissions = new ArrayList<>();
 }

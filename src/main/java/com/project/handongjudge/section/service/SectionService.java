@@ -5,8 +5,10 @@ import com.project.handongjudge.course.repository.CourseRepository;
 import com.project.handongjudge.section.dto.SectionInfoDto;
 import com.project.handongjudge.section.dto.SectionRequest;
 import com.project.handongjudge.section.dto.SectionResponse;
-
 import com.project.handongjudge.section.dto.SectionWithCourseRequest;
+import com.project.handongjudge.section.dto.NoticeEditData;
+import com.project.handongjudge.section.dto.AssignmentEditData;
+import com.project.handongjudge.section.dto.ProblemEditData;
 import com.project.handongjudge.section.entity.Section;
 
 import com.project.handongjudge.section.repository.SectionRepository;
@@ -67,6 +69,7 @@ public class SectionService {
                 .enrollmentCode(enrollmentCode)
                 .year(request.getYear())
                 .semester(request.getSemester())
+                .active(false) // 새로 생성된 수업은 초기에 비활성화 상태로 생성
                 .build();
 
         Section saved = sectionRepository.save(section);
@@ -106,6 +109,28 @@ public class SectionService {
         section.setActive(active);
         return sectionRepository.save(section);
     }
+
+    @Transactional
+    public void deleteSection(Long sectionId, Long instructorId) {
+        Section section = sectionRepository.findById(sectionId)
+                .orElseThrow(() -> new IllegalArgumentException("분반을 찾을 수 없습니다: " + sectionId));
+
+        // 사용자 조회
+        User user = userRepository.findById(instructorId)
+                .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다: " + instructorId));
+
+        // 권한 확인: 해당 분반의 교수이거나 시스템 관리자인지 확인
+        boolean isAuthorized = section.getInstructor().getId().equals(instructorId) ||
+                user.getRole() == User.Role.SUPER_ADMIN;
+        
+        if (!isAuthorized) {
+            throw new IllegalArgumentException("해당 분반을 삭제할 권한이 없습니다");
+        }
+
+        // Section 삭제 (CASCADE 설정에 따라 관련 데이터도 함께 삭제됨)
+        sectionRepository.delete(section);
+        log.info("분반 삭제 완료 - ID: {}", sectionId);
+    }
     /**
      * Section 복사 (권한 체크 포함)
      * 원본 Section을 만든 instructor만 복사 가능
@@ -126,7 +151,10 @@ public class SectionService {
                             Integer newYear, String newSemester, String newCourseTitle,
                             String newDescription, Boolean copyNotices, Boolean copyAssignments,
                             List<Long> selectedNoticeIds, List<Long> selectedAssignmentIds,
-                            Map<Long, List<Long>> assignmentProblems, Long instructorId) throws IOException {
+                            Map<Long, List<Long>> assignmentProblems, Long instructorId,
+                            Map<Long, NoticeEditData> noticeEdits,
+                            Map<Long, AssignmentEditData> assignmentEdits,
+                            Map<Long, ProblemEditData> problemEdits) throws IOException {
         Section sourceSection = sectionRepository.findById(sourceSectionId)
                 .orElseThrow(() -> new IllegalArgumentException("원본 Section을 찾을 수 없습니다: " + sourceSectionId));
 
@@ -168,7 +196,7 @@ public class SectionService {
                 .enrollmentCode(enrollmentCode)
                 .year(newYear)
                 .semester(newSemester)
-                .active(true)
+                .active(false) // 복사된 수업도 초기에 비활성화 상태로 생성
                 .build();
 
         Section savedSection = sectionRepository.save(newSection);
@@ -198,14 +226,29 @@ public class SectionService {
 
             List<Notice> newNotices = new ArrayList<>();
             for (Notice sourceNotice : sourceNotices) {
+                // 수정된 제목/내용이 있으면 사용, 없으면 원본 사용
+                String noticeTitle = sourceNotice.getTitle();
+                String noticeContent = sourceNotice.getContent();
+                if (noticeEdits != null && noticeEdits.containsKey(sourceNotice.getId())) {
+                    NoticeEditData editData = noticeEdits.get(sourceNotice.getId());
+                    if (editData != null) {
+                        if (editData.getTitle() != null && !editData.getTitle().trim().isEmpty()) {
+                            noticeTitle = editData.getTitle();
+                        }
+                        if (editData.getContent() != null && !editData.getContent().trim().isEmpty()) {
+                            noticeContent = editData.getContent();
+                        }
+                    }
+                }
+                
                 Notice newNotice = Notice.builder()
                         .section(savedSection)
-                        .title(sourceNotice.getTitle())
-                        .content(sourceNotice.getContent())
+                        .title(noticeTitle)
+                        .content(noticeContent)
                         .difficulty(sourceNotice.getDifficulty())
                         .isNew(true)
                         .createdAt(LocalDateTime.now())
-                        .active(sourceNotice.getActive())
+                        .active(false) // 복사된 공지사항은 초기에 비활성화 상태로 생성
                         .build();
                 newNotices.add(newNotice);
             }
@@ -235,14 +278,29 @@ public class SectionService {
             int copiedProblemCount = 0;
 
             for (Assignment sourceAssignment : sourceAssignments) {
+                // 수정된 제목/내용이 있으면 사용, 없으면 원본 사용
+                String assignmentTitle = sourceAssignment.getTitle();
+                String assignmentDescription = sourceAssignment.getDescription();
+                if (assignmentEdits != null && assignmentEdits.containsKey(sourceAssignment.getId())) {
+                    AssignmentEditData editData = assignmentEdits.get(sourceAssignment.getId());
+                    if (editData != null) {
+                        if (editData.getTitle() != null && !editData.getTitle().trim().isEmpty()) {
+                            assignmentTitle = editData.getTitle();
+                        }
+                        if (editData.getDescription() != null && !editData.getDescription().trim().isEmpty()) {
+                            assignmentDescription = editData.getDescription();
+                        }
+                    }
+                }
+                
                 Assignment newAssignment = Assignment.builder()
                         .section(savedSection)
                         .assignmentNumber(sourceAssignment.getAssignmentNumber())
-                        .title(sourceAssignment.getTitle())
-                        .description(sourceAssignment.getDescription())
+                        .title(assignmentTitle)
+                        .description(assignmentDescription)
                         .startDate(sourceAssignment.getStartDate())
                         .endDate(sourceAssignment.getEndDate())
-                        .active(sourceAssignment.getActive())
+                        .active(false) // 복사된 과제는 초기에 비활성화 상태로 생성
                         .build();
 
                 Assignment savedAssignment = assignmentRepository.save(newAssignment);
@@ -274,9 +332,18 @@ public class SectionService {
                         continue;
                     }
 
+                    // 수정된 제목이 있으면 사용, 없으면 null (원본 제목 사용)
+                    String problemTitle = null;
+                    if (problemEdits != null && problemEdits.containsKey(sourceProblem.getId())) {
+                        ProblemEditData editData = problemEdits.get(sourceProblem.getId());
+                        if (editData != null && editData.getTitle() != null && !editData.getTitle().trim().isEmpty()) {
+                            problemTitle = editData.getTitle();
+                        }
+                    }
+                    
                     // ✅ 문제 복사 (DOMJudge에 새 문제로 업로드됨)
                     Long newProblemId = problemService.copyProblem(
-                            sourceProblem.getId(), null, instructorId);
+                            sourceProblem.getId(), problemTitle, instructorId);
 
                     Problem newProblem = problemRepository.findById(newProblemId)
                             .orElseThrow(() -> new RuntimeException("복사된 문제를 찾을 수 없습니다: " + newProblemId));

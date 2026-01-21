@@ -17,7 +17,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import com.project.handongjudge.submission.repository.SubmissionRepository;
-import com.project.handongjudge.assignment.dto.StudentProgressResponse;
+import com.project.handongjudge.submission.entity.Submission;
 
 import java.time.LocalDateTime;
 import java.util.*;
@@ -26,7 +26,6 @@ import com.project.handongjudge.problem.dto.ProblemDto;
 import java.util.ArrayList;
 import java.util.stream.Collectors;
 import com.project.handongjudge.user.repository.EnrollmentRepository;
-import com.project.handongjudge.assignment.dto.StudentProgressResponse;
 
 @Transactional
 @Service
@@ -454,5 +453,165 @@ public class AssignmentService {
         Assignment updatedAssignment = assignmentRepository.save(assignment);
 
         return toResponse(updatedAssignment);
+    }
+
+    /**
+     * 과제 삭제
+     */
+    @Transactional
+    public void deleteAssignment(Long sectionId, Long assignmentId, Long userId) {
+        // 과제 조회
+        Assignment assignment = assignmentRepository.findById(assignmentId)
+                .orElseThrow(() -> new IllegalArgumentException("Assignment not found"));
+
+        // Section 확인
+        if (!assignment.getSection().getId().equals(sectionId)) {
+            throw new IllegalArgumentException("Section ID가 일치하지 않습니다.");
+        }
+
+        // 사용자 조회
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다: " + userId));
+
+        // 권한 확인: 해당 Section의 교수이거나 시스템 관리자인지 확인
+        boolean isAuthorized = assignment.getSection().getInstructor().getId().equals(userId) ||
+                user.getRole() == User.Role.SUPER_ADMIN;
+
+        if (!isAuthorized) {
+            throw new IllegalArgumentException("해당 과제를 삭제할 권한이 없습니다");
+        }
+
+        // 과제에 연결된 문제 관계 삭제
+        assignmentProblemRepository.deleteByAssignmentId(assignmentId);
+
+        // 과제 삭제
+        assignmentRepository.delete(assignment);
+    }
+
+    /**
+     * 마감 직전 과제 조회
+     * @param sectionId 분반 ID
+     * @param days 마감일까지 남은 일수 (기본값: 3일)
+     * @return 마감 직전 과제 목록 (제출률 포함)
+     */
+    public List<UpcomingAssignmentResponse> getUpcomingAssignments(Long sectionId, Integer days) {
+        // Section 존재 여부 확인
+        sectionRepository.findById(sectionId)
+                .orElseThrow(() -> new IllegalArgumentException("Section not found"));
+
+        // days가 null이면 기본값 3일 사용
+        int daysToCheck = (days != null && days > 0) ? days : 3;
+
+        // 현재 시간
+        LocalDateTime now = LocalDateTime.now();
+        // 마감일 기준 (현재 시간 + 지정된 일수)
+        LocalDateTime deadline = now.plusDays(daysToCheck);
+
+        // 마감 직전 과제 조회
+        List<Assignment> upcomingAssignments = assignmentRepository
+                .findUpcomingAssignmentsBySectionId(sectionId, now, deadline);
+
+        // 각 과제별 제출 통계 조회하여 응답 생성
+        List<UpcomingAssignmentResponse> responses = new ArrayList<>();
+
+        for (Assignment assignment : upcomingAssignments) {
+            try {
+                // 제출 통계 조회
+                AssignmentSubmissionStatsResponse stats = getAssignmentSubmissionStats(
+                        assignment.getId(), sectionId);
+
+                UpcomingAssignmentResponse response = UpcomingAssignmentResponse.builder()
+                        .assignmentId(assignment.getId())
+                        .title(assignment.getTitle())
+                        .endDate(assignment.getEndDate())
+                        .submissionRate(stats.getSubmissionRate())
+                        .build();
+
+                responses.add(response);
+            } catch (Exception e) {
+                // 통계 조회 실패 시 제출률을 0으로 설정
+                UpcomingAssignmentResponse response = UpcomingAssignmentResponse.builder()
+                        .assignmentId(assignment.getId())
+                        .title(assignment.getTitle())
+                        .endDate(assignment.getEndDate())
+                        .submissionRate(0.0)
+                        .build();
+
+                responses.add(response);
+            }
+        }
+
+        return responses;
+    }
+
+    /**
+     * 튜터가 학생의 accept된 코드를 조회
+     * @param sectionId 분반 ID
+     * @param assignmentId 과제 ID
+     * @param userId 학생 ID
+     * @param problemId 문제 ID
+     * @param instructorId 튜터 ID (권한 확인용)
+     * @return 학생의 accept된 코드 정보
+     */
+    public StudentAcceptedCodeResponse getStudentAcceptedCode(
+            Long sectionId, Long assignmentId, Long userId, Long problemId, Long instructorId) {
+        // 1. Section 조회 및 권한 확인
+        Section section = sectionRepository.findById(sectionId)
+                .orElseThrow(() -> new IllegalArgumentException("Section not found"));
+
+        User instructor = userRepository.findById(instructorId)
+                .orElseThrow(() -> new IllegalArgumentException("Instructor not found"));
+
+        // 권한 확인: 해당 Section의 교수이거나 시스템 관리자인지 확인
+        boolean isAuthorized = section.getInstructor().getId().equals(instructorId) ||
+                instructor.getRole() == User.Role.SUPER_ADMIN;
+
+        if (!isAuthorized) {
+            throw new IllegalArgumentException("해당 분반의 학생 코드를 조회할 권한이 없습니다");
+        }
+
+        // 2. 학생 조회
+        User student = userRepository.findById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("Student not found"));
+
+        // 3. 문제 조회
+        Problem problem = problemRepository.findById(problemId)
+                .orElseThrow(() -> new IllegalArgumentException("Problem not found"));
+
+        // 4. 과제에 해당 문제가 포함되어 있는지 확인
+        Assignment assignment = assignmentRepository.findById(assignmentId)
+                .orElseThrow(() -> new IllegalArgumentException("Assignment not found"));
+
+        List<AssignmentProblem> assignmentProblems = assignmentProblemRepository.findByAssignmentId(assignmentId);
+        boolean problemInAssignment = assignmentProblems.stream()
+                .anyMatch(ap -> ap.getProblem().getId().equals(problemId));
+
+        if (!problemInAssignment) {
+            throw new IllegalArgumentException("해당 문제는 이 과제에 포함되어 있지 않습니다");
+        }
+
+        // 5. 학생의 accept된 제출 조회 (첫 번째 accept된 제출)
+        List<Submission> acceptedSubmissions = submissionRepository
+                .findAcceptedSubmissionsByUserAndProblem(userId, problemId, sectionId);
+
+        if (acceptedSubmissions.isEmpty()) {
+            throw new IllegalArgumentException("해당 학생은 이 문제를 아직 정답으로 제출하지 않았습니다");
+        }
+
+        Submission firstAcceptedSubmission = acceptedSubmissions.get(0);
+
+        // 6. DTO 생성 및 반환
+        return StudentAcceptedCodeResponse.builder()
+                .submissionId(firstAcceptedSubmission.getId())
+                .userId(student.getId())
+                .studentId(student.getEmail())
+                .studentName(student.getName())
+                .problemId(problem.getId())
+                .problemTitle(problem.getTitle())
+                .code(firstAcceptedSubmission.getCode())
+                .language(firstAcceptedSubmission.getLanguage())
+                .submittedAt(firstAcceptedSubmission.getSubmittedAt())
+                .result(firstAcceptedSubmission.getResult())
+                .build();
     }
 }
