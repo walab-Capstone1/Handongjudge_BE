@@ -12,6 +12,7 @@ import com.project.handongjudge.community.repository.CommentRepository;
 import com.project.handongjudge.community.repository.QuestionRepository;
 import com.project.handongjudge.community.repository.UserNicknameRepository;
 import com.project.handongjudge.section.entity.Section;
+import com.project.handongjudge.section.service.SectionRoleService;
 import com.project.handongjudge.user.entity.User;
 import com.project.handongjudge.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -29,6 +30,7 @@ public class CommentService {
 
     private final CommentRepository commentRepository;
     private final QuestionRepository questionRepository;
+    private final SectionRoleService sectionRoleService;
     private final UserRepository userRepository;
     private final UserNicknameRepository userNicknameRepository;
     private final CommentLikeRepository commentLikeRepository;
@@ -228,9 +230,7 @@ public class CommentService {
     }
 
     private boolean isInstructor(User user, Section section) {
-        return section.getInstructor().getId().equals(user.getId()) || 
-               user.getRole() == User.Role.ADMIN || 
-               user.getRole() == User.Role.SUPER_ADMIN;
+        return sectionRoleService.isManager(user.getId(), section.getId());
     }
 
     private String sanitizeHtmlContent(String content) {
