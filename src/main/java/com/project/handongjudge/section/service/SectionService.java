@@ -12,6 +12,7 @@ import com.project.handongjudge.section.dto.ProblemEditData;
 import com.project.handongjudge.section.entity.Section;
 
 import com.project.handongjudge.section.repository.SectionRepository;
+import com.project.handongjudge.section.service.SectionRoleService;
 
 import com.project.handongjudge.user.entity.User;
 import com.project.handongjudge.user.repository.UserRepository;
@@ -43,6 +44,7 @@ public class SectionService {
     private final CourseRepository courseRepository;
     private final UserRepository userRepository;
     private final DomjudgeService domjudgeService;
+    private final SectionRoleService sectionRoleService;
     private final AssignmentRepository assignmentRepository;
     private final AssignmentProblemRepository assignmentProblemRepository;
     private final ProblemRepository problemRepository;
@@ -77,6 +79,9 @@ public class SectionService {
         // courseTitle을 전달 (sectionNumber는 null일 수 있음)
         domjudgeService.createContest(saved.getId(), request.getSectionNumber(), course.getTitle());
 
+        // 수업 생성 시 자동으로 ADMIN 역할 부여
+        sectionRoleService.assignAdminRole(saved.getId(), instructor.getId());
+
         return SectionResponse.builder()
                 .id(saved.getId())
                 .courseId(course.getId())
@@ -102,9 +107,14 @@ public class SectionService {
     }
 
     @Transactional
-    public Section toggleSectionActive(Long sectionId, Boolean active) {
+    public Section toggleSectionActive(Long sectionId, Boolean active, Long userId) {
         Section section = sectionRepository.findById(sectionId)
                 .orElseThrow(() -> new IllegalArgumentException("분반을 찾을 수 없습니다: " + sectionId));
+
+        // 권한 확인: 해당 Section의 ADMIN만 활성화/비활성화 가능
+        if (!sectionRoleService.isAdmin(userId, sectionId)) {
+            throw new IllegalArgumentException("수업 활성화/비활성화는 수업 관리자만 가능합니다");
+        }
 
         section.setActive(active);
         return sectionRepository.save(section);
@@ -115,15 +125,8 @@ public class SectionService {
         Section section = sectionRepository.findById(sectionId)
                 .orElseThrow(() -> new IllegalArgumentException("분반을 찾을 수 없습니다: " + sectionId));
 
-        // 사용자 조회
-        User user = userRepository.findById(instructorId)
-                .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다: " + instructorId));
-
-        // 권한 확인: 해당 분반의 교수이거나 시스템 관리자인지 확인
-        boolean isAuthorized = section.getInstructor().getId().equals(instructorId) ||
-                user.getRole() == User.Role.SUPER_ADMIN;
-        
-        if (!isAuthorized) {
+        // 권한 확인: 해당 분반의 ADMIN인지 확인
+        if (!sectionRoleService.isAdmin(instructorId, sectionId)) {
             throw new IllegalArgumentException("해당 분반을 삭제할 권한이 없습니다");
         }
 
@@ -158,15 +161,8 @@ public class SectionService {
         Section sourceSection = sectionRepository.findById(sourceSectionId)
                 .orElseThrow(() -> new IllegalArgumentException("원본 Section을 찾을 수 없습니다: " + sourceSectionId));
 
-        // 사용자 조회
-        User user = userRepository.findById(instructorId)
-                .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다: " + instructorId));
-
-        // ✅ 권한 체크: 해당 Section의 교수이거나 시스템 관리자인지 확인
-        boolean isAuthorized = sourceSection.getInstructor().getId().equals(instructorId) ||
-                user.getRole() == User.Role.SUPER_ADMIN;
-        
-        if (!isAuthorized) {
+        // 권한 체크: 해당 Section의 ADMIN인지 확인
+        if (!sectionRoleService.isAdmin(instructorId, sourceSectionId)) {
             throw new IllegalArgumentException("이 수업을 복사할 권한이 없습니다.");
         }
 
