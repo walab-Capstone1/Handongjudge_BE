@@ -131,12 +131,24 @@ public class DomjudgeService {
 
         HttpEntity<Map<String, Object>> requestEntity = new HttpEntity<>(requestBody, headers);
 
-        restTemplate.exchange(
-                url,
-                HttpMethod.PUT,
-                requestEntity,
-                String.class
-        );
+        try {
+            restTemplate.exchange(
+                    url,
+                    HttpMethod.PUT,
+                    requestEntity,
+                    String.class
+            );
+        } catch (HttpClientErrorException e) {
+            // 이미 Contest에 연결된 문제인 경우 무시 (400 Bad Request: "Problem already linked to contest")
+            if (e.getStatusCode().value() == 400 && 
+                e.getResponseBodyAsString() != null && 
+                e.getResponseBodyAsString().contains("already linked to contest")) {
+                log.info("문제가 이미 Contest에 연결되어 있습니다. 무시합니다. contestId: {}, problemId: {}", contestId, domjudgeProblemId);
+                return;
+            }
+            // 다른 오류는 그대로 throw
+            throw e;
+        }
     }
 
     public void removeProblemFromContest(Long contestId, String domjudgeProblemId) {
