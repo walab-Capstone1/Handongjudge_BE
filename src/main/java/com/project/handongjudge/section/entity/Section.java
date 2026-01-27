@@ -36,6 +36,12 @@ public class Section {
     @JoinColumn(name = "instructor_id")
     private User instructor;
 
+    // 수업 생성자 (새로운 권한 시스템에서 사용)
+    @JsonIgnore
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "creator_id")
+    private User creator;
+
     @Column(name = "section_number", nullable = true)
     private Integer sectionNumber;
 
@@ -88,4 +94,10 @@ public class Section {
     @OneToMany(mappedBy = "section", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default
     private List<com.project.handongjudge.submission.entity.Submission> submissions = new ArrayList<>();
+
+    // 수업별 사용자 역할 관계
+    @JsonIgnore
+    @OneToMany(mappedBy = "section", cascade = CascadeType.ALL, orphanRemoval = true)
+    @Builder.Default
+    private List<SectionUserRole> sectionUserRoles = new ArrayList<>();
 }

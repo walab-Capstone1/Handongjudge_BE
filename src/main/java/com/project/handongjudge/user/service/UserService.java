@@ -11,6 +11,7 @@ import com.project.handongjudge.user.repository.UserRepository;
 import com.project.handongjudge.user.repository.UserReadStatusRepository;
 import com.project.handongjudge.user.entity.Enrollment;
 import com.project.handongjudge.section.repository.SectionRepository;
+import com.project.handongjudge.section.service.SectionRoleService;
 import com.project.handongjudge.notice.entity.Notice;
 import com.project.handongjudge.notice.repository.NoticeRepository;
 import com.project.handongjudge.assignment.entity.Assignment;
@@ -41,6 +42,7 @@ public class UserService {
     private final EnrollmentRepository enrollmentRepository;
     private final PasswordEncoder passwordEncoder;
     private final SectionRepository sectionRepository;
+    private final SectionRoleService sectionRoleService;
     private final DomjudgeService domjudgeService;
     private final UserReadStatusRepository userReadStatusRepository;
     private final NoticeRepository noticeRepository;
@@ -53,6 +55,7 @@ public class UserService {
     public UserService(UserRepository userRepository,
                        EnrollmentRepository enrollmentRepository,
                        SectionRepository sectionRepository,
+                       SectionRoleService sectionRoleService,
                        DomjudgeService domjudgeService,
                        UserReadStatusRepository userReadStatusRepository,
                        NoticeRepository noticeRepository,
@@ -65,6 +68,7 @@ public class UserService {
         this.enrollmentRepository = enrollmentRepository;
         this.passwordEncoder = passwordEncoder;
         this.sectionRepository = sectionRepository;
+        this.sectionRoleService = sectionRoleService;
         this.domjudgeService = domjudgeService;
         this.userReadStatusRepository = userReadStatusRepository;
         this.noticeRepository = noticeRepository;
@@ -222,6 +226,9 @@ public class UserService {
 
         // 참가 처리
         enrollmentRepository.save(enrollment);
+
+        // SectionUserRole에 STUDENT 역할 부여
+        sectionRoleService.assignStudentRole(enrollment.getSection().getId(), enrollment.getUser().getId());
 
         EnrollmentResponseDTO response = new EnrollmentResponseDTO();
         response.setId(enrollment.getId());

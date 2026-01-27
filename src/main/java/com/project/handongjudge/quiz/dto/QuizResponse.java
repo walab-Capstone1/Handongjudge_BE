@@ -24,3 +24,4 @@ public class QuizResponse {
     private Integer problemCount; // 포함된 문제 수
 }
 
+

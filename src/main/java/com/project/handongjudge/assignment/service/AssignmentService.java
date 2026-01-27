@@ -11,6 +11,7 @@ import com.project.handongjudge.problem.repository.ProblemRepository;
 import com.project.handongjudge.domjudge.service.DomjudgeService;
 import com.project.handongjudge.section.entity.Section;
 import com.project.handongjudge.section.repository.SectionRepository;
+import com.project.handongjudge.section.service.SectionRoleService;
 import com.project.handongjudge.user.entity.User;
 import com.project.handongjudge.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -36,6 +37,7 @@ public class AssignmentService {
     private final AssignmentProblemRepository assignmentProblemRepository;
     private final ProblemRepository problemRepository;
     private final SectionRepository sectionRepository;
+    private final SectionRoleService sectionRoleService;
     private final DomjudgeService domjudgeService;
     private final SubmissionRepository submissionRepository;
     private final EnrollmentRepository enrollmentRepository;
@@ -47,15 +49,8 @@ public class AssignmentService {
         Section section = sectionRepository.findById(sectionId)
                 .orElseThrow(() -> new IllegalArgumentException("Section not found"));
 
-        // 사용자 조회
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다: " + userId));
-
-        // 권한 확인: 해당 Section의 교수이거나 시스템 관리자인지 확인
-        boolean isAuthorized = section.getInstructor().getId().equals(userId) ||
-                user.getRole() == User.Role.SUPER_ADMIN;
-        
-        if (!isAuthorized) {
+        // 권한 확인: 해당 Section의 관리자(ADMIN 또는 TUTOR)인지 확인
+        if (!sectionRoleService.isManager(userId, sectionId)) {
             throw new IllegalArgumentException("해당 분반의 과제를 생성할 권한이 없습니다");
         }
 
@@ -122,17 +117,17 @@ public class AssignmentService {
         Section section = sectionRepository.findById(sectionId)
                 .orElseThrow(() -> new IllegalArgumentException("Section not found"));
 
-        // 사용자 조회
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다: " + userId));
+        // 권한 확인: 관리자이거나 수강생이어야 함
+        boolean isManager = sectionRoleService.isManager(userId, sectionId);
+        boolean isStudent = sectionRoleService.isStudent(userId, sectionId);
 
-        // 권한 확인: 교수이거나 시스템 관리자이거나 해당 분반을 수강하는 학생이어야 함
-        boolean isInstructor = section.getInstructor().getId().equals(userId) ||
-                user.getRole() == User.Role.SUPER_ADMIN;
+        if (!isManager && !isStudent) {
+            throw new IllegalArgumentException("해당 분반의 과제를 조회할 권한이 없습니다");
+        }
 
         List<Assignment> assignments;
-        if (isInstructor) {
-            // 교수는 모든 과제 조회 (active 여부와 관계없이)
+        if (isManager) {
+            // 관리자는 모든 과제 조회 (active 여부와 관계없이)
             assignments = assignmentRepository.findAllAssignmentsBySectionId(sectionId);
         } else {
             // 학생은 active=true인 과제만 조회
@@ -176,16 +171,16 @@ public class AssignmentService {
         // Section 조회
         Section section = assignment.getSection();
 
-        // 사용자 조회
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다: " + userId));
+        // 권한 확인: 관리자이거나 수강생이어야 함
+        boolean isManager = sectionRoleService.isManager(userId, section.getId());
+        boolean isStudent = sectionRoleService.isStudent(userId, section.getId());
 
-        // 권한 확인: 교수이거나 시스템 관리자이거나 해당 분반을 수강하는 학생이어야 함
-        boolean isInstructor = section.getInstructor().getId().equals(userId) ||
-                user.getRole() == User.Role.SUPER_ADMIN;
+        if (!isManager && !isStudent) {
+            throw new IllegalArgumentException("해당 과제를 조회할 권한이 없습니다");
+        }
 
         // 학생이고 과제가 비활성화되어 있으면 접근 불가
-        if (!isInstructor && assignment.getActive() == false) {
+        if (!isManager && assignment.getActive() == false) {
             throw new IllegalArgumentException("해당 과제는 비활성화되어 있어 접근할 수 없습니다");
         }
 
@@ -284,16 +279,9 @@ public class AssignmentService {
         Assignment assignment = assignmentRepository.findById(assignmentId)
                 .orElseThrow(() -> new IllegalArgumentException("Assignment not found"));
 
-        // 사용자 조회
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다: " + userId));
-
-        // 2. 권한 확인: 해당 Section의 교수이거나 시스템 관리자인지 확인
+        // 2. 권한 확인: 해당 Section의 관리자인지 확인
         Section section = assignment.getSection();
-        boolean isAuthorized = section.getInstructor().getId().equals(userId) ||
-                user.getRole() == User.Role.SUPER_ADMIN;
-        
-        if (!isAuthorized) {
+        if (!sectionRoleService.isManager(userId, section.getId())) {
             throw new IllegalArgumentException("해당 과제를 수정할 권한이 없습니다");
         }
 
@@ -437,15 +425,8 @@ public class AssignmentService {
         Assignment assignment = assignmentRepository.findById(assignmentId)
                 .orElseThrow(() -> new IllegalArgumentException("Assignment not found"));
 
-        // 사용자 조회
-        User user = userRepository.findById(instructorId)
-                .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다: " + instructorId));
-
-        // 권한 확인: 해당 Section의 교수이거나 시스템 관리자인지 확인
-        boolean isAuthorized = assignment.getSection().getInstructor().getId().equals(instructorId) ||
-                user.getRole() == User.Role.SUPER_ADMIN;
-        
-        if (!isAuthorized) {
+        // 권한 확인: 해당 Section의 관리자인지 확인
+        if (!sectionRoleService.isManager(instructorId, assignment.getSection().getId())) {
             throw new IllegalArgumentException("해당 과제를 수정할 권한이 없습니다");
         }
 
@@ -456,7 +437,7 @@ public class AssignmentService {
     }
 
     /**
-     * 과제 삭제
+     * 과제 삭제 (ADMIN만 가능)
      */
     @Transactional
     public void deleteAssignment(Long sectionId, Long assignmentId, Long userId) {
@@ -469,16 +450,9 @@ public class AssignmentService {
             throw new IllegalArgumentException("Section ID가 일치하지 않습니다.");
         }
 
-        // 사용자 조회
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다: " + userId));
-
-        // 권한 확인: 해당 Section의 교수이거나 시스템 관리자인지 확인
-        boolean isAuthorized = assignment.getSection().getInstructor().getId().equals(userId) ||
-                user.getRole() == User.Role.SUPER_ADMIN;
-
-        if (!isAuthorized) {
-            throw new IllegalArgumentException("해당 과제를 삭제할 권한이 없습니다");
+        // 권한 확인: 해당 Section의 ADMIN만 삭제 가능
+        if (!sectionRoleService.isAdmin(userId, assignment.getSection().getId())) {
+            throw new IllegalArgumentException("과제 삭제는 수업 관리자만 가능합니다");
         }
 
         // 과제에 연결된 문제 관계 삭제
@@ -559,14 +533,8 @@ public class AssignmentService {
         Section section = sectionRepository.findById(sectionId)
                 .orElseThrow(() -> new IllegalArgumentException("Section not found"));
 
-        User instructor = userRepository.findById(instructorId)
-                .orElseThrow(() -> new IllegalArgumentException("Instructor not found"));
-
-        // 권한 확인: 해당 Section의 교수이거나 시스템 관리자인지 확인
-        boolean isAuthorized = section.getInstructor().getId().equals(instructorId) ||
-                instructor.getRole() == User.Role.SUPER_ADMIN;
-
-        if (!isAuthorized) {
+        // 권한 확인: 해당 Section의 관리자인지 확인
+        if (!sectionRoleService.isManager(instructorId, sectionId)) {
             throw new IllegalArgumentException("해당 분반의 학생 코드를 조회할 권한이 없습니다");
         }
 
