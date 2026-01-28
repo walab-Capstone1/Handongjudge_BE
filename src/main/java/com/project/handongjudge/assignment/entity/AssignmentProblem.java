@@ -8,6 +8,7 @@ import javax.persistence.*;
 
 @Entity
 @Getter
+@Setter
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
@@ -27,4 +28,8 @@ public class AssignmentProblem {
     private Problem problem;
 
     private Integer problemOrder; // 문제 순서 (선택)
+
+    @Column(nullable = false)
+    @Builder.Default
+    private Integer points = 0; // 문제 배점 (기본값 0)
 }
