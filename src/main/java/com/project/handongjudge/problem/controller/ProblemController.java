@@ -127,7 +127,7 @@ public class ProblemController {
     }
 
     /**
-     * 문제가 사용되는 과제 목록 조회
+     * 문제가 사용되는 과제 목록 조회 (하위 호환성 유지)
      */
     @GetMapping("/{problemId}/assignments")
     public ResponseEntity<List<ProblemAssignmentUsageDto>> getAssignmentsByProblemId(
@@ -136,5 +136,17 @@ public class ProblemController {
         Long instructorId = Long.parseLong(authentication.getName());
         List<ProblemAssignmentUsageDto> assignments = problemService.getAssignmentsByProblemId(problemId, instructorId);
         return ResponseEntity.ok(assignments);
+    }
+
+    /**
+     * 문제 사용 현황 조회 (과제, 문제집, 퀴즈 포함)
+     */
+    @GetMapping("/{problemId}/usage")
+    public ResponseEntity<ProblemUsageDto> getProblemUsage(
+            @PathVariable Long problemId,
+            Authentication authentication) {
+        Long instructorId = Long.parseLong(authentication.getName());
+        ProblemUsageDto usage = problemService.getProblemUsage(problemId, instructorId);
+        return ResponseEntity.ok(usage);
     }
 }
