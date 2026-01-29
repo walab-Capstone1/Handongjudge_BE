@@ -128,6 +128,7 @@ public class DomjudgeService {
         
         Map<String, Object> requestBody = new HashMap<>();
         requestBody.put("label", domjudgeProblemId); // 반드시 포함
+        requestBody.put("lazy_eval_results", 1); // lazy eval : 0 (default), full-eval : 1 (all test cases eval)
 
         HttpEntity<Map<String, Object>> requestEntity = new HttpEntity<>(requestBody, headers);
 

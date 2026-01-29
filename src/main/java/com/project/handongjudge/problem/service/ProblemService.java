@@ -45,6 +45,10 @@ public class ProblemService {
     private final AssignmentRepository assignmentRepository;
     private final UserRepository userRepository;
     private final com.project.handongjudge.assignment.repository.AssignmentProblemRepository assignmentProblemRepository;
+    private final com.project.handongjudge.problem.repository.ProblemSetProblemRepository problemSetProblemRepository;
+    private final com.project.handongjudge.quiz.repository.QuizProblemRepository quizProblemRepository;
+    private final com.project.handongjudge.problem.repository.ProblemSetRepository problemSetRepository;
+    private final com.project.handongjudge.quiz.repository.QuizRepository quizRepository;
 
     @Value("${problem.zip.storage.path:./problem-zips}")
     private String zipStoragePath;
@@ -275,7 +279,19 @@ public class ProblemService {
         List<com.project.handongjudge.assignment.entity.AssignmentProblem> assignmentProblems = 
                 assignmentProblemRepository.findByProblemId(problem.getId());
         int assignmentCount = assignmentProblems.size();
-        boolean isUsed = assignmentCount > 0;
+        
+        // 문제가 사용되는 문제집 개수 조회
+        List<com.project.handongjudge.problem.entity.ProblemSetProblem> problemSetProblems = 
+                problemSetProblemRepository.findByProblemId(problem.getId());
+        int problemSetCount = problemSetProblems.size();
+        
+        // 문제가 사용되는 퀴즈 개수 조회
+        List<com.project.handongjudge.quiz.entity.QuizProblem> quizProblems = 
+                quizProblemRepository.findByProblemId(problem.getId());
+        int quizCount = quizProblems.size();
+        
+        // 과제, 문제집, 퀴즈 중 하나라도 사용 중이면 isUsed = true
+        boolean isUsed = assignmentCount > 0 || problemSetCount > 0 || quizCount > 0;
         
         return ProblemResponse.builder()
                 .id(problem.getId())
@@ -1142,12 +1158,31 @@ public class ProblemService {
             throw new IllegalArgumentException("해당 문제를 삭제할 권한이 없습니다");
         }
 
-        // 문제가 과제에 연결되어 있는지 확인
+        // 문제가 과제에 연결되어 있는지 확인하고 자동 언링크
         List<com.project.handongjudge.assignment.entity.AssignmentProblem> assignmentProblems = 
                 assignmentProblemRepository.findByProblemId(problemId);
         
         if (!assignmentProblems.isEmpty()) {
-            throw new IllegalArgumentException("과제에 연결된 문제는 삭제할 수 없습니다. 먼저 과제에서 문제를 제거해주세요.");
+            // 모든 과제에서 문제 자동 언링크
+            assignmentProblemRepository.deleteAll(assignmentProblems);
+        }
+
+        // 문제가 문제집에 연결되어 있는지 확인하고 자동 언링크
+        List<com.project.handongjudge.problem.entity.ProblemSetProblem> problemSetProblems = 
+                problemSetProblemRepository.findByProblemId(problemId);
+        
+        if (!problemSetProblems.isEmpty()) {
+            // 모든 문제집에서 문제 자동 언링크
+            problemSetProblemRepository.deleteAll(problemSetProblems);
+        }
+
+        // 문제가 퀴즈에 연결되어 있는지 확인하고 자동 언링크
+        List<com.project.handongjudge.quiz.entity.QuizProblem> quizProblems = 
+                quizProblemRepository.findByProblemId(problemId);
+        
+        if (!quizProblems.isEmpty()) {
+            // 모든 퀴즈에서 문제 자동 언링크
+            quizProblemRepository.deleteAll(quizProblems);
         }
 
         // DOMjudge에서 문제 삭제는 하지 않음 (DOMjudge API에 문제 삭제 기능이 없을 수 있음)
@@ -1158,9 +1193,30 @@ public class ProblemService {
     }
 
     /**
-     * 문제가 사용되는 과제 목록 조회
+     * 문제가 사용되는 과제 목록 조회 (기존 메서드 - 하위 호환성 유지)
      */
     public List<ProblemAssignmentUsageDto> getAssignmentsByProblemId(Long problemId, Long instructorId) {
+        ProblemUsageDto usage = getProblemUsage(problemId, instructorId);
+        return usage.getAssignments().stream()
+                .map(a -> ProblemAssignmentUsageDto.builder()
+                        .assignmentId(a.getAssignmentId())
+                        .assignmentTitle(a.getAssignmentTitle())
+                        .assignmentNumber(a.getAssignmentNumber())
+                        .assignmentStartDate(a.getAssignmentStartDate())
+                        .assignmentEndDate(a.getAssignmentEndDate())
+                        .sectionId(a.getSectionId())
+                        .courseTitle(a.getCourseTitle())
+                        .sectionNumber(a.getSectionNumber())
+                        .year(a.getYear())
+                        .semester(a.getSemester())
+                        .build())
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * 문제 사용 현황 조회 (과제, 문제집, 퀴즈 포함)
+     */
+    public ProblemUsageDto getProblemUsage(Long problemId, Long instructorId) {
         // 문제 조회
         Problem problem = problemRepository.findById(problemId)
                 .orElseThrow(() -> new IllegalArgumentException("문제를 찾을 수 없습니다: " + problemId));
@@ -1181,7 +1237,7 @@ public class ProblemService {
         List<com.project.handongjudge.assignment.entity.AssignmentProblem> assignmentProblems = 
                 assignmentProblemRepository.findByProblemId(problemId);
 
-        return assignmentProblems.stream()
+        List<ProblemUsageDto.AssignmentUsage> assignments = assignmentProblems.stream()
                 .filter(ap -> {
                     // Assignment와 Section이 존재하는지 확인 (CASCADE로 삭제된 경우 필터링)
                     com.project.handongjudge.assignment.entity.Assignment assignment = ap.getAssignment();
@@ -1198,7 +1254,7 @@ public class ProblemService {
                     com.project.handongjudge.section.entity.Section section = assignment.getSection();
                     com.project.handongjudge.course.entity.Course course = section.getCourse();
 
-                    return ProblemAssignmentUsageDto.builder()
+                    return ProblemUsageDto.AssignmentUsage.builder()
                             .assignmentId(assignment.getId())
                             .assignmentTitle(assignment.getTitle())
                             .assignmentNumber(assignment.getAssignmentNumber())
@@ -1212,6 +1268,67 @@ public class ProblemService {
                             .build();
                 })
                 .collect(Collectors.toList());
+
+        // 문제가 사용되는 문제집 목록 조회
+        List<com.project.handongjudge.problem.entity.ProblemSetProblem> problemSetProblems = 
+                problemSetProblemRepository.findByProblemId(problemId);
+
+        List<ProblemUsageDto.ProblemSetUsage> problemSets = problemSetProblems.stream()
+                .filter(psp -> {
+                    // ProblemSet이 존재하는지 확인
+                    return psp.getProblemSet() != null;
+                })
+                .map(psp -> {
+                    com.project.handongjudge.problem.entity.ProblemSet problemSet = psp.getProblemSet();
+                    return ProblemUsageDto.ProblemSetUsage.builder()
+                            .problemSetId(problemSet.getId())
+                            .problemSetTitle(problemSet.getTitle())
+                            .description(problemSet.getDescription())
+                            .createdAt(problemSet.getCreatedAt())
+                            .build();
+                })
+                .collect(Collectors.toList());
+
+        // 문제가 사용되는 퀴즈 목록 조회
+        List<com.project.handongjudge.quiz.entity.QuizProblem> quizProblems = 
+                quizProblemRepository.findByProblemId(problemId);
+
+        List<ProblemUsageDto.QuizUsage> quizzes = quizProblems.stream()
+                .filter(qp -> {
+                    // Quiz와 Section이 존재하는지 확인
+                    com.project.handongjudge.quiz.entity.Quiz quiz = qp.getQuiz();
+                    if (quiz == null) return false;
+                    
+                    com.project.handongjudge.section.entity.Section section = quiz.getSection();
+                    if (section == null) return false;
+                    
+                    com.project.handongjudge.course.entity.Course course = section.getCourse();
+                    return course != null;
+                })
+                .map(qp -> {
+                    com.project.handongjudge.quiz.entity.Quiz quiz = qp.getQuiz();
+                    com.project.handongjudge.section.entity.Section section = quiz.getSection();
+                    com.project.handongjudge.course.entity.Course course = section.getCourse();
+
+                    return ProblemUsageDto.QuizUsage.builder()
+                            .quizId(quiz.getId())
+                            .quizTitle(quiz.getTitle())
+                            .startTime(quiz.getStartTime())
+                            .endTime(quiz.getEndTime())
+                            .sectionId(section.getId())
+                            .courseTitle(course.getTitle())
+                            .sectionNumber(section.getSectionNumber())
+                            .year(section.getYear())
+                            .semester(section.getSemester())
+                            .build();
+                })
+                .collect(Collectors.toList());
+
+        return ProblemUsageDto.builder()
+                .assignments(assignments)
+                .problemSets(problemSets)
+                .quizzes(quizzes)
+                .build();
     }
 }
 

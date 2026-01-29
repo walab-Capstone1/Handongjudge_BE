@@ -22,5 +22,8 @@ public interface QuizProblemRepository extends JpaRepository<QuizProblem, Long> 
     @Modifying
     @Query("DELETE FROM QuizProblem qp WHERE qp.quiz.id = :quizId")
     void deleteByQuizId(@Param("quizId") Long quizId);
+    
+    // 문제 ID로 QuizProblem 목록 조회
+    List<QuizProblem> findByProblemId(Long problemId);
 }
 

@@ -7,6 +7,9 @@ import lombok.*;
 import javax.persistence.*;
 
 @Entity
+@Table(uniqueConstraints = {
+    @UniqueConstraint(columnNames = {"assignment_id", "problem_id"})
+})
 @Getter
 @Setter
 @NoArgsConstructor
