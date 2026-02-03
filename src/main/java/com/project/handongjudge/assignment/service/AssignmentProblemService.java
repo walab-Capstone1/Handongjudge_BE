@@ -35,10 +35,11 @@ public class AssignmentProblemService {
             throw new IllegalArgumentException("Problem already exists in this assignment");
         }
 
-        // 관계 저장
+        // 관계 저장 (기본 배점 1점)
         AssignmentProblem relation = AssignmentProblem.builder()
                 .assignment(assignment)
                 .problem(problem)
+                .points(1) // 기본 배점 1점
                 .build();
         assignmentProblemRepository.save(relation);
 

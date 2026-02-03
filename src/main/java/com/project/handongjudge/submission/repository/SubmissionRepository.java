@@ -5,7 +5,6 @@ import com.project.handongjudge.submission.entity.Submission;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
-import java.awt.print.Pageable;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -136,5 +135,9 @@ public interface SubmissionRepository extends JpaRepository<Submission, Long> {
             "WHERE s.problem.id IN :problemIds AND s.section.id = :sectionId")
     long countDistinctUsersByProblemIdsAndSectionId(@Param("problemIds") List<Long> problemIds, 
                                                      @Param("sectionId") Long sectionId);
+    
+    // 특정 문제에 대한 모든 제출 조회
+    @Query("SELECT s FROM Submission s WHERE s.problem.id = :problemId")
+    List<Submission> findByProblemId(@Param("problemId") Long problemId);
     
 }

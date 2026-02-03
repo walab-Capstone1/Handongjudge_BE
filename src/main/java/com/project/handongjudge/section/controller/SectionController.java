@@ -13,6 +13,7 @@ import com.project.handongjudge.user.entity.User;
 import com.project.handongjudge.user.repository.EnrollmentRepository;
 import com.project.handongjudge.user.repository.UserRepository;
 import com.project.handongjudge.domjudge.service.DomjudgeService;  // ← 추가
+import com.project.handongjudge.community.service.NotificationService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -34,6 +35,7 @@ public class SectionController {
     private final EnrollmentRepository enrollmentRepository;
     private final UserRepository userRepository;
     private final DomjudgeService domjudgeService;  // ← 추가
+    private final NotificationService notificationService;
 
     @PostMapping
     public ResponseEntity<SectionResponse> createSection(@RequestBody SectionRequest request) {
@@ -91,6 +93,9 @@ public class SectionController {
 
             // SectionUserRole에 STUDENT 역할 부여
             sectionRoleService.assignStudentRole(section.getId(), userId);
+
+            // 교수에게 학생 추가 알림 발송
+            notificationService.notifyStudentEnrolled(enrollment, section);
 
             return ResponseEntity.ok(Map.of(
                     "success", true,

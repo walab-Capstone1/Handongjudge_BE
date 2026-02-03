@@ -24,6 +24,7 @@ public class NotificationResponseDto {
     private String assignmentTitle;
     private Long sectionId;
     private String courseTitle;
+    private String sectionName; // "Course Title - Section N" 형식
     private String type;
     private String message;
     private Boolean isRead;
@@ -34,16 +35,23 @@ public class NotificationResponseDto {
         // Section 정보 추출
         Long sectionId = null;
         String courseTitle = null;
+        String sectionName = null;
         
         if (notification.getNotice() != null && notification.getNotice().getSection() != null) {
-            sectionId = notification.getNotice().getSection().getId();
-            courseTitle = notification.getNotice().getSection().getCourse().getTitle();
+            var section = notification.getNotice().getSection();
+            sectionId = section.getId();
+            courseTitle = section.getCourse().getTitle();
+            sectionName = courseTitle + " - Section " + section.getSectionNumber();
         } else if (notification.getAssignment() != null && notification.getAssignment().getSection() != null) {
-            sectionId = notification.getAssignment().getSection().getId();
-            courseTitle = notification.getAssignment().getSection().getCourse().getTitle();
+            var section = notification.getAssignment().getSection();
+            sectionId = section.getId();
+            courseTitle = section.getCourse().getTitle();
+            sectionName = courseTitle + " - Section " + section.getSectionNumber();
         } else if (notification.getQuestion() != null && notification.getQuestion().getSection() != null) {
-            sectionId = notification.getQuestion().getSection().getId();
-            courseTitle = notification.getQuestion().getSection().getCourse().getTitle();
+            var section = notification.getQuestion().getSection();
+            sectionId = section.getId();
+            courseTitle = section.getCourse().getTitle();
+            sectionName = courseTitle + " - Section " + section.getSectionNumber();
         }
         
         return NotificationResponseDto.builder()
@@ -59,6 +67,7 @@ public class NotificationResponseDto {
                 .assignmentTitle(notification.getAssignment() != null ? notification.getAssignment().getTitle() : null)
                 .sectionId(sectionId)
                 .courseTitle(courseTitle)
+                .sectionName(sectionName)
                 .type(notification.getType().name())
                 .message(notification.getMessage())
                 .isRead(notification.getIsRead())

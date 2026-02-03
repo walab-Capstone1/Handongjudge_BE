@@ -34,5 +34,5 @@ public class AssignmentProblem {
 
     @Column(nullable = false)
     @Builder.Default
-    private Integer points = 0; // 문제 배점 (기본값 0)
+    private Integer points = 1; // 기본 배점 1점 // 문제 배점 (기본값 0)
 }

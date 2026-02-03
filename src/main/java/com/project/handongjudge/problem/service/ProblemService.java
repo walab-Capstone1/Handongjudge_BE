@@ -50,6 +50,7 @@ public class ProblemService {
     private final com.project.handongjudge.quiz.repository.QuizProblemRepository quizProblemRepository;
     private final com.project.handongjudge.problem.repository.ProblemSetRepository problemSetRepository;
     private final com.project.handongjudge.quiz.repository.QuizRepository quizRepository;
+    private final com.project.handongjudge.submission.repository.SubmissionRepository submissionRepository;
 
     @Value("${problem.zip.storage.path:./problem-zips}")
     private String zipStoragePath;
@@ -1404,6 +1405,14 @@ public class ProblemService {
         if (!quizProblems.isEmpty()) {
             // 모든 퀴즈에서 문제 자동 언링크
             quizProblemRepository.deleteAll(quizProblems);
+        }
+
+        // 해당 문제에 대한 모든 제출 기록 삭제
+        List<com.project.handongjudge.submission.entity.Submission> submissions = 
+                submissionRepository.findByProblemId(problemId);
+        
+        if (!submissions.isEmpty()) {
+            submissionRepository.deleteAll(submissions);
         }
 
         // DOMjudge에서 문제 삭제는 하지 않음 (DOMjudge API에 문제 삭제 기능이 없을 수 있음)

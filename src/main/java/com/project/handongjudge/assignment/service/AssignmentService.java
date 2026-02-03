@@ -76,11 +76,12 @@ public class AssignmentService {
                 Problem problem = problemRepository.findById(problemId)
                         .orElseThrow(() -> new IllegalArgumentException("문제 ID 없음: " + problemId));
 
-                // AssignmentProblem 생성
+                // AssignmentProblem 생성 (기본 배점 1점)
                 AssignmentProblem ap = AssignmentProblem.builder()
                         .assignment(savedAssignment)
                         .problem(problem)
                         .problemOrder(order++)
+                        .points(1) // 기본 배점 1점
                         .build();
                 assignmentProblems.add(ap);
 
@@ -140,11 +141,25 @@ public class AssignmentService {
     }
 
     public AssignmentProblemsResponse getAssignmentProblems(Long assignmentId) {
-        List<Problem> problems = problemRepository.findByAssignmentId(assignmentId);
+        // AssignmentProblem을 조회하여 배점 정보와 문제 순서 포함
+        List<AssignmentProblem> assignmentProblems = 
+                assignmentProblemRepository.findByAssignmentIdOrderByProblemOrderAsc(assignmentId);
 
-        // Entity를 DTO로 변환
-        List<ProblemDto> problemDtos = problems.stream()
-                .map(this::convertToProblemDto)
+        // Entity를 DTO로 변환 (배점 정보 포함)
+        List<ProblemDto> problemDtos = assignmentProblems.stream()
+                .map(ap -> {
+                    Problem problem = ap.getProblem();
+                    return ProblemDto.builder()
+                            .id(problem.getId())
+                            .title(problem.getTitle())
+                            .description(problem.getDescription())
+                            .difficulty(problem.getDifficulty())
+                            .domjudgeProblemId(problem.getDomjudgeProblemId())
+                            .createdAt(problem.getCreatedAt())
+                            .points(ap.getPoints()) // 배점 정보 추가
+                            .problemOrder(ap.getProblemOrder()) // 문제 순서 추가
+                            .build();
+                })
                 .collect(Collectors.toList());
 
         return AssignmentProblemsResponse.builder()
