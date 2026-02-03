@@ -28,6 +28,7 @@ import java.io.IOException;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 import java.io.*;
 import java.util.zip.ZipEntry;
@@ -45,6 +46,11 @@ public class ProblemService {
     private final AssignmentRepository assignmentRepository;
     private final UserRepository userRepository;
     private final com.project.handongjudge.assignment.repository.AssignmentProblemRepository assignmentProblemRepository;
+    private final com.project.handongjudge.problem.repository.ProblemSetProblemRepository problemSetProblemRepository;
+    private final com.project.handongjudge.quiz.repository.QuizProblemRepository quizProblemRepository;
+    private final com.project.handongjudge.problem.repository.ProblemSetRepository problemSetRepository;
+    private final com.project.handongjudge.quiz.repository.QuizRepository quizRepository;
+    private final com.project.handongjudge.submission.repository.SubmissionRepository submissionRepository;
 
     @Value("${problem.zip.storage.path:./problem-zips}")
     private String zipStoragePath;
@@ -54,15 +60,9 @@ public class ProblemService {
 
 
     public Long createProblem(ProblemCreateRequest request, Long instructorId) throws IOException {
-        String title = request.getTitle();
-        MultipartFile zipFile = request.getZipFile();
-
-        // 1. ZIP 파일이 제공된 경우 - 기존 로직 사용
-        if (zipFile != null && !zipFile.isEmpty()) {
-            return createProblemFromZip(request, instructorId, zipFile);
-        }
-
-        // 2. ZIP 파일이 없는 경우 - 새로 생성
+        // ZIP 파일은 프론트엔드에서 파싱용으로만 사용하고, 
+        // 실제 API는 항상 필드 기반으로 ZIP을 생성합니다.
+        // 이를 통해 ZIP 내부 테스트케이스 수정/삭제가 가능합니다.
         return createProblemFromForm(request, instructorId);
     }
 
@@ -73,11 +73,17 @@ public class ProblemService {
         String description = ProblemFileUtil.extractDescriptionFromZip(zipFile);
         Map<String, Object> limits = ProblemFileUtil.extractProblemLimits(zipFile);
 
-        // DOMjudge에 문제 업로드
-        String domjudgeProblemId = domjudgeService.uploadProblemToDomjudge(zipFile);
+        // 고유한 externalid 생성 (문제 생성 시에는 타임스탬프만 사용)
+        String externalId = "problem-" + System.currentTimeMillis();
+        
+        // ZIP 파일에 externalid 추가 (문제 생성 시에는 테스트케이스 파일 없음)
+        MultipartFile zipFileWithExternalId = setExternalIdInZipFile(zipFile, externalId, null);
 
-        // ZIP 파일을 데이터베이스에 저장
-        byte[] zipFileData = saveProblemZipToDatabase(zipFile);
+        // DOMjudge에 문제 업로드
+        String domjudgeProblemId = domjudgeService.uploadProblemToDomjudge(zipFileWithExternalId);
+
+        // ZIP 파일을 데이터베이스에 저장 (externalid가 추가된 버전)
+        byte[] zipFileData = saveProblemZipToDatabase(zipFileWithExternalId);
 
         User instructor = userRepository.findById(instructorId)
                 .orElseThrow(() -> new IllegalArgumentException("Instructor not found: " + instructorId));
@@ -117,13 +123,17 @@ public class ProblemService {
                 sampleInputs
         );
 
+        // 고유한 externalid 생성 (문제 생성 시에는 타임스탬프만 사용)
+        String externalId = "problem-" + System.currentTimeMillis();
+
         // DOMjudge 형식의 ZIP 파일 생성
         byte[] zipBytes = createDomjudgeZip(
                 request.getTitle(),
                 fullDescription,
                 request.getTimeLimit(),
                 request.getMemoryLimit(),
-                request.getTestcaseFiles()
+                request.getTestcaseFiles(),
+                externalId
         );
 
         // MultipartFile로 변환
@@ -194,7 +204,7 @@ public class ProblemService {
      * DOMjudge 형식의 ZIP 파일 생성
      */
     private byte[] createDomjudgeZip(String title, String description, String timeLimit,
-                                     String memoryLimit, List<MultipartFile> testcaseFiles) throws IOException {
+                                     String memoryLimit, List<MultipartFile> testcaseFiles, String externalId) throws IOException {
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
 
         try (ZipOutputStream zos = new ZipOutputStream(baos)) {
@@ -211,20 +221,28 @@ public class ProblemService {
 
             // 3. domjudge-problem.ini 생성
             zos.putNextEntry(new ZipEntry("domjudge-problem.ini"));
-            String ini = createProblemIni(timeLimit, memoryLimit);
+            String ini = createProblemIni(timeLimit, memoryLimit, externalId);
             zos.write(ini.getBytes(StandardCharsets.UTF_8));
             zos.closeEntry();
 
             // 4. 테스트케이스 파일 추가
             if (testcaseFiles != null && !testcaseFiles.isEmpty()) {
+                log.info("ZIP 파일에 테스트케이스 추가 시작: 총 {}개", testcaseFiles.size());
                 for (MultipartFile testcase : testcaseFiles) {
                     String filename = testcase.getOriginalFilename();
                     // data/sample/ 또는 data/secret/ 폴더에 배치
                     String folder = filename.contains("sample") ? "data/sample/" : "data/secret/";
-                    zos.putNextEntry(new ZipEntry(folder + filename));
-                    zos.write(testcase.getBytes());
+                    String zipEntryPath = folder + filename;
+                    zos.putNextEntry(new ZipEntry(zipEntryPath));
+                    byte[] fileBytes = testcase.getBytes();
+                    zos.write(fileBytes);
                     zos.closeEntry();
+                    log.info("테스트케이스 추가됨: {} -> {}, 크기: {} bytes", filename, zipEntryPath, fileBytes.length);
                 }
+                log.info("ZIP 파일에 테스트케이스 추가 완료");
+            } else {
+                log.warn("ZIP 파일 생성 시 테스트케이스 파일이 없습니다. testcaseFiles={}", 
+                        testcaseFiles == null ? "null" : "empty");
             }
         }
 
@@ -255,8 +273,12 @@ public class ProblemService {
     /**
      * domjudge-problem.ini 내용 생성
      */
-    private String createProblemIni(String timeLimit, String memoryLimit) {
+    private String createProblemIni(String timeLimit, String memoryLimit, String externalId) {
         StringBuilder ini = new StringBuilder();
+
+        if (externalId != null && !externalId.isEmpty()) {
+            ini.append("externalid=").append(externalId).append("\n");
+        }
 
         if (timeLimit != null && !timeLimit.isEmpty()) {
             ini.append("timelimit=").append(timeLimit).append("\n");
@@ -275,7 +297,19 @@ public class ProblemService {
         List<com.project.handongjudge.assignment.entity.AssignmentProblem> assignmentProblems = 
                 assignmentProblemRepository.findByProblemId(problem.getId());
         int assignmentCount = assignmentProblems.size();
-        boolean isUsed = assignmentCount > 0;
+        
+        // 문제가 사용되는 문제집 개수 조회
+        List<com.project.handongjudge.problem.entity.ProblemSetProblem> problemSetProblems = 
+                problemSetProblemRepository.findByProblemId(problem.getId());
+        int problemSetCount = problemSetProblems.size();
+        
+        // 문제가 사용되는 퀴즈 개수 조회
+        List<com.project.handongjudge.quiz.entity.QuizProblem> quizProblems = 
+                quizProblemRepository.findByProblemId(problem.getId());
+        int quizCount = quizProblems.size();
+        
+        // 과제, 문제집, 퀴즈 중 하나라도 사용 중이면 isUsed = true
+        boolean isUsed = assignmentCount > 0 || problemSetCount > 0 || quizCount > 0;
         
         return ProblemResponse.builder()
                 .id(problem.getId())
@@ -387,21 +421,23 @@ public class ProblemService {
         // byte[]를 MultipartFile로 변환
         MultipartFile originalZipFile = new ByteArrayMultipartFile(originalZipData, "problem.zip");
 
-        // 새로운 고유한 ZIP 파일 이름 생성
-        String timestamp = String.valueOf(System.currentTimeMillis());
-        String newZipFileName = "copy_" + timestamp + ".zip";
-        MultipartFile zipFileWithNewName = new RenamedMultipartFile(originalZipFile, newZipFileName);
-
         // 새 문제 제목
         String problemTitle = (newTitle != null && !newTitle.trim().isEmpty())
                 ? newTitle
                 : sourceProblem.getTitle() + " (복사본)";
 
-        // DOMJudge에 새 문제로 업로드
-        String newDomjudgeProblemId = domjudgeService.uploadProblemToDomjudge(zipFileWithNewName);
+        // 고유한 externalid 생성 (문제 복사 시에는 타임스탬프만 사용)
+        String externalId = "problem-" + System.currentTimeMillis();
+        log.info("문제 복사 시 생성된 externalid: {}", externalId);
 
-        // 새 ZIP 파일을 데이터베이스에 저장
-        byte[] newZipFileData = saveProblemZipToDatabase(zipFileWithNewName);
+        // ZIP 파일에 새 externalid 설정 (기존 externalid 제거 후 새로 설정)
+        MultipartFile zipFileWithNewExternalId = setExternalIdInZipFile(originalZipFile, externalId, null);
+
+        // DOMJudge에 새 문제로 업로드
+        String newDomjudgeProblemId = domjudgeService.uploadProblemToDomjudge(zipFileWithNewExternalId);
+
+        // 새 ZIP 파일을 데이터베이스에 저장 (새 externalid가 설정된 버전)
+        byte[] newZipFileData = saveProblemZipToDatabase(zipFileWithNewExternalId);
 
         // 새 Problem 엔티티 생성
         User instructor = userRepository.findById(instructorId)
@@ -726,12 +762,30 @@ public class ProblemService {
             isOnlyMetadataChange = isOnlyDifficultyOrTagsChange(problem, request);
         }
         
-        log.info("문제 수정 요청 분석: ID={}, metadataUpdated={}, isOnlyMetadataChange={}, title={}, description 길이={}, timeLimit={}, memoryLimit={}, difficulty={}, tags={}", 
+        // 테스트케이스 수신 여부 로그
+        List<MultipartFile> testcaseFiles = request.getTestcaseFiles();
+        int testcaseCount = (testcaseFiles != null) ? testcaseFiles.size() : 0;
+        if (testcaseFiles != null && !testcaseFiles.isEmpty()) {
+            log.info("수신된 테스트케이스 파일 수: {}, 파일명 목록:", testcaseCount);
+            for (int i = 0; i < testcaseFiles.size(); i++) {
+                MultipartFile file = testcaseFiles.get(i);
+                log.info("  testcase[{}]: name={}, size={} bytes", 
+                        i, 
+                        file.getOriginalFilename() != null ? file.getOriginalFilename() : "null",
+                        file.getSize());
+            }
+        } else {
+            log.warn("테스트케이스 파일이 전송되지 않았습니다. testcaseFiles={}", 
+                    testcaseFiles == null ? "null" : "empty");
+        }
+        
+        log.info("문제 수정 요청 분석: ID={}, metadataUpdated={}, isOnlyMetadataChange={}, title={}, description 길이={}, timeLimit={}, memoryLimit={}, difficulty={}, tags={}, testcaseCount={}", 
                 problemId, request.getMetadataUpdated(), isOnlyMetadataChange, 
                 request.getTitle(), 
                 request.getDescription() != null ? request.getDescription().length() : 0,
                 request.getTimeLimit(), request.getMemoryLimit(), 
-                request.getDifficulty(), request.getTags() != null ? "있음" : "없음");
+                request.getDifficulty(), request.getTags() != null ? "있음" : "없음",
+                testcaseCount);
 
         byte[] newZipFileData = null;
         String newDomjudgeProblemId = null;
@@ -744,72 +798,82 @@ public class ProblemService {
                 newDomjudgeProblemId = oldDomjudgeProblemId;
                 newZipFileData = problem.getZipFileData(); // 기존 ZIP 파일 데이터 유지
             } else {
-                // 2. 새 ZIP 파일 준비 및 DOMjudge에 업로드 (기존 문제는 아직 유지)
-                // 고유한 식별자를 추가하여 ID 충돌 방지
-                String timestamp = String.valueOf(System.currentTimeMillis());
-                
-                if (request.getNewZipFile() != null && !request.getNewZipFile().isEmpty()) {
-                    // 새 ZIP 파일이 제공된 경우 - 고유한 파일명으로 변경
-                    String originalFileName = request.getNewZipFile().getOriginalFilename();
-                    String baseFileName = originalFileName != null && originalFileName.endsWith(".zip") 
-                            ? originalFileName.substring(0, originalFileName.length() - 4) 
-                            : "problem";
-                    String uniqueFileName = baseFileName + "_" + problemId + "_" + timestamp + ".zip";
-                    MultipartFile uniqueZipFile = new RenamedMultipartFile(request.getNewZipFile(), uniqueFileName);
-                    
-                    log.info("고유 식별자가 추가된 ZIP 파일로 Domjudge 업로드: original={}, unique={}", 
-                            originalFileName, uniqueFileName);
-                    
-                    // DOMjudge에 새 문제로 먼저 업로드 (고유한 이름으로)
-                    newDomjudgeProblemId = domjudgeService.uploadProblemToDomjudge(uniqueZipFile);
-                    newZipFileData = saveProblemZipToDatabase(request.getNewZipFile()); // 원본 파일명으로 저장
-                    
-                    log.info("Domjudge에 새 문제 업로드 완료: newProblemId={}", newDomjudgeProblemId);
-                } else {
-                    // ZIP 파일 없이 정보만 수정하는 경우
-                    // 기존 ZIP 파일 데이터 가져오기
-                    byte[] existingZipData = null;
-
-                    if (problem.getZipFileData() != null && problem.getZipFileData().length > 0) {
-                        existingZipData = problem.getZipFileData();
-                    } else if (problem.getZipFilePath() != null) {
-                        // 마이그레이션용: 파일 경로에서 읽기
-                        Path existingZipPath = Paths.get(problem.getZipFilePath());
-                        if (!existingZipPath.isAbsolute()) {
-                            existingZipPath = Paths.get(System.getProperty("user.dir")).resolve(existingZipPath).normalize();
-                        }
-                        if (Files.exists(existingZipPath)) {
-                            existingZipData = Files.readAllBytes(existingZipPath);
-                        }
-                    }
-
-                    if (existingZipData == null || existingZipData.length == 0) {
-                        throw new IllegalArgumentException("원본 ZIP 파일을 찾을 수 없습니다.");
-                    }
-
-                    // 기존 ZIP을 수정하여 새 ZIP 생성
-                    byte[] modifiedZipBytes = createModifiedZip(
-                            existingZipData,
-                            request.getDescription(),
-                            request.getTimeLimit(),
-                            request.getMemoryLimit(),
-                            null  // externalid 제거
-                    );
-
-                    // 고유한 파일명으로 MultipartFile 생성
-                    String uniqueFileName = "problem_" + problemId + "_" + timestamp + ".zip";
-                    MultipartFile modifiedZipFile = createMultipartFile(modifiedZipBytes, uniqueFileName);
-
-                    log.info("수정된 ZIP 파일로 Domjudge 업로드: fileName={}", uniqueFileName);
-
-                    // DOMjudge에 새 문제로 먼저 업로드 (고유한 이름으로)
-                    newDomjudgeProblemId = domjudgeService.uploadProblemToDomjudge(modifiedZipFile);
-                    newZipFileData = saveProblemZipToDatabase(modifiedZipFile);
-                    
-                    log.info("Domjudge에 새 문제 업로드 완료: newProblemId={}", newDomjudgeProblemId);
+                // 1) 기존 Domjudge ID 기억 (이미 oldDomjudgeProblemId에 저장됨)
+                if (oldDomjudgeProblemId == null || oldDomjudgeProblemId.isEmpty()) {
+                    throw new IllegalArgumentException("기존 Domjudge 문제 ID가 없습니다. 문제를 먼저 생성해야 합니다.");
                 }
 
-                // 3. 새 문제 업로드 성공 후 기존 문제 삭제 (실패해도 치명적이지 않음)
+                // 2) 문제가 연결된 모든 Contest(Section) 찾기 (업데이트 전에 미리 찾기)
+                List<com.project.handongjudge.assignment.entity.AssignmentProblem> assignmentProblems = 
+                        assignmentProblemRepository.findByProblemId(problemId);
+                
+                Set<Long> contestIds = new java.util.HashSet<>();
+                for (com.project.handongjudge.assignment.entity.AssignmentProblem ap : assignmentProblems) {
+                    if (ap.getAssignment() != null && ap.getAssignment().getSection() != null) {
+                        contestIds.add(ap.getAssignment().getSection().getId());
+                    }
+                }
+
+                log.info("문제가 연결된 Contest 수: {}", contestIds.size());
+
+                // 고유한 externalid 생성: "과제ID-문제ID-타임스탬프" 형식
+                Long assignmentId = null;
+                if (!assignmentProblems.isEmpty() && assignmentProblems.get(0).getAssignment() != null) {
+                    assignmentId = assignmentProblems.get(0).getAssignment().getId();
+                }
+                String externalId;
+                if (assignmentId != null) {
+                    externalId = assignmentId + "-" + problemId + "-" + System.currentTimeMillis();
+                } else {
+                    // 과제에 연결되지 않은 경우 문제ID와 타임스탬프만 사용
+                    externalId = "problem-" + problemId + "-" + System.currentTimeMillis();
+                }
+                log.info("생성된 externalid: {}", externalId);
+
+                // 3) ZIP 파일 준비 - 항상 필드 기반으로 새로 생성
+                // ZIP 파일은 프론트엔드에서 파싱용으로만 사용하고,
+                // 실제 API는 항상 필드 기반으로 ZIP을 생성합니다.
+                // 이를 통해 ZIP 내부 테스트케이스 수정/삭제가 가능합니다.
+                
+                String description = request.getDescription();
+                if (description == null || description.isEmpty()) {
+                    description = problem.getDescription(); // 기존 description 사용
+                }
+                
+                String timeLimitStr = request.getTimeLimit() != null ? 
+                    String.valueOf(request.getTimeLimit()) : 
+                    (problem.getTimeLimit() != null ? String.valueOf(problem.getTimeLimit()) : "1");
+                
+                String memoryLimitStr = request.getMemoryLimit() != null ? 
+                    String.valueOf(request.getMemoryLimit()) : 
+                    (problem.getMemoryLimit() != null ? String.valueOf(problem.getMemoryLimit()) : "256");
+                
+                // DOMjudge 형식의 ZIP 파일 생성
+                byte[] zipBytes = createDomjudgeZip(
+                        request.getTitle() != null ? request.getTitle() : problem.getTitle(),
+                        description,
+                        timeLimitStr,
+                        memoryLimitStr,
+                        request.getTestcaseFiles(),
+                        externalId
+                );
+
+                // MultipartFile로 변환
+                String fileName = sanitizeFilename(request.getTitle() != null ? request.getTitle() : problem.getTitle());
+                if (fileName == null || fileName.isEmpty()) {
+                    fileName = "problem_" + problemId;
+                }
+                fileName = fileName + ".zip";
+                
+                MultipartFile zipFileToUpload = createMultipartFile(zipBytes, fileName);
+                newZipFileData = saveProblemZipToDatabase(zipFileToUpload);
+
+                // 4) Domjudge에 새 문제로 업로드 (새 ID 생성)
+                log.info("Domjudge에 새 문제 업로드 시작");
+                newDomjudgeProblemId = domjudgeService.uploadProblemToDomjudge(zipFileToUpload);
+                log.info("Domjudge에 새 문제 업로드 완료: newProblemId={}", newDomjudgeProblemId);
+
+                // 5) 새 문제 업로드 성공 후 기존 문제 삭제 (실패해도 치명적이지 않음)
                 if (oldDomjudgeProblemId != null && !oldDomjudgeProblemId.equals(newDomjudgeProblemId)) {
                     try {
                         log.info("기존 Domjudge 문제 삭제 시도: oldProblemId={}", oldDomjudgeProblemId);
@@ -819,6 +883,27 @@ public class ProblemService {
                         // 삭제 실패는 로그만 남기고 계속 진행 (이미 새 문제는 업로드되었으므로)
                         log.warn("기존 DOMjudge 문제 삭제 실패 (무시 가능, 나중에 수동 정리 가능): oldProblemId={}, error={}", 
                                 oldDomjudgeProblemId, e.getMessage());
+                    }
+                }
+
+                // 6) 연결된 모든 Contest에 새 문제 재링크
+                for (Long contestId : contestIds) {
+                    try {
+                        log.info("Contest에 새 문제 재링크: contestId={}, newProblemId={}", contestId, newDomjudgeProblemId);
+                        // 기존 문제 제거
+                        try {
+                            domjudgeService.removeProblemFromContest(contestId, oldDomjudgeProblemId);
+                        } catch (Exception e) {
+                            log.warn("기존 문제 Contest에서 제거 실패 (이미 제거되었을 수 있음): contestId={}, oldProblemId={}, error={}", 
+                                    contestId, oldDomjudgeProblemId, e.getMessage());
+                        }
+                        // 새 문제 추가
+                        domjudgeService.addProblemToContest(contestId, newDomjudgeProblemId);
+                        log.info("Contest에 새 문제 재링크 완료: contestId={}, newProblemId={}", contestId, newDomjudgeProblemId);
+                    } catch (Exception e) {
+                        log.error("Contest에 새 문제 재링크 실패: contestId={}, newProblemId={}, error={}", 
+                                contestId, newDomjudgeProblemId, e.getMessage(), e);
+                        // 재링크 실패는 로그만 남기고 계속 진행
                     }
                 }
             }
@@ -971,7 +1056,8 @@ public class ProblemService {
      * 기존 ZIP 파일을 수정하여 새 ZIP 생성
      */
     private byte[] createModifiedZip(byte[] existingZipData, String newDescription,
-                                     Double timeLimit, Integer memoryLimit, String externalId) throws IOException {
+                                     Double timeLimit, Integer memoryLimit, String externalId,
+                                     List<MultipartFile> newTestcaseFiles) throws IOException {
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
 
         try (ZipInputStream zis = new ZipInputStream(new ByteArrayInputStream(existingZipData));
@@ -992,10 +1078,10 @@ public class ProblemService {
                     zos.closeEntry();
                     descriptionReplaced = true;
                 }
-                // domjudge-problem.ini 교체
+                // domjudge-problem.ini 교체 (externalid 포함)
                 else if (entryName.endsWith("domjudge-problem.ini") || entryName.endsWith("problem.ini")) {
                     zos.putNextEntry(new ZipEntry(entryName));
-                    String iniContent = createIniContent(timeLimit, memoryLimit);
+                    String iniContent = createIniContent(timeLimit, memoryLimit, externalId);
                     zos.write(iniContent.getBytes(StandardCharsets.UTF_8));
                     zos.closeEntry();
                     limitsReplaced = true;
@@ -1036,11 +1122,25 @@ public class ProblemService {
             }
 
             // limits 파일이 없었다면 새로 추가
-            if (!limitsReplaced && (timeLimit != null || memoryLimit != null)) {
+            if (!limitsReplaced && (timeLimit != null || memoryLimit != null || (externalId != null && !externalId.isEmpty()))) {
                 zos.putNextEntry(new ZipEntry("domjudge-problem.ini"));
-                String iniContent = createIniContent(timeLimit, memoryLimit);
+                String iniContent = createIniContent(timeLimit, memoryLimit, externalId);
                 zos.write(iniContent.getBytes(StandardCharsets.UTF_8));
                 zos.closeEntry();
+            }
+
+            // 새로운 테스트케이스 파일 추가
+            if (newTestcaseFiles != null && !newTestcaseFiles.isEmpty()) {
+                for (MultipartFile testcase : newTestcaseFiles) {
+                    String filename = testcase.getOriginalFilename();
+                    if (filename == null) continue;
+                    
+                    // data/sample/ 또는 data/secret/ 폴더에 배치
+                    String folder = filename.contains("sample") ? "data/sample/" : "data/secret/";
+                    zos.putNextEntry(new ZipEntry(folder + filename));
+                    zos.write(testcase.getBytes());
+                    zos.closeEntry();
+                }
             }
         }
 
@@ -1050,8 +1150,11 @@ public class ProblemService {
     /**
      * INI 파일 내용 생성
      */
-    private String createIniContent(Double timeLimit, Integer memoryLimit) {
+    private String createIniContent(Double timeLimit, Integer memoryLimit, String externalId) {
         StringBuilder sb = new StringBuilder();
+        if (externalId != null && !externalId.isEmpty()) {
+            sb.append("externalid=").append(externalId).append("\n");
+        }
         if (timeLimit != null) {
             sb.append("timelimit=").append(timeLimit).append("\n");
         }
@@ -1085,6 +1188,141 @@ public class ProblemService {
         return result.toString();
     }
 
+    /**
+     * ZIP 파일에 externalid 설정 및 테스트케이스 추가 (기존 externalid 제거 후 새로 설정)
+     */
+    private MultipartFile setExternalIdInZipFile(MultipartFile zipFile, String externalId, List<MultipartFile> newTestcaseFiles) throws IOException {
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        
+        try (ZipInputStream zis = new ZipInputStream(zipFile.getInputStream());
+             ZipOutputStream zos = new ZipOutputStream(baos)) {
+            
+            ZipEntry entry;
+            boolean iniFileFound = false;
+            
+            while ((entry = zis.getNextEntry()) != null) {
+                String entryName = entry.getName();
+                
+                if (entryName.equals("problem.yaml") || entryName.endsWith("/problem.yaml")) {
+                    zos.putNextEntry(new ZipEntry(entryName));
+                    // 기존 YAML 내용 읽기
+                    ByteArrayOutputStream yamlBuffer = new ByteArrayOutputStream();
+                    byte[] buffer = new byte[1024];
+                    int len;
+                    while ((len = zis.read(buffer)) > 0) {
+                        yamlBuffer.write(buffer, 0, len);
+                    }
+                    String yamlContent = yamlBuffer.toString(StandardCharsets.UTF_8.name());
+                    
+                    // externalid 제거 (YAML에서는 externalid 사용 안 함)
+                    String cleanedYaml = removeExternalIdFromYaml(yamlContent);
+                    zos.write(cleanedYaml.getBytes(StandardCharsets.UTF_8));
+                    zos.closeEntry();
+                }
+                // domjudge-problem.ini 파일 처리: externalid 설정
+                else if (entryName.endsWith("domjudge-problem.ini") || entryName.endsWith("problem.ini")) {
+                    zos.putNextEntry(new ZipEntry(entryName));
+                    // 기존 INI 내용 읽기
+                    ByteArrayOutputStream iniBuffer = new ByteArrayOutputStream();
+                    byte[] buffer = new byte[1024];
+                    int len;
+                    while ((len = zis.read(buffer)) > 0) {
+                        iniBuffer.write(buffer, 0, len);
+                    }
+                    String existingIniContent = iniBuffer.toString(StandardCharsets.UTF_8.name());
+                    
+                    // 기존 externalid 제거
+                    String cleanedIni = removeExternalIdFromIni(existingIniContent);
+                    
+                    // 새 externalid 추가
+                    StringBuilder newIniContent = new StringBuilder();
+                    if (externalId != null && !externalId.isEmpty()) {
+                        newIniContent.append("externalid=").append(externalId).append("\n");
+                    }
+                    newIniContent.append(cleanedIni);
+                    
+                    zos.write(newIniContent.toString().getBytes(StandardCharsets.UTF_8));
+                    zos.closeEntry();
+                    iniFileFound = true;
+                } else {
+                    // 나머지 파일은 그대로 복사
+                    zos.putNextEntry(new ZipEntry(entryName));
+                    byte[] buffer = new byte[1024];
+                    int len;
+                    while ((len = zis.read(buffer)) > 0) {
+                        zos.write(buffer, 0, len);
+                    }
+                    zos.closeEntry();
+                }
+            }
+            
+            // domjudge-problem.ini 파일이 없었다면 새로 생성
+            if (!iniFileFound && externalId != null && !externalId.isEmpty()) {
+                zos.putNextEntry(new ZipEntry("domjudge-problem.ini"));
+                String iniContent = "externalid=" + externalId + "\n";
+                zos.write(iniContent.getBytes(StandardCharsets.UTF_8));
+                zos.closeEntry();
+            }
+
+            // 새로운 테스트케이스 파일 추가
+            if (newTestcaseFiles != null && !newTestcaseFiles.isEmpty()) {
+                for (MultipartFile testcase : newTestcaseFiles) {
+                    String filename = testcase.getOriginalFilename();
+                    if (filename == null) continue;
+                    
+                    // data/sample/ 또는 data/secret/ 폴더에 배치
+                    String folder = filename.contains("sample") ? "data/sample/" : "data/secret/";
+                    zos.putNextEntry(new ZipEntry(folder + filename));
+                    zos.write(testcase.getBytes());
+                    zos.closeEntry();
+                }
+            }
+        }
+        
+        return createMultipartFile(baos.toByteArray(), zipFile.getOriginalFilename());
+    }
+    
+    /**
+     * INI 파일 내용에서 externalid 제거
+     */
+    private String removeExternalIdFromIni(String iniContent) {
+        if (iniContent == null || iniContent.isEmpty()) {
+            return iniContent;
+        }
+
+        StringBuilder result = new StringBuilder();
+        String[] lines = iniContent.split("\n");
+        
+        for (String line : lines) {
+            // externalid로 시작하는 줄 제거 (대소문자 무관, 앞뒤 공백 무시)
+            String trimmedLine = line.trim();
+            if (trimmedLine.toLowerCase().startsWith("externalid=")) {
+                log.debug("domjudge-problem.ini에서 externalid 제거: {}", trimmedLine);
+                continue; // 이 줄을 건너뛰기
+            }
+            result.append(line).append("\n");
+        }
+        
+        return result.toString();
+    }
+
+    /**
+     * 파일명을 안전한 형식으로 변환 (ASCII 문자만 허용)
+     */
+    private String sanitizeFilename(String filename) {
+        if (filename == null || filename.trim().isEmpty()) {
+            return null;
+        }
+        
+        // 한글 및 특수문자를 언더스코어로 변환
+        String sanitized = filename
+            .replaceAll("[^a-zA-Z0-9_-]", "_")  // 영문/숫자/하이픈/언더스코어만 허용
+            .replaceAll("_{2,}", "_")            // 연속된 언더스코어를 하나로
+            .replaceAll("^_|_$", "");            // 앞뒤 언더스코어 제거
+        
+        // 빈 문자열이면 null 반환
+        return sanitized.isEmpty() ? null : sanitized;
+    }
 
     /**
      * byte[]를 MultipartFile로 변환
@@ -1142,12 +1380,39 @@ public class ProblemService {
             throw new IllegalArgumentException("해당 문제를 삭제할 권한이 없습니다");
         }
 
-        // 문제가 과제에 연결되어 있는지 확인
+        // 문제가 과제에 연결되어 있는지 확인하고 자동 언링크
         List<com.project.handongjudge.assignment.entity.AssignmentProblem> assignmentProblems = 
                 assignmentProblemRepository.findByProblemId(problemId);
         
         if (!assignmentProblems.isEmpty()) {
-            throw new IllegalArgumentException("과제에 연결된 문제는 삭제할 수 없습니다. 먼저 과제에서 문제를 제거해주세요.");
+            // 모든 과제에서 문제 자동 언링크
+            assignmentProblemRepository.deleteAll(assignmentProblems);
+        }
+
+        // 문제가 문제집에 연결되어 있는지 확인하고 자동 언링크
+        List<com.project.handongjudge.problem.entity.ProblemSetProblem> problemSetProblems = 
+                problemSetProblemRepository.findByProblemId(problemId);
+        
+        if (!problemSetProblems.isEmpty()) {
+            // 모든 문제집에서 문제 자동 언링크
+            problemSetProblemRepository.deleteAll(problemSetProblems);
+        }
+
+        // 문제가 퀴즈에 연결되어 있는지 확인하고 자동 언링크
+        List<com.project.handongjudge.quiz.entity.QuizProblem> quizProblems = 
+                quizProblemRepository.findByProblemId(problemId);
+        
+        if (!quizProblems.isEmpty()) {
+            // 모든 퀴즈에서 문제 자동 언링크
+            quizProblemRepository.deleteAll(quizProblems);
+        }
+
+        // 해당 문제에 대한 모든 제출 기록 삭제
+        List<com.project.handongjudge.submission.entity.Submission> submissions = 
+                submissionRepository.findByProblemId(problemId);
+        
+        if (!submissions.isEmpty()) {
+            submissionRepository.deleteAll(submissions);
         }
 
         // DOMjudge에서 문제 삭제는 하지 않음 (DOMjudge API에 문제 삭제 기능이 없을 수 있음)
@@ -1158,9 +1423,30 @@ public class ProblemService {
     }
 
     /**
-     * 문제가 사용되는 과제 목록 조회
+     * 문제가 사용되는 과제 목록 조회 (기존 메서드 - 하위 호환성 유지)
      */
     public List<ProblemAssignmentUsageDto> getAssignmentsByProblemId(Long problemId, Long instructorId) {
+        ProblemUsageDto usage = getProblemUsage(problemId, instructorId);
+        return usage.getAssignments().stream()
+                .map(a -> ProblemAssignmentUsageDto.builder()
+                        .assignmentId(a.getAssignmentId())
+                        .assignmentTitle(a.getAssignmentTitle())
+                        .assignmentNumber(a.getAssignmentNumber())
+                        .assignmentStartDate(a.getAssignmentStartDate())
+                        .assignmentEndDate(a.getAssignmentEndDate())
+                        .sectionId(a.getSectionId())
+                        .courseTitle(a.getCourseTitle())
+                        .sectionNumber(a.getSectionNumber())
+                        .year(a.getYear())
+                        .semester(a.getSemester())
+                        .build())
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * 문제 사용 현황 조회 (과제, 문제집, 퀴즈 포함)
+     */
+    public ProblemUsageDto getProblemUsage(Long problemId, Long instructorId) {
         // 문제 조회
         Problem problem = problemRepository.findById(problemId)
                 .orElseThrow(() -> new IllegalArgumentException("문제를 찾을 수 없습니다: " + problemId));
@@ -1181,7 +1467,7 @@ public class ProblemService {
         List<com.project.handongjudge.assignment.entity.AssignmentProblem> assignmentProblems = 
                 assignmentProblemRepository.findByProblemId(problemId);
 
-        return assignmentProblems.stream()
+        List<ProblemUsageDto.AssignmentUsage> assignments = assignmentProblems.stream()
                 .filter(ap -> {
                     // Assignment와 Section이 존재하는지 확인 (CASCADE로 삭제된 경우 필터링)
                     com.project.handongjudge.assignment.entity.Assignment assignment = ap.getAssignment();
@@ -1198,7 +1484,7 @@ public class ProblemService {
                     com.project.handongjudge.section.entity.Section section = assignment.getSection();
                     com.project.handongjudge.course.entity.Course course = section.getCourse();
 
-                    return ProblemAssignmentUsageDto.builder()
+                    return ProblemUsageDto.AssignmentUsage.builder()
                             .assignmentId(assignment.getId())
                             .assignmentTitle(assignment.getTitle())
                             .assignmentNumber(assignment.getAssignmentNumber())
@@ -1212,6 +1498,67 @@ public class ProblemService {
                             .build();
                 })
                 .collect(Collectors.toList());
+
+        // 문제가 사용되는 문제집 목록 조회
+        List<com.project.handongjudge.problem.entity.ProblemSetProblem> problemSetProblems = 
+                problemSetProblemRepository.findByProblemId(problemId);
+
+        List<ProblemUsageDto.ProblemSetUsage> problemSets = problemSetProblems.stream()
+                .filter(psp -> {
+                    // ProblemSet이 존재하는지 확인
+                    return psp.getProblemSet() != null;
+                })
+                .map(psp -> {
+                    com.project.handongjudge.problem.entity.ProblemSet problemSet = psp.getProblemSet();
+                    return ProblemUsageDto.ProblemSetUsage.builder()
+                            .problemSetId(problemSet.getId())
+                            .problemSetTitle(problemSet.getTitle())
+                            .description(problemSet.getDescription())
+                            .createdAt(problemSet.getCreatedAt())
+                            .build();
+                })
+                .collect(Collectors.toList());
+
+        // 문제가 사용되는 퀴즈 목록 조회
+        List<com.project.handongjudge.quiz.entity.QuizProblem> quizProblems = 
+                quizProblemRepository.findByProblemId(problemId);
+
+        List<ProblemUsageDto.QuizUsage> quizzes = quizProblems.stream()
+                .filter(qp -> {
+                    // Quiz와 Section이 존재하는지 확인
+                    com.project.handongjudge.quiz.entity.Quiz quiz = qp.getQuiz();
+                    if (quiz == null) return false;
+                    
+                    com.project.handongjudge.section.entity.Section section = quiz.getSection();
+                    if (section == null) return false;
+                    
+                    com.project.handongjudge.course.entity.Course course = section.getCourse();
+                    return course != null;
+                })
+                .map(qp -> {
+                    com.project.handongjudge.quiz.entity.Quiz quiz = qp.getQuiz();
+                    com.project.handongjudge.section.entity.Section section = quiz.getSection();
+                    com.project.handongjudge.course.entity.Course course = section.getCourse();
+
+                    return ProblemUsageDto.QuizUsage.builder()
+                            .quizId(quiz.getId())
+                            .quizTitle(quiz.getTitle())
+                            .startTime(quiz.getStartTime())
+                            .endTime(quiz.getEndTime())
+                            .sectionId(section.getId())
+                            .courseTitle(course.getTitle())
+                            .sectionNumber(section.getSectionNumber())
+                            .year(section.getYear())
+                            .semester(section.getSemester())
+                            .build();
+                })
+                .collect(Collectors.toList());
+
+        return ProblemUsageDto.builder()
+                .assignments(assignments)
+                .problemSets(problemSets)
+                .quizzes(quizzes)
+                .build();
     }
 }
 

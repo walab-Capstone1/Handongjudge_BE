@@ -128,6 +128,11 @@ public class DomjudgeService {
         
         Map<String, Object> requestBody = new HashMap<>();
         requestBody.put("label", domjudgeProblemId); // 반드시 포함
+        requestBody.put("lazy_eval_results", 2);
+        // EVAL_DEFAULT (0): 전역 설정 사용
+        //        EVAL_LAZY (1): 첫 실패 시 중단
+        //        EVAL_FULL (2): 모든 테스트 케이스 실행
+        //        EVAL_DEMAND (3): 요청 시에만 실행
 
         HttpEntity<Map<String, Object>> requestEntity = new HttpEntity<>(requestBody, headers);
 
@@ -247,6 +252,58 @@ public class DomjudgeService {
             log.error("DOMjudge 문제 업데이트 실패: problemId={}, status={}, response={}", 
                     domjudgeProblemId, e.getStatusCode(), errorResponse);
             throw new RuntimeException("DOMjudge 문제 업데이트 실패: " + errorResponse, e);
+        }
+    }
+
+    /**
+     * Contest 내에서 문제 업데이트
+     * @param contestId Contest ID (Section ID)
+     * @param domjudgeProblemId 업데이트할 문제의 DOMjudge ID (기존 ID)
+     * @param zipFile 업데이트할 ZIP 파일
+     * @return 업데이트된 문제의 DOMjudge ID (기존 ID와 동일)
+     * @throws IOException 파일 처리 오류
+     */
+    public String updateProblemInContest(Long contestId, String domjudgeProblemId, MultipartFile zipFile) throws IOException {
+        HttpHeaders headers = createAuthHeaders();
+        headers.setContentType(MediaType.MULTIPART_FORM_DATA);
+
+        MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
+        body.add("zip", new MultipartInputStreamFileResource(
+                zipFile.getInputStream(), zipFile.getOriginalFilename()
+        ));
+        // problem ID를 문자열로 body에 추가 (기존 ID)
+        body.add("problem", domjudgeProblemId);
+
+        HttpEntity<MultiValueMap<String, Object>> requestEntity = new HttpEntity<>(body, headers);
+
+        try {
+            // POST 방식으로 Contest 내 문제 업데이트
+            String url = DOMJUDGE_API_URL + "/api/v4/contests/" + contestId + "/problems";
+            ResponseEntity<JsonNode> response = restTemplate.postForEntity(
+                    url,
+                    requestEntity,
+                    JsonNode.class
+            );
+
+            JsonNode responseBody = response.getBody();
+            if (responseBody == null || !responseBody.has("messages")) {
+                throw new RuntimeException("DOMjudge 응답에서 메시지를 찾을 수 없습니다.");
+            }
+
+            // 업데이트된 문제 ID 반환 (기존 ID와 동일)
+            String updatedProblemId = responseBody.path("problem_id").asText();
+            if (updatedProblemId == null || updatedProblemId.isEmpty()) {
+                // 응답에 problem_id가 없으면 기존 ID 반환
+                return domjudgeProblemId;
+            }
+
+            log.info("DOMjudge Contest 내 문제 업데이트 완료: contestId={}, problemId={}", contestId, updatedProblemId);
+            return updatedProblemId;
+        } catch (HttpClientErrorException e) {
+            String errorResponse = e.getResponseBodyAsString();
+            log.error("DOMjudge Contest 내 문제 업데이트 실패: contestId={}, problemId={}, status={}, response={}", 
+                    contestId, domjudgeProblemId, e.getStatusCode(), errorResponse);
+            throw new RuntimeException("DOMjudge Contest 내 문제 업데이트 실패: " + errorResponse, e);
         }
     }
 

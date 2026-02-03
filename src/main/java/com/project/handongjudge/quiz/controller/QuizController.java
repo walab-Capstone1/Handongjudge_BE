@@ -98,5 +98,20 @@ public class QuizController {
         quizService.deleteQuiz(quizId, userId);
         return ResponseEntity.noContent().build();
     }
+
+    /**
+     * 퀴즈 성적 조회
+     */
+    @GetMapping("/{quizId}/grades")
+    public ResponseEntity<List<com.project.handongjudge.grade.dto.StudentGradeSummaryDTO>> getQuizGrades(
+            @PathVariable Long sectionId,
+            @PathVariable Long quizId,
+            Authentication authentication
+    ) {
+        Long userId = Long.parseLong(authentication.getName());
+        List<com.project.handongjudge.grade.dto.StudentGradeSummaryDTO> grades = 
+                quizService.getQuizGrades(quizId, sectionId, userId);
+        return ResponseEntity.ok(grades);
+    }
 }
 

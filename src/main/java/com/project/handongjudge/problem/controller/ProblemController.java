@@ -8,9 +8,11 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.multipart.MultipartHttpServletRequest;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Enumeration;
 import java.util.List;
 
 @RestController
@@ -108,10 +110,93 @@ public class ProblemController {
     public ResponseEntity<Void> updateProblem(
             @PathVariable Long problemId,
             @ModelAttribute ProblemUpdateRequest request,
+            MultipartHttpServletRequest multipartRequest,
             Authentication authentication) throws IOException {
+        
+        // 로그: 모든 파라미터 이름 출력
+        Enumeration<String> allParamNames = multipartRequest.getParameterNames();
+        List<String> allParams = new ArrayList<>();
+        while (allParamNames.hasMoreElements()) {
+            allParams.add(allParamNames.nextElement());
+        }
+        System.out.println("=== ProblemController.updateProblem 디버그 ===");
+        System.out.println("전체 파라미터 이름 목록: " + allParams);
+        
+        // 로그: 모든 파일 파라미터 이름 출력
+        java.util.Map<String, org.springframework.web.multipart.MultipartFile> fileMap = multipartRequest.getFileMap();
+        System.out.println("전체 파일 파라미터 이름 목록: " + fileMap.keySet());
+        for (String fileName : fileMap.keySet()) {
+            org.springframework.web.multipart.MultipartFile file = fileMap.get(fileName);
+            System.out.println("  파일 파라미터: " + fileName + ", 파일명: " + 
+                    (file != null ? file.getOriginalFilename() : "null") + 
+                    ", 크기: " + (file != null ? file.getSize() : 0) + " bytes");
+        }
+        
+        // testcase_로 시작하는 모든 파라미터를 동적으로 추출
+        List<MultipartFile> testcaseFiles = new ArrayList<>();
+        
+        // 파일 파라미터 이름을 가져와서 testcase_로 시작하는 것만 필터링
+        List<String> testcaseParamNames = new ArrayList<>();
+        
+        for (String paramName : fileMap.keySet()) {
+            if (paramName.startsWith("testcase_")) {
+                testcaseParamNames.add(paramName);
+            }
+        }
+        
+        System.out.println("testcase_로 시작하는 파라미터 이름: " + testcaseParamNames);
+        
+        // 인덱스 순서대로 정렬
+        testcaseParamNames.sort((n1, n2) -> {
+            int idx1 = extractIndex(n1);
+            int idx2 = extractIndex(n2);
+            return Integer.compare(idx1, idx2);
+        });
+        
+        System.out.println("정렬된 testcase_ 파라미터 이름: " + testcaseParamNames);
+        
+        // 정렬된 순서대로 파일 추가
+        for (String paramName : testcaseParamNames) {
+            MultipartFile file = multipartRequest.getFile(paramName);
+            System.out.println("파라미터 '" + paramName + "' 처리:");
+            System.out.println("  getFile() 결과: " + (file != null ? "not null" : "null"));
+            if (file != null) {
+                System.out.println("  파일명: " + file.getOriginalFilename());
+                System.out.println("  크기: " + file.getSize() + " bytes");
+                System.out.println("  isEmpty(): " + file.isEmpty());
+                System.out.println("  ContentType: " + file.getContentType());
+            }
+            
+            if (file != null && !file.isEmpty()) {
+                testcaseFiles.add(file);
+                System.out.println("  -> 파일 추가됨");
+            } else {
+                System.out.println("  -> 파일 추가 안됨 (null이거나 empty)");
+            }
+        }
+        
+        System.out.println("최종 수집된 테스트케이스 파일 수: " + testcaseFiles.size());
+        System.out.println("==========================================");
+        
+        request.setTestcaseFiles(testcaseFiles);
+        
         Long instructorId = Long.parseLong(authentication.getName());
         problemService.updateProblem(problemId, request, instructorId);
         return ResponseEntity.ok().build();
+    }
+    
+    /**
+     * 파라미터 이름에서 인덱스 추출 (testcase_ 뒤의 숫자)
+     */
+    private int extractIndex(String paramName) {
+        if (paramName.startsWith("testcase_")) {
+            try {
+                return Integer.parseInt(paramName.substring("testcase_".length()));
+            } catch (NumberFormatException e) {
+                return Integer.MAX_VALUE;
+            }
+        }
+        return Integer.MAX_VALUE;
     }
 
     /**
@@ -127,7 +212,7 @@ public class ProblemController {
     }
 
     /**
-     * 문제가 사용되는 과제 목록 조회
+     * 문제가 사용되는 과제 목록 조회 (하위 호환성 유지)
      */
     @GetMapping("/{problemId}/assignments")
     public ResponseEntity<List<ProblemAssignmentUsageDto>> getAssignmentsByProblemId(
@@ -136,5 +221,17 @@ public class ProblemController {
         Long instructorId = Long.parseLong(authentication.getName());
         List<ProblemAssignmentUsageDto> assignments = problemService.getAssignmentsByProblemId(problemId, instructorId);
         return ResponseEntity.ok(assignments);
+    }
+
+    /**
+     * 문제 사용 현황 조회 (과제, 문제집, 퀴즈 포함)
+     */
+    @GetMapping("/{problemId}/usage")
+    public ResponseEntity<ProblemUsageDto> getProblemUsage(
+            @PathVariable Long problemId,
+            Authentication authentication) {
+        Long instructorId = Long.parseLong(authentication.getName());
+        ProblemUsageDto usage = problemService.getProblemUsage(problemId, instructorId);
+        return ResponseEntity.ok(usage);
     }
 }

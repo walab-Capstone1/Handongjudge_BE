@@ -5,6 +5,8 @@ import lombok.Getter;
 import lombok.Setter;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.util.List;
+
 @Getter
 @Setter
 public class ProblemUpdateRequest {
@@ -16,4 +18,5 @@ public class ProblemUpdateRequest {
     private String tags;            // 태그 (JSON string)
     private MultipartFile newZipFile;  // 선택적: 완전히 새로운 ZIP 파일
     private String metadataUpdated;  // "true" 또는 "false" 문자열: 메타데이터만 업데이트 여부
+    private List<MultipartFile> testcaseFiles;  // 테스트케이스 파일들
 }

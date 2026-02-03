@@ -11,7 +11,12 @@ import com.project.handongjudge.section.entity.Section;
 import com.project.handongjudge.section.repository.SectionRepository;
 import com.project.handongjudge.user.entity.User;
 import com.project.handongjudge.user.repository.UserRepository;
+import com.project.handongjudge.user.repository.EnrollmentRepository;
 import com.project.handongjudge.domjudge.service.DomjudgeService;
+import com.project.handongjudge.grade.dto.StudentGradeSummaryDTO;
+import com.project.handongjudge.submission.entity.Submission;
+import com.project.handongjudge.submission.repository.SubmissionRepository;
+import com.project.handongjudge.section.service.SectionRoleService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -19,6 +24,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 @Service
@@ -31,6 +37,9 @@ public class QuizService {
     private final ProblemRepository problemRepository;
     private final SectionRepository sectionRepository;
     private final UserRepository userRepository;
+    private final EnrollmentRepository enrollmentRepository;
+    private final SubmissionRepository submissionRepository;
+    private final SectionRoleService sectionRoleService;
     private final DomjudgeService domjudgeService;
 
     /**
@@ -264,6 +273,99 @@ public class QuizService {
         }
 
         quizRepository.delete(quiz);
+    }
+
+    /**
+     * 퀴즈 성적 조회 (제출 정보 기반)
+     */
+    @Transactional(readOnly = true)
+    public List<StudentGradeSummaryDTO> getQuizGrades(Long quizId, Long sectionId, Long userId) {
+        // 1. 퀴즈 정보 조회
+        Quiz quiz = quizRepository.findById(quizId)
+                .orElseThrow(() -> new IllegalArgumentException("Quiz not found"));
+
+        // 2. 권한 확인
+        Section section = quiz.getSection();
+        if (!sectionRoleService.isManager(userId, section.getId())) {
+            throw new IllegalArgumentException("해당 퀴즈의 성적을 조회할 권한이 없습니다");
+        }
+
+        // 3. 퀴즈의 모든 문제 조회
+        List<QuizProblem> quizProblems = quizProblemRepository.findByQuizIdOrderByProblemOrderAsc(quizId);
+
+        // 4. 분반의 모든 학생 조회
+        List<User> students = enrollmentRepository.findUsersBySectionId(sectionId);
+
+        // 5. 각 학생별로 성적 조회
+        List<StudentGradeSummaryDTO> gradeSummaries = new ArrayList<>();
+
+        for (User student : students) {
+            StudentGradeSummaryDTO summary = new StudentGradeSummaryDTO();
+            summary.setUserId(student.getId());
+            summary.setStudentName(student.getName());
+            summary.setStudentId(student.getStudentId() != null ? student.getStudentId() : student.getEmail());
+
+            // 문제별 성적 조회
+            List<StudentGradeSummaryDTO.ProblemGradeDTO> problemGrades = new ArrayList<>();
+            int totalScore = 0;
+            int totalPoints = 0;
+
+            for (QuizProblem qp : quizProblems) {
+                Problem problem = qp.getProblem();
+                StudentGradeSummaryDTO.ProblemGradeDTO pg = new StudentGradeSummaryDTO.ProblemGradeDTO();
+                pg.setProblemId(problem.getId());
+                pg.setProblemTitle(problem.getTitle());
+                // 퀴즈는 기본적으로 문제당 1점
+                pg.setPoints(1);
+                totalPoints += 1;
+
+                // 제출 정보 조회 (AC인 경우만)
+                Optional<Submission> submission = submissionRepository
+                        .findAcceptedSubmissionsByUserAndProblem(
+                                student.getId(), problem.getId(), sectionId
+                        )
+                        .stream()
+                        .findFirst();
+
+                if (submission.isPresent()) {
+                    Submission sub = submission.get();
+                    pg.setSubmitted(true);
+                    pg.setSubmittedAt(sub.getSubmittedAt());
+                    pg.setResult(sub.getResult());
+
+                    // 퀴즈 종료 시간 기준으로 제시간 제출 여부 확인
+                    if (quiz.getEndTime() != null) {
+                        pg.setIsOnTime(
+                                sub.getSubmittedAt().isBefore(quiz.getEndTime()) ||
+                                sub.getSubmittedAt().isEqual(quiz.getEndTime())
+                        );
+                    } else {
+                        pg.setIsOnTime(true);
+                    }
+
+                    // AC인 경우 점수 부여 (퀴즈는 자동 채점)
+                    if ("AC".equals(sub.getResult())) {
+                        pg.setScore(1);
+                        totalScore += 1;
+                    } else {
+                        pg.setScore(0);
+                    }
+                } else {
+                    pg.setSubmitted(false);
+                    pg.setIsOnTime(false);
+                    pg.setScore(0);
+                }
+
+                problemGrades.add(pg);
+            }
+
+            summary.setProblemGrades(problemGrades);
+            summary.setTotalScore(totalScore);
+            summary.setTotalPoints(totalPoints);
+            gradeSummaries.add(summary);
+        }
+
+        return gradeSummaries;
     }
 
     /**

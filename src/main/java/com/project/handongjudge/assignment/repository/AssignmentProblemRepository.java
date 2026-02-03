@@ -13,6 +13,7 @@ public interface AssignmentProblemRepository extends JpaRepository<AssignmentPro
     // 기존 메서드들
     List<AssignmentProblem> findByAssignmentIdOrderByProblemOrderAsc(Long assignmentId);
     Optional<AssignmentProblem> findByAssignmentIdAndProblemId(Long assignmentId, Long problemId);
+    List<AssignmentProblem> findAllByAssignmentIdAndProblemId(Long assignmentId, Long problemId);
 
     // 새로 추가할 메서드
     List<AssignmentProblem> findByAssignmentId(Long assignmentId);

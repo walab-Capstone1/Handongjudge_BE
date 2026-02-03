@@ -395,5 +395,91 @@ public class NotificationService {
             e.printStackTrace();
         }
     }
+
+    /**
+     * 학생이 수업에 추가되었을 때 (교수에게 알림)
+     */
+    @Async("taskExecutor")
+    @Transactional
+    public void notifyStudentEnrolled(Enrollment enrollment, Section section) {
+        try {
+            // 엔티티를 다시 조회하여 LazyInitializationException 방지
+            Enrollment loadedEnrollment = enrollmentRepository.findById(enrollment.getId())
+                    .orElse(null);
+            Section loadedSection = sectionRepository.findById(section.getId())
+                    .orElse(null);
+            
+            if (loadedEnrollment == null || loadedSection == null) {
+                return;
+            }
+
+            // 교수에게 알림 발송
+            User instructor = loadedSection.getInstructor();
+            if (instructor != null) {
+                Notification notification = Notification.builder()
+                        .recipient(instructor)
+                        .actor(loadedEnrollment.getUser())
+                        .type(Notification.NotificationType.STUDENT_ENROLLED)
+                        .message(String.format("새 학생이 수업에 추가되었습니다: %s (%s)", 
+                                loadedEnrollment.getUser().getName(),
+                                loadedSection.getCourse().getTitle() + " - Section " + loadedSection.getSectionNumber()))
+                        .build();
+
+                notificationRepository.save(notification);
+            }
+        } catch (Exception e) {
+            System.err.println("학생 추가 알림 발송 실패: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
+    /**
+     * 과제 마감 알림 (교수에게 알림)
+     * 마감일이 임박했거나 마감된 과제에 대해 알림 발송
+     */
+    @Async("taskExecutor")
+    @Transactional
+    public void notifyAssignmentDeadline(Assignment assignment, Section section, boolean isExpired) {
+        try {
+            // 엔티티를 다시 조회하여 LazyInitializationException 방지
+            Assignment loadedAssignment = assignmentRepository.findById(assignment.getId())
+                    .orElse(null);
+            Section loadedSection = sectionRepository.findById(section.getId())
+                    .orElse(null);
+            
+            if (loadedAssignment == null || loadedSection == null) {
+                return;
+            }
+
+            // 교수에게 알림 발송
+            User instructor = loadedSection.getInstructor();
+            if (instructor != null) {
+                String message;
+                if (isExpired) {
+                    message = String.format("과제가 마감되었습니다: %s (%s)", 
+                            loadedAssignment.getTitle(),
+                            loadedSection.getCourse().getTitle() + " - Section " + loadedSection.getSectionNumber());
+                } else {
+                    message = String.format("과제 마감이 임박했습니다: %s (마감: %s) (%s)", 
+                            loadedAssignment.getTitle(),
+                            loadedAssignment.getEndDate().toLocalDate(),
+                            loadedSection.getCourse().getTitle() + " - Section " + loadedSection.getSectionNumber());
+                }
+
+                Notification notification = Notification.builder()
+                        .recipient(instructor)
+                        .actor(instructor) // 시스템 알림이므로 actor는 교수 본인
+                        .assignment(loadedAssignment)
+                        .type(Notification.NotificationType.ASSIGNMENT_DEADLINE)
+                        .message(message)
+                        .build();
+
+                notificationRepository.save(notification);
+            }
+        } catch (Exception e) {
+            System.err.println("과제 마감 알림 발송 실패: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
 }
 

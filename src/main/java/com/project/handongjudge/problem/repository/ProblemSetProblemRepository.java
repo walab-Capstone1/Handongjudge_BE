@@ -24,5 +24,8 @@ public interface ProblemSetProblemRepository extends JpaRepository<ProblemSetPro
     
     // 문제집에서 특정 문제 삭제
     void deleteByProblemSetIdAndProblemId(Long problemSetId, Long problemId);
+    
+    // 문제 ID로 ProblemSetProblem 목록 조회
+    List<ProblemSetProblem> findByProblemId(Long problemId);
 }
 

@@ -92,7 +92,9 @@ public class Notification {
         QUESTION_LIKED,        // 내 질문에 추천
         COMMENT_LIKED,         // 내 댓글에 추천
         NOTICE_CREATED,        // 새 공지사항 작성됨
-        ASSIGNMENT_CREATED     // 새 과제 생성됨
+        ASSIGNMENT_CREATED,    // 새 과제 생성됨
+        ASSIGNMENT_DEADLINE,  // 과제 마감 임박/마감됨
+        STUDENT_ENROLLED      // 학생이 수업에 추가됨
     }
 
     // 비즈니스 메서드

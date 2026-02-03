@@ -74,6 +74,16 @@ public class SubmissionService {
                 codeFile
         );
 
+        // Delete TmpFile immediately after submission (before DB save)
+        if(codeFile != null) {
+            try {
+                Files.deleteIfExists(codeFile.toPath());
+                log.debug("TmpFile deleted: {}", codeFile.getName());
+            } catch (IOException e) {
+                log.error("Failed to delete TmpFile: {}", e.getMessage());
+            }
+        }
+
         Submission submission = toSubmission(submissionRequestDTO);
         submission.setSection(section);
         submission.setSubmissionId(domjudgeSubmissionId);
@@ -302,8 +312,25 @@ public class SubmissionService {
         while (attempts < maxAttempts) {
             try {
                 SubmissionOutputResponseDTO result = domjudgeService.getResultOutput(cid, submissionId);
+                // 기존 조건: 전체 judgement의 result만 확인 (lazy evaluation 시 첫 실패에서 중단됨)
+                // if (result != null && !result.getResult().isEmpty()) {
+                //     return result;
+                // }
+                
+                // 새로운 조건: 모든 테스트케이스가 완료될 때까지 기다림
                 if (result != null && !result.getResult().isEmpty()) {
-                    return result;
+                    // runs 배열의 모든 항목이 result를 가지고 있는지 확인
+                    if (result.getOutputList() != null && !result.getOutputList().isEmpty()) {
+                        boolean allCompleted = result.getOutputList().stream()
+                            .allMatch(output -> output.getResult() != null && !output.getResult().isEmpty());
+                        
+                        if (allCompleted) {
+                            return result;
+                        }
+                    } else {
+                        // outputList가 없으면 전체 result만 확인
+                        return result;
+                    }
                 }
             } catch (Exception e) {
                 // 결과가 아직 준비되지 않은 경우 무시하고 계속 시도
