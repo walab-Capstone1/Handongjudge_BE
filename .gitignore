@@ -37,3 +37,8 @@ out/
 .vscode/
 ### env ###
 .env
+
+### 임시/제출 파일 ###
+tmp/
+submissions/
+

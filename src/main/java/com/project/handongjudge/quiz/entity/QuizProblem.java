@@ -9,6 +9,7 @@ import javax.persistence.*;
 @Entity
 @Table(name = "quiz_problems")
 @Getter
+@Setter
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
@@ -30,6 +31,9 @@ public class QuizProblem {
 
     @Column(name = "problem_order")
     private Integer problemOrder; // 문제 순서
+
+    @Column(name = "points")
+    private Integer points = 1; // 문제 배점 (기본 1점, null이면 1로 처리)
 }
 
 

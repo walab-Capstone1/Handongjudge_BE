@@ -8,10 +8,13 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
+import java.util.Optional;
 
 @Repository
 public interface QuizProblemRepository extends JpaRepository<QuizProblem, Long> {
     List<QuizProblem> findByQuizId(Long quizId);
+
+    Optional<QuizProblem> findByQuizIdAndProblemId(Long quizId, Long problemId);
     
     @Query("SELECT qp FROM QuizProblem qp WHERE qp.quiz.id = :quizId ORDER BY qp.problemOrder ASC")
     List<QuizProblem> findByQuizIdOrderByProblemOrderAsc(@Param("quizId") Long quizId);

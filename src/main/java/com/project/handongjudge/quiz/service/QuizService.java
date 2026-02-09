@@ -2,9 +2,11 @@ package com.project.handongjudge.quiz.service;
 
 import com.project.handongjudge.quiz.dto.*;
 import com.project.handongjudge.quiz.entity.Quiz;
+import com.project.handongjudge.quiz.entity.QuizGrade;
 import com.project.handongjudge.quiz.entity.QuizProblem;
 import com.project.handongjudge.quiz.repository.QuizRepository;
 import com.project.handongjudge.quiz.repository.QuizProblemRepository;
+import com.project.handongjudge.quiz.repository.QuizGradeRepository;
 import com.project.handongjudge.problem.entity.Problem;
 import com.project.handongjudge.problem.repository.ProblemRepository;
 import com.project.handongjudge.section.entity.Section;
@@ -13,6 +15,7 @@ import com.project.handongjudge.user.entity.User;
 import com.project.handongjudge.user.repository.UserRepository;
 import com.project.handongjudge.user.repository.EnrollmentRepository;
 import com.project.handongjudge.domjudge.service.DomjudgeService;
+import com.project.handongjudge.assignment.dto.StudentAcceptedCodeResponse;
 import com.project.handongjudge.grade.dto.StudentGradeSummaryDTO;
 import com.project.handongjudge.submission.entity.Submission;
 import com.project.handongjudge.submission.repository.SubmissionRepository;
@@ -24,6 +27,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
@@ -34,6 +38,7 @@ public class QuizService {
 
     private final QuizRepository quizRepository;
     private final QuizProblemRepository quizProblemRepository;
+    private final QuizGradeRepository quizGradeRepository;
     private final ProblemRepository problemRepository;
     private final SectionRepository sectionRepository;
     private final UserRepository userRepository;
@@ -90,6 +95,7 @@ public class QuizService {
                         .quiz(savedQuiz)
                         .problem(problem)
                         .problemOrder(order++)
+                        .points(1)
                         .build();
                 quizProblems.add(qp);
 
@@ -184,6 +190,7 @@ public class QuizService {
                         .problemId(qp.getProblem().getId())
                         .title(qp.getProblem().getTitle())
                         .problemOrder(qp.getProblemOrder())
+                        .points(qp.getPoints() != null && qp.getPoints() > 0 ? qp.getPoints() : 1)
                         .build())
                 .collect(Collectors.toList());
     }
@@ -312,14 +319,13 @@ public class QuizService {
 
             for (QuizProblem qp : quizProblems) {
                 Problem problem = qp.getProblem();
+                int problemPoints = (qp.getPoints() != null && qp.getPoints() > 0) ? qp.getPoints() : 1;
                 StudentGradeSummaryDTO.ProblemGradeDTO pg = new StudentGradeSummaryDTO.ProblemGradeDTO();
                 pg.setProblemId(problem.getId());
                 pg.setProblemTitle(problem.getTitle());
-                // 퀴즈는 기본적으로 문제당 1점
-                pg.setPoints(1);
-                totalPoints += 1;
+                pg.setPoints(problemPoints);
+                totalPoints += problemPoints;
 
-                // 제출 정보 조회 (AC인 경우만)
                 Optional<Submission> submission = submissionRepository
                         .findAcceptedSubmissionsByUserAndProblem(
                                 student.getId(), problem.getId(), sectionId
@@ -332,8 +338,6 @@ public class QuizService {
                     pg.setSubmitted(true);
                     pg.setSubmittedAt(sub.getSubmittedAt());
                     pg.setResult(sub.getResult());
-
-                    // 퀴즈 종료 시간 기준으로 제시간 제출 여부 확인
                     if (quiz.getEndTime() != null) {
                         pg.setIsOnTime(
                                 sub.getSubmittedAt().isBefore(quiz.getEndTime()) ||
@@ -342,17 +346,22 @@ public class QuizService {
                     } else {
                         pg.setIsOnTime(true);
                     }
-
-                    // AC인 경우 점수 부여 (퀴즈는 자동 채점)
-                    if ("AC".equals(sub.getResult())) {
-                        pg.setScore(1);
-                        totalScore += 1;
-                    } else {
-                        pg.setScore(0);
-                    }
                 } else {
                     pg.setSubmitted(false);
                     pg.setIsOnTime(false);
+                }
+
+                // 저장된 성적(수동 입력)이 있으면 우선 사용, 없으면 제출 기반 자동 채점
+                Optional<QuizGrade> savedGrade = quizGradeRepository
+                        .findByQuizIdAndProblemIdAndStudentId(quizId, problem.getId(), student.getId());
+
+                if (savedGrade.isPresent() && savedGrade.get().getScore() != null) {
+                    pg.setScore(savedGrade.get().getScore());
+                    totalScore += savedGrade.get().getScore();
+                } else if (submission.isPresent() && "AC".equals(submission.get().getResult())) {
+                    pg.setScore(problemPoints);
+                    totalScore += problemPoints;
+                } else {
                     pg.setScore(0);
                 }
 
@@ -362,10 +371,177 @@ public class QuizService {
             summary.setProblemGrades(problemGrades);
             summary.setTotalScore(totalScore);
             summary.setTotalPoints(totalPoints);
+            summary.setGradeRatio(totalScore + "/" + totalPoints);
             gradeSummaries.add(summary);
         }
 
         return gradeSummaries;
+    }
+
+    /**
+     * 퀴즈 단일 성적 저장/수정
+     */
+    public QuizGradeResponseDTO saveQuizGrade(QuizGradeRequestDTO request, Long tutorId) {
+        Quiz quiz = quizRepository.findById(request.getQuizId())
+                .orElseThrow(() -> new IllegalArgumentException("Quiz not found"));
+        Section section = quiz.getSection();
+        if (!sectionRoleService.isManager(tutorId, section.getId())) {
+            throw new IllegalArgumentException("해당 퀴즈의 성적을 입력할 권한이 없습니다");
+        }
+
+        QuizProblem quizProblem = quizProblemRepository
+                .findByQuizIdAndProblemId(request.getQuizId(), request.getProblemId())
+                .orElseThrow(() -> new IllegalArgumentException("퀴즈 문제를 찾을 수 없습니다"));
+        int maxPoints = (quizProblem.getPoints() != null && quizProblem.getPoints() > 0) ? quizProblem.getPoints() : 1;
+        if (request.getScore() != null && request.getScore() > maxPoints) {
+            throw new IllegalArgumentException("점수는 배점(" + maxPoints + ")을 초과할 수 없습니다");
+        }
+
+        QuizGrade grade = quizGradeRepository
+                .findByQuizIdAndProblemIdAndStudentId(
+                        request.getQuizId(), request.getProblemId(), request.getUserId()
+                )
+                .orElse(new QuizGrade());
+
+        if (grade.getId() == null) {
+            grade.setQuiz(quiz);
+            grade.setProblem(quizProblem.getProblem());
+            grade.setStudent(userRepository.findById(request.getUserId())
+                    .orElseThrow(() -> new IllegalArgumentException("학생을 찾을 수 없습니다")));
+            grade.setPoints(maxPoints);
+        }
+        grade.setScore(request.getScore());
+        grade.setComment(request.getComment());
+        grade.setGradedBy(userRepository.findById(tutorId)
+                .orElseThrow(() -> new IllegalArgumentException("튜터를 찾을 수 없습니다")));
+        grade.setGradedAt(LocalDateTime.now());
+
+        QuizGrade saved = quizGradeRepository.save(grade);
+
+        Optional<Submission> sub = submissionRepository
+                .findAcceptedSubmissionsByUserAndProblem(
+                        request.getUserId(), request.getProblemId(), section.getId()
+                )
+                .stream()
+                .findFirst();
+
+        return toQuizGradeResponseDTO(saved, quiz, sub.orElse(null));
+    }
+
+    /**
+     * 퀴즈 일괄 성적 저장
+     */
+    public List<QuizGradeResponseDTO> saveBulkQuizGrades(QuizBulkGradeRequestDTO request, Long tutorId) {
+        List<QuizGradeResponseDTO> results = new ArrayList<>();
+        for (QuizGradeRequestDTO g : request.getGrades()) {
+            g.setQuizId(request.getQuizId());
+            try {
+                results.add(saveQuizGrade(g, tutorId));
+            } catch (Exception e) {
+                // 개별 실패 시 로그만 남기고 계속
+            }
+        }
+        return results;
+    }
+
+    /**
+     * 퀴즈 문제 배점 설정
+     */
+    public void setQuizProblemPoints(Long quizId, Long problemId, Integer points) {
+        if (points == null || points < 0) {
+            throw new IllegalArgumentException("배점은 0 이상이어야 합니다");
+        }
+        QuizProblem qp = quizProblemRepository
+                .findByQuizIdAndProblemId(quizId, problemId)
+                .orElseThrow(() -> new IllegalArgumentException("퀴즈 문제를 찾을 수 없습니다"));
+        qp.setPoints(points);
+        quizProblemRepository.save(qp);
+    }
+
+    /**
+     * 퀴즈 문제 배점 일괄 설정
+     */
+    public void setBulkQuizProblemPoints(Long quizId, Map<Long, Integer> problemPoints) {
+        for (Map.Entry<Long, Integer> entry : problemPoints.entrySet()) {
+            setQuizProblemPoints(quizId, entry.getKey(), entry.getValue());
+        }
+    }
+
+    /**
+     * 퀴즈 제출 코드 조회 (학생의 accept된 코드)
+     */
+    public StudentAcceptedCodeResponse getStudentAcceptedCode(
+            Long sectionId, Long quizId, Long userId, Long problemId, Long instructorId) {
+        Section section = sectionRepository.findById(sectionId)
+                .orElseThrow(() -> new IllegalArgumentException("Section not found"));
+        if (!sectionRoleService.isManager(instructorId, sectionId)) {
+            throw new IllegalArgumentException("해당 분반의 학생 코드를 조회할 권한이 없습니다");
+        }
+        User student = userRepository.findById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("Student not found"));
+        Problem problem = problemRepository.findById(problemId)
+                .orElseThrow(() -> new IllegalArgumentException("Problem not found"));
+        Quiz quiz = quizRepository.findById(quizId)
+                .orElseThrow(() -> new IllegalArgumentException("Quiz not found"));
+        if (!quiz.getSection().getId().equals(sectionId)) {
+            throw new IllegalArgumentException("해당 퀴즈는 이 분반에 속하지 않습니다");
+        }
+        QuizProblem qp = quizProblemRepository.findByQuizIdAndProblemId(quizId, problemId)
+                .orElseThrow(() -> new IllegalArgumentException("해당 문제는 이 퀴즈에 포함되어 있지 않습니다"));
+        List<Submission> acceptedSubmissions = submissionRepository
+                .findAcceptedSubmissionsByUserAndProblem(userId, problemId, sectionId);
+        if (acceptedSubmissions.isEmpty()) {
+            throw new IllegalArgumentException("해당 학생은 이 문제를 아직 정답으로 제출하지 않았습니다");
+        }
+        Submission first = acceptedSubmissions.get(0);
+        return StudentAcceptedCodeResponse.builder()
+                .submissionId(first.getId())
+                .userId(student.getId())
+                .studentId(student.getStudentId() != null ? student.getStudentId() : student.getEmail())
+                .studentName(student.getName())
+                .problemId(problem.getId())
+                .problemTitle(problem.getTitle())
+                .code(first.getCode())
+                .language(first.getLanguage())
+                .submittedAt(first.getSubmittedAt())
+                .result(first.getResult())
+                .build();
+    }
+
+    private QuizGradeResponseDTO toQuizGradeResponseDTO(QuizGrade grade, Quiz quiz, Submission submission) {
+        QuizGradeResponseDTO.QuizGradeResponseDTOBuilder b = QuizGradeResponseDTO.builder()
+                .id(grade.getId())
+                .quizId(quiz.getId())
+                .quizTitle(quiz.getTitle())
+                .problemId(grade.getProblem().getId())
+                .problemTitle(grade.getProblem().getTitle())
+                .userId(grade.getStudent().getId())
+                .studentName(grade.getStudent().getName())
+                .studentId(grade.getStudent().getStudentId() != null ? grade.getStudent().getStudentId() : grade.getStudent().getEmail())
+                .points(grade.getPoints())
+                .score(grade.getScore())
+                .comment(grade.getComment())
+                .gradedAt(grade.getGradedAt());
+
+        if (grade.getGradedBy() != null) {
+            b.gradedByName(grade.getGradedBy().getName());
+        }
+        if (submission != null) {
+            b.submitted(true)
+                    .submittedAt(submission.getSubmittedAt())
+                    .result(submission.getResult());
+            if (quiz.getEndTime() != null) {
+                b.isOnTime(
+                        submission.getSubmittedAt().isBefore(quiz.getEndTime()) ||
+                        submission.getSubmittedAt().isEqual(quiz.getEndTime())
+                );
+            } else {
+                b.isOnTime(true);
+            }
+        } else {
+            b.submitted(false).isOnTime(false);
+        }
+        return b.build();
     }
 
     /**
