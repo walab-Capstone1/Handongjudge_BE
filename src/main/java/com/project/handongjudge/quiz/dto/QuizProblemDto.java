@@ -10,6 +10,7 @@ public class QuizProblemDto {
     private Long problemId;
     private String title;
     private Integer problemOrder;
+    private Integer points; // 배점 (기본 1)
 }
 
 
