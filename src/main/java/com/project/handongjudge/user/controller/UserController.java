@@ -68,6 +68,10 @@ public class UserController {
      */
     @GetMapping("/dashboard")
     public ResponseEntity<Map<String, Object>> getDashboardCourses(Authentication authentication) {
+        if (authentication == null || !authentication.isAuthenticated()
+                || authentication.getPrincipal() == null || "anonymousUser".equals(authentication.getName())) {
+            return buildErrorResponse("로그인이 필요합니다.");
+        }
         try {
             Long userId = Long.parseLong(authentication.getName());
             List<DashboardCourseDto> courses = userService.getDashboardCourses(userId);
@@ -79,7 +83,8 @@ public class UserController {
             return ResponseEntity.ok(response);
 
         } catch (Exception e) {
-            log.error("대시보드 조회 실패: {}", authentication.getName(), e);
+            String name = authentication != null ? authentication.getName() : "null";
+            log.error("대시보드 조회 실패: {}", name, e);
             return buildErrorResponse("대시보드 정보를 가져오지 못했습니다.");
         }
     }
