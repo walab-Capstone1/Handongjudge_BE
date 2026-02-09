@@ -24,6 +24,11 @@ import com.project.handongjudge.user.entity.User;
 import com.project.handongjudge.problem.entity.Problem;
 import com.project.handongjudge.section.entity.Section;
 import com.project.handongjudge.user.repository.EnrollmentRepository;
+import com.project.handongjudge.assignment.repository.AssignmentRepository;
+import com.project.handongjudge.assignment.repository.AssignmentProblemRepository;
+import com.project.handongjudge.assignment.entity.Assignment;
+import com.project.handongjudge.assignment.entity.AssignmentProblem;
+import com.project.handongjudge.section.service.SectionRoleService;
 
 import java.awt.print.Pageable;
 import java.io.File;
@@ -48,6 +53,9 @@ public class SubmissionService {
     private final EnrollmentRepository enrollmentRepository;
     private final DomjudgeService domjudgeService;
     private final ContestRepository contestRepository; // 추가해줘야 함
+    private final AssignmentRepository assignmentRepository;
+    private final AssignmentProblemRepository assignmentProblemRepository;
+    private final SectionRoleService sectionRoleService;
 
     public SubmissionResponseDTO submitCode(SubmissionRequestDTO submissionRequestDTO) {
         User user = userRepository.findById(submissionRequestDTO.getUserId())
@@ -152,6 +160,13 @@ public class SubmissionService {
                 .orElseThrow(() -> new RuntimeException("Problem not found"));
         Section section = sectionRepository.findById(submissionRequestDTO.getSectionId())
                 .orElseThrow(() -> new RuntimeException("Section not found"));
+
+        // 과제 마감일 및 비활성화 체크
+        validateAssignmentForSubmission(
+                submissionRequestDTO.getProblemId(),
+                submissionRequestDTO.getSectionId(),
+                userId
+        );
 
         String contestId = String.valueOf(section.getId());
         String teamId = enrollmentRepository.findTeamIdByUserIdAndSectionId(user.getId(), section.getId());
@@ -259,6 +274,13 @@ public class SubmissionService {
         Section section = sectionRepository.findById(submissionRequestDTO.getSectionId())
                 .orElseThrow(() -> new RuntimeException("Section not found"));
 
+        // 과제 마감일 및 비활성화 체크
+        validateAssignmentForSubmission(
+                submissionRequestDTO.getProblemId(),
+                submissionRequestDTO.getSectionId(),
+                userId
+        );
+
         String contestId = String.valueOf(section.getId());
         String teamId = enrollmentRepository.findTeamIdByUserIdAndSectionId(user.getId(), section.getId());
         String domjudgeProblemId = problem.getDomjudgeProblemId();
@@ -360,6 +382,58 @@ public class SubmissionService {
                 .orElse(null);
 
         return result;
+    }
+
+    /**
+     * 문제가 속한 과제를 찾고, 마감일 및 비활성화 상태를 체크
+     * @param problemId 문제 ID
+     * @param sectionId 분반 ID
+     * @param userId 사용자 ID
+     * @return 과제 정보
+     * @throws IllegalArgumentException 마감일이 지났거나 비활성화된 경우 (학생만)
+     * 
+     * 비고:
+     * - 관리자/튜터는 비활성화된 과제도 제출 가능
+     * - 모든 사용자는 마감일이 지나면 제출 불가
+     */
+    private Assignment validateAssignmentForSubmission(Long problemId, Long sectionId, Long userId) {
+        // 문제가 속한 과제 목록 조회
+        List<AssignmentProblem> assignmentProblems = assignmentProblemRepository.findByProblemId(problemId);
+        
+        if (assignmentProblems.isEmpty()) {
+            throw new IllegalArgumentException("해당 문제는 과제에 속해있지 않습니다");
+        }
+        
+        // sectionId와 매칭되는 과제 찾기
+        Assignment targetAssignment = null;
+        for (AssignmentProblem ap : assignmentProblems) {
+            Assignment assignment = ap.getAssignment();
+            if (assignment.getSection().getId().equals(sectionId)) {
+                targetAssignment = assignment;
+                break;
+            }
+        }
+        
+        if (targetAssignment == null) {
+            throw new IllegalArgumentException("해당 문제는 이 분반의 과제에 속해있지 않습니다");
+        }
+        
+        // 관리자인지 확인
+        boolean isManager = sectionRoleService.isManager(userId, sectionId);
+        
+        // 학생이고 과제가 비활성화되어 있으면 제출 불가
+        // 관리자/튜터는 비활성화된 과제도 제출 가능
+        if (!isManager && !targetAssignment.getActive()) {
+            throw new IllegalArgumentException("해당 과제는 비활성화되어 있어 제출할 수 없습니다");
+        }
+        
+        // 마감일 체크 (관리자/튜터도 마감일이 지나면 제출 불가)
+        LocalDateTime now = LocalDateTime.now();
+        if (targetAssignment.getEndDate() != null && now.isAfter(targetAssignment.getEndDate())) {
+            throw new IllegalArgumentException("과제 마감일이 지났습니다");
+        }
+        
+        return targetAssignment;
     }
 
 }
