@@ -251,6 +251,14 @@ public class UserService {
             calculateAssignmentProgress(student, sectionId);
         }
 
+        // 분반 내 역할 설정 (ADMIN, TUTOR, STUDENT)
+        for (StudentDto student : students) {
+            String roleName = sectionRoleService.getUserRoleInSection(student.getUserId(), sectionId)
+                    .map(Enum::name)
+                    .orElse("STUDENT");
+            student.setRole(roleName);
+        }
+
         return students;
     }
 

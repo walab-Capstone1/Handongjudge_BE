@@ -29,10 +29,10 @@ public interface EnrollmentRepository extends CrudRepository<Enrollment, Long> {
 
 
     @Query("SELECT new com.project.handongjudge.user.dto.StudentDto(" +
-            "u.id, u.name, u.email, '', e.teamId, s.id, " +
+            "u.id, u.name, u.email, COALESCE(u.studentId, ''), e.teamId, s.id, " +
             "CONCAT(c.title, ' - Section ', s.sectionNumber), c.title, s.sectionNumber, " +
             "e.joinedAt, u.updatedAt, " +
-            "0.0, 0, 0) " +
+            "0.0, 0, 0, '') " +
             "FROM Enrollment e " +
             "JOIN e.user u " +
             "JOIN e.section s " +
@@ -44,7 +44,7 @@ public interface EnrollmentRepository extends CrudRepository<Enrollment, Long> {
             "u.id, u.name, u.email, '', e.teamId, s.id, " +
             "CONCAT(c.title, ' - Section ', s.sectionNumber), c.title, s.sectionNumber, " +
             "e.joinedAt, u.updatedAt, " +
-            "0.0, 0, 0) " +
+            "0.0, 0, 0, '') " +
             "FROM Enrollment e " +
             "JOIN e.user u " +
             "JOIN e.section s " +
