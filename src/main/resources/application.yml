@@ -4,8 +4,8 @@ server:
 
 spring:
   # .env import
-  config:
-    import: optional:file:.env[.properties]
+  #config:
+  #  import: optional:file:.env[.properties]
 
   jackson:
     serialization:

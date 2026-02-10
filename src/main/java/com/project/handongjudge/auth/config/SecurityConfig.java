@@ -109,7 +109,7 @@ public class SecurityConfig extends WebSecurityConfigurerAdapter {
                 // OAuth2 로그인 실패 핸들러
                 .failureHandler((request, response, exception) -> {
                     log.error("OAuth2 login failed", exception);
-                    response.sendRedirect("https://hj.walab.info/handongjudge/login?error=oauth_failed");
+                    response.sendRedirect("https://hj.walab.info/login?error=oauth_failed");
                 })
                 .and()
                 // JWT 인증 필터 추가
@@ -187,7 +187,7 @@ public class SecurityConfig extends WebSecurityConfigurerAdapter {
             setRefreshTokenCookie(response, refreshToken);
 
             // 프론트엔드 콜백 페이지로 리다이렉트 (Access Token만 포함)
-            String redirectUrl = String.format("https://hj.walab.info/handongjudge/auth/callback?accessToken=%s", accessToken);
+            String redirectUrl = String.format("https://hj.walab.info/auth/callback?accessToken=%s", accessToken);
             log.info("OAuth2 success - redirecting to: {}", redirectUrl);
             response.sendRedirect(redirectUrl);
 
