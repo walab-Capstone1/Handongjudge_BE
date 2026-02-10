@@ -29,6 +29,10 @@ import com.project.handongjudge.assignment.repository.AssignmentProblemRepositor
 import com.project.handongjudge.assignment.entity.Assignment;
 import com.project.handongjudge.assignment.entity.AssignmentProblem;
 import com.project.handongjudge.section.service.SectionRoleService;
+import com.project.handongjudge.quiz.repository.QuizRepository;
+import com.project.handongjudge.quiz.repository.QuizProblemRepository;
+import com.project.handongjudge.quiz.entity.Quiz;
+import com.project.handongjudge.quiz.entity.QuizProblem;
 
 import java.awt.print.Pageable;
 import java.io.File;
@@ -56,6 +60,8 @@ public class SubmissionService {
     private final AssignmentRepository assignmentRepository;
     private final AssignmentProblemRepository assignmentProblemRepository;
     private final SectionRoleService sectionRoleService;
+    private final QuizRepository quizRepository;
+    private final QuizProblemRepository quizProblemRepository;
 
     public SubmissionResponseDTO submitCode(SubmissionRequestDTO submissionRequestDTO) {
         User user = userRepository.findById(submissionRequestDTO.getUserId())
@@ -161,8 +167,8 @@ public class SubmissionService {
         Section section = sectionRepository.findById(submissionRequestDTO.getSectionId())
                 .orElseThrow(() -> new RuntimeException("Section not found"));
 
-        // 과제 마감일 및 비활성화 체크
-        validateAssignmentForSubmission(
+        // 과제/퀴즈 마감일 및 비활성화 체크
+        validateSubmission(
                 submissionRequestDTO.getProblemId(),
                 submissionRequestDTO.getSectionId(),
                 userId
@@ -274,8 +280,8 @@ public class SubmissionService {
         Section section = sectionRepository.findById(submissionRequestDTO.getSectionId())
                 .orElseThrow(() -> new RuntimeException("Section not found"));
 
-        // 과제 마감일 및 비활성화 체크
-        validateAssignmentForSubmission(
+        // 과제/퀴즈 마감일 및 비활성화 체크
+        validateSubmission(
                 submissionRequestDTO.getProblemId(),
                 submissionRequestDTO.getSectionId(),
                 userId
@@ -385,55 +391,96 @@ public class SubmissionService {
     }
 
     /**
-     * 문제가 속한 과제를 찾고, 마감일 및 비활성화 상태를 체크
+     * 문제가 속한 과제/퀴즈를 찾고, 마감일 및 비활성화 상태를 체크
      * @param problemId 문제 ID
      * @param sectionId 분반 ID
      * @param userId 사용자 ID
-     * @return 과제 정보
      * @throws IllegalArgumentException 마감일이 지났거나 비활성화된 경우 (학생만)
      * 
      * 비고:
-     * - 관리자/튜터는 비활성화된 과제도 제출 가능
-     * - 모든 사용자는 마감일이 지나면 제출 불가
+     * - 관리자/튜터는 비활성화된 과제/퀴즈도 제출 가능
+     * - 학생은 마감일이 지나면 제출 불가
+     * - 관리자/튜터는 퀴즈 종료 후에도 제출 가능 (과제는 마감일 체크)
      */
-    private Assignment validateAssignmentForSubmission(Long problemId, Long sectionId, Long userId) {
-        // 문제가 속한 과제 목록 조회
-        List<AssignmentProblem> assignmentProblems = assignmentProblemRepository.findByProblemId(problemId);
-        
-        if (assignmentProblems.isEmpty()) {
-            throw new IllegalArgumentException("해당 문제는 과제에 속해있지 않습니다");
-        }
-        
-        // sectionId와 매칭되는 과제 찾기
-        Assignment targetAssignment = null;
-        for (AssignmentProblem ap : assignmentProblems) {
-            Assignment assignment = ap.getAssignment();
-            if (assignment.getSection().getId().equals(sectionId)) {
-                targetAssignment = assignment;
-                break;
-            }
-        }
-        
-        if (targetAssignment == null) {
-            throw new IllegalArgumentException("해당 문제는 이 분반의 과제에 속해있지 않습니다");
-        }
-        
+    private void validateSubmission(Long problemId, Long sectionId, Long userId) {
         // 관리자인지 확인
         boolean isManager = sectionRoleService.isManager(userId, sectionId);
         
-        // 학생이고 과제가 비활성화되어 있으면 제출 불가
-        // 관리자/튜터는 비활성화된 과제도 제출 가능
-        if (!isManager && !targetAssignment.getActive()) {
-            throw new IllegalArgumentException("해당 과제는 비활성화되어 있어 제출할 수 없습니다");
+        // 문제가 속한 과제 목록 조회
+        List<AssignmentProblem> assignmentProblems = assignmentProblemRepository.findByProblemId(problemId);
+        
+        // 문제가 속한 퀴즈 목록 조회
+        List<QuizProblem> quizProblems = quizProblemRepository.findByProblemId(problemId);
+        
+        // 과제와 퀴즈 모두에 속하지 않은 경우
+        if (assignmentProblems.isEmpty() && quizProblems.isEmpty()) {
+            throw new IllegalArgumentException("해당 문제는 과제나 코딩 테스트에 속해있지 않습니다");
         }
         
-        // 마감일 체크 (관리자/튜터도 마감일이 지나면 제출 불가)
         LocalDateTime now = LocalDateTime.now();
-        if (targetAssignment.getEndDate() != null && now.isAfter(targetAssignment.getEndDate())) {
-            throw new IllegalArgumentException("과제 마감일이 지났습니다");
+        boolean assignmentValid = false;
+        boolean quizValid = false;
+        
+        // 과제 검증
+        if (!assignmentProblems.isEmpty()) {
+            Assignment targetAssignment = null;
+            for (AssignmentProblem ap : assignmentProblems) {
+                Assignment assignment = ap.getAssignment();
+                if (assignment.getSection().getId().equals(sectionId)) {
+                    targetAssignment = assignment;
+                    break;
+                }
+            }
+            
+            if (targetAssignment != null) {
+                // 학생이고 과제가 비활성화되어 있으면 제출 불가
+                if (!isManager && !targetAssignment.getActive()) {
+                    throw new IllegalArgumentException("해당 과제는 비활성화되어 있어 제출할 수 없습니다");
+                }
+                
+                // 마감일 체크 (관리자/튜터도 과제 마감일이 지나면 제출 불가)
+                if (targetAssignment.getEndDate() != null && now.isAfter(targetAssignment.getEndDate())) {
+                    throw new IllegalArgumentException("과제 마감일이 지났습니다");
+                }
+                
+                assignmentValid = true;
+            }
         }
         
-        return targetAssignment;
+        // 퀴즈 검증
+        if (!quizProblems.isEmpty()) {
+            Quiz targetQuiz = null;
+            for (QuizProblem qp : quizProblems) {
+                Quiz quiz = qp.getQuiz();
+                if (quiz.getSection().getId().equals(sectionId)) {
+                    targetQuiz = quiz;
+                    break;
+                }
+            }
+            
+            if (targetQuiz != null) {
+                // 학생이고 퀴즈가 비활성화되어 있으면 제출 불가
+                if (!isManager && !targetQuiz.getActive()) {
+                    throw new IllegalArgumentException("해당 코딩 테스트는 비활성화되어 있어 제출할 수 없습니다");
+                }
+                
+                // 퀴즈 종료 시간 체크
+                if (targetQuiz.getEndTime() != null && now.isAfter(targetQuiz.getEndTime())) {
+                    // 학생은 퀴즈 종료 후 제출 불가
+                    if (!isManager) {
+                        throw new IllegalArgumentException("코딩 테스트 시간이 종료되었습니다");
+                    }
+                    // 관리자/튜터는 퀴즈 종료 후에도 제출 가능 (예외 처리 없음)
+                }
+                
+                quizValid = true;
+            }
+        }
+        
+        // 과제와 퀴즈 모두에 속하지 않은 경우 (sectionId가 다른 경우)
+        if (!assignmentValid && !quizValid) {
+            throw new IllegalArgumentException("해당 문제는 이 분반의 과제나 코딩 테스트에 속해있지 않습니다");
+        }
     }
 
 }

@@ -283,6 +283,24 @@ public class QuizService {
     }
 
     /**
+     * 퀴즈 비활성화/활성화 토글
+     */
+    public QuizResponse toggleQuizActive(Long quizId, Boolean active, Long instructorId) {
+        Quiz quiz = quizRepository.findById(quizId)
+                .orElseThrow(() -> new IllegalArgumentException("Quiz not found"));
+
+        // 권한 확인: 해당 Section의 관리자인지 확인
+        if (!sectionRoleService.isManager(instructorId, quiz.getSection().getId())) {
+            throw new IllegalArgumentException("해당 코딩 테스트를 수정할 권한이 없습니다");
+        }
+
+        quiz.setActive(active);
+        Quiz updatedQuiz = quizRepository.save(quiz);
+
+        return toResponse(updatedQuiz);
+    }
+
+    /**
      * 퀴즈 성적 조회 (제출 정보 기반)
      */
     @Transactional(readOnly = true)
@@ -604,6 +622,7 @@ public class QuizService {
                 .endTime(quiz.getEndTime())
                 .status(quiz.getStatus().name())
                 .problemCount(problemCount)
+                .active(quiz.getActive())
                 .build();
     }
 }
