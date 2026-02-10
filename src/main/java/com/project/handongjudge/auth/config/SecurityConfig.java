@@ -132,7 +132,8 @@ public class SecurityConfig extends WebSecurityConfigurerAdapter {
                 "https://localhost:3000",
                 "http://localhost:3001",
                 "https://localhost:3001",
-                "https://hj.walab.info"
+                "https://hj.walab.info",
+                "https://hcl.walab.info"
         ));
 
         configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
