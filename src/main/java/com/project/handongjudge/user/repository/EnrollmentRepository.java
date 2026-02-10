@@ -88,6 +88,23 @@ public interface EnrollmentRepository extends CrudRepository<Enrollment, Long> {
             "GROUP BY c.id, c.title, s.id, s.sectionNumber, u.name, s.createdAt, s.year, s.semester, s.enrollmentCode, s.active")
     List<DashboardCourseDto> findDashboardCoursesByInstructorId(@Param("instructorId") Long instructorId);
 
+    // 특정 분반 ID 목록으로 대시보드 DTO 조회 (튜터용 수업 합칠 때 사용)
+    @Query("SELECT new com.project.handongjudge.user.dto.DashboardCourseDto(" +
+            "c.id, c.title, s.id, s.sectionNumber, u.name, " +
+            "CAST(COALESCE(SUM(CASE WHEN n.isNew = true THEN 1 ELSE 0 END), 0) AS long), " +
+            "CAST(COALESCE(SUM(CASE WHEN a.isNew = true THEN 1 ELSE 0 END), 0) AS long), " +
+            "CAST(COUNT(DISTINCT a.id) AS long), CAST(COUNT(DISTINCT n.id) AS long), " +
+            "CAST((SELECT COUNT(e2.id) FROM Enrollment e2 WHERE e2.section.id = s.id) AS long), " +
+            "s.createdAt, s.year, s.semester, s.enrollmentCode, COALESCE(s.active, true)) " +
+            "FROM Section s " +
+            "JOIN Course c ON s.course.id = c.id " +
+            "JOIN User u ON s.instructor.id = u.id " +
+            "LEFT JOIN Notice n ON n.section.id = s.id " +
+            "LEFT JOIN Assignment a ON a.section.id = s.id " +
+            "WHERE s.id IN :sectionIds " +
+            "GROUP BY c.id, c.title, s.id, s.sectionNumber, u.name, s.createdAt, s.year, s.semester, s.enrollmentCode, s.active")
+    List<DashboardCourseDto> findDashboardCoursesBySectionIds(@Param("sectionIds") List<Long> sectionIds);
+
     // 학생용 쿼리 수정
     @Query("SELECT new com.project.handongjudge.user.dto.DashboardCourseDto(" +
             "c.id, " +                              // courseId

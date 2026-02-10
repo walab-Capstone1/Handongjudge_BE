@@ -65,16 +65,19 @@ public class UserController {
 
     /**
      * 로그인한 사용자의 대시보드에 표시할 과목 목록 반환
+     * @param instructorOnly true면 내가 강사(instructor)인 분반만 반환 (튜터 페이지용), false면 강사 분반 + 수강 중인 분반
      */
     @GetMapping("/dashboard")
-    public ResponseEntity<Map<String, Object>> getDashboardCourses(Authentication authentication) {
+    public ResponseEntity<Map<String, Object>> getDashboardCourses(
+            Authentication authentication,
+            @RequestParam(required = false, defaultValue = "false") boolean instructorOnly) {
         if (authentication == null || !authentication.isAuthenticated()
                 || authentication.getPrincipal() == null || "anonymousUser".equals(authentication.getName())) {
             return buildErrorResponse("로그인이 필요합니다.");
         }
         try {
             Long userId = Long.parseLong(authentication.getName());
-            List<DashboardCourseDto> courses = userService.getDashboardCourses(userId);
+            List<DashboardCourseDto> courses = userService.getDashboardCourses(userId, instructorOnly);
 
             Map<String, Object> response = new HashMap<>();
             response.put("success", true);
