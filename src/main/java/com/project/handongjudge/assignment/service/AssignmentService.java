@@ -118,11 +118,12 @@ public class AssignmentService {
         Section section = sectionRepository.findById(sectionId)
                 .orElseThrow(() -> new IllegalArgumentException("Section not found"));
 
-        // 권한 확인: 관리자이거나 수강생이어야 함
+        // 권한 확인: 관리자이거나 수강생이어야 함 (SectionUserRole 또는 Enrollment 기준)
         boolean isManager = sectionRoleService.isManager(userId, sectionId);
         boolean isStudent = sectionRoleService.isStudent(userId, sectionId);
+        boolean isEnrolled = enrollmentRepository.existsByUserIdAndSectionId(userId, sectionId);
 
-        if (!isManager && !isStudent) {
+        if (!isManager && !isStudent && !isEnrolled) {
             throw new IllegalArgumentException("해당 분반의 과제를 조회할 권한이 없습니다");
         }
 
@@ -131,7 +132,7 @@ public class AssignmentService {
             // 관리자는 모든 과제 조회 (active 여부와 관계없이)
             assignments = assignmentRepository.findAllAssignmentsBySectionId(sectionId);
         } else {
-            // 학생은 active=true인 과제만 조회
+            // 수강생(학생 또는 Enrollment만 있는 경우)은 active=true인 과제만 조회
             assignments = assignmentRepository.findActiveAssignmentsBySectionId(sectionId);
         }
 
@@ -186,11 +187,12 @@ public class AssignmentService {
         // Section 조회
         Section section = assignment.getSection();
 
-        // 권한 확인: 관리자이거나 수강생이어야 함
+        // 권한 확인: 관리자이거나 수강생이어야 함 (SectionUserRole 또는 Enrollment 기준)
         boolean isManager = sectionRoleService.isManager(userId, section.getId());
         boolean isStudent = sectionRoleService.isStudent(userId, section.getId());
+        boolean isEnrolled = enrollmentRepository.existsByUserIdAndSectionId(userId, section.getId());
 
-        if (!isManager && !isStudent) {
+        if (!isManager && !isStudent && !isEnrolled) {
             throw new IllegalArgumentException("해당 과제를 조회할 권한이 없습니다");
         }
 
