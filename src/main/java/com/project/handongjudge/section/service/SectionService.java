@@ -67,6 +67,7 @@ public class SectionService {
         Section section = Section.builder()
                 .course(course)
                 .instructor(instructor)
+                .creator(instructor)
                 .sectionNumber(request.getSectionNumber())  // null 허용
                 .enrollmentCode(enrollmentCode)
                 .year(request.getYear())
@@ -166,6 +167,10 @@ public class SectionService {
             throw new IllegalArgumentException("이 수업을 복사할 권한이 없습니다.");
         }
 
+        // 복사한 사람을 새 수업의 관리자(강사)로 사용
+        User copyInstructor = userRepository.findById(instructorId)
+                .orElseThrow(() -> new IllegalArgumentException("복사 요청 사용자를 찾을 수 없습니다."));
+
         // ✅ 새 Course 생성
         String originalCourseTitle = sourceSection.getCourse().getTitle();
         String finalTitle = (newCourseTitle != null && !newCourseTitle.trim().isEmpty())
@@ -183,11 +188,12 @@ public class SectionService {
                 .build();
         Course savedCourse = courseRepository.save(newCourse);
 
-        // 새 Section 생성
+        // 새 Section 생성 (복사한 사람을 강사·관리자·생성자로 설정)
         String enrollmentCode = generateEnrollmentCode();
         Section newSection = Section.builder()
                 .course(savedCourse)
-                .instructor(sourceSection.getInstructor())
+                .instructor(copyInstructor)
+                .creator(copyInstructor)
                 .sectionNumber(newSectionNumber)
                 .enrollmentCode(enrollmentCode)
                 .year(newYear)
@@ -196,6 +202,9 @@ public class SectionService {
                 .build();
 
         Section savedSection = sectionRepository.save(newSection);
+
+        // 복사한 사람에게 새 수업의 ADMIN 역할 부여 (활성/비활성 등 관리 가능)
+        sectionRoleService.assignAdminRole(savedSection.getId(), instructorId);
 
         // ✅ DOMJudge Contest 생성
         domjudgeService.createContest(

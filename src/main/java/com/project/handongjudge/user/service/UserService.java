@@ -10,6 +10,7 @@ import com.project.handongjudge.user.repository.EnrollmentRepository;
 import com.project.handongjudge.user.repository.UserRepository;
 import com.project.handongjudge.user.repository.UserReadStatusRepository;
 import com.project.handongjudge.user.entity.Enrollment;
+import com.project.handongjudge.section.entity.SectionUserRole;
 import com.project.handongjudge.section.repository.SectionRepository;
 import com.project.handongjudge.section.service.SectionRoleService;
 import com.project.handongjudge.notice.entity.Notice;
@@ -27,11 +28,12 @@ import org.springframework.transaction.annotation.Transactional;
 import com.project.handongjudge.domjudge.service.DomjudgeService;
 import java.util.ArrayList;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 @Service
 @Slf4j
@@ -143,43 +145,67 @@ public class UserService {
     }
 
     /**
-     * 🔥 로그인한 사용자의 대시보드에 보여줄 수강 중인 과목들 조회
+     * 🔥 로그인한 사용자의 대시보드에 보여줄 과목들 조회
+     * @param instructorOnly true면 내가 강사인 분반만 반환 (튜터 페이지용), false면 강사 분반 + 수강 중인 분반
+     */
+    public List<DashboardCourseDto> getDashboardCourses(Long userId, boolean instructorOnly) {
+        if (instructorOnly) {
+            List<DashboardCourseDto> instructorSections = enrollmentRepository.findDashboardCoursesByInstructorId(userId);
+            instructorSections.forEach(dto -> dto.setRoleInSection("INSTRUCTOR"));
+
+            List<SectionUserRole> managingSections = sectionRoleService.getManagingSections(userId);
+            Set<Long> instructorSectionIds = instructorSections.stream()
+                    .map(DashboardCourseDto::getSectionId)
+                    .collect(Collectors.toSet());
+            List<Long> tutorOnlySectionIds = managingSections.stream()
+                    .map(sur -> sur.getSection().getId())
+                    .filter(id -> !instructorSectionIds.contains(id))
+                    .distinct()
+                    .collect(Collectors.toList());
+
+            if (tutorOnlySectionIds.isEmpty()) {
+                return instructorSections;
+            }
+            List<DashboardCourseDto> tutorSections = enrollmentRepository.findDashboardCoursesBySectionIds(tutorOnlySectionIds);
+            Map<Long, String> sectionIdToRole = managingSections.stream()
+                    .collect(Collectors.toMap(sur -> sur.getSection().getId(), sur -> sur.getRole().name(), (a, b) -> a));
+            tutorSections.forEach(dto -> dto.setRoleInSection(sectionIdToRole.getOrDefault(dto.getSectionId(), "TUTOR")));
+
+            List<DashboardCourseDto> result = new ArrayList<>(instructorSections);
+            result.addAll(tutorSections);
+            return result;
+        }
+        return getDashboardCourses(userId);
+    }
+
+    /**
+     * 로그인한 사용자의 대시보드에 보여줄 수강 중인 과목들 조회 (강사 분반 + 수강 분반)
      */
     public List<DashboardCourseDto> getDashboardCourses(Long userId) {
-
         // 사용자 정보 조회
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("User not found with ID: " + userId));
 
         List<DashboardCourseDto> result = new ArrayList<>();
 
-        // 사용자 역할에 따라 다른 쿼리 사용
-        if (user.getRole() == User.Role.ADMIN || user.getRole() == User.Role.SUPER_ADMIN) {
-            // 교수 또는 시스템 관리자인 경우: 담당하는 분반들 + 학생으로 등록된 분반들 모두 조회
+        // 1. 자신이 instructor인 분반들 (새 수업 만들기로 생성한 경우 포함 - 역할 무관)
+        List<DashboardCourseDto> instructorSections = enrollmentRepository.findDashboardCoursesByInstructorId(userId);
+        result.addAll(instructorSections);
 
-            // 1. 자신이 instructor인 분반들
-            List<DashboardCourseDto> instructorSections = enrollmentRepository.findDashboardCoursesByInstructorId(userId);
-            result.addAll(instructorSections);
+        // 2. 자신이 학생으로 수강 등록된 분반들
+        List<DashboardCourseDto> enrolledSections = enrollmentRepository.findDashboardCoursesByUserId(userId);
+        result.addAll(enrolledSections);
 
-            // 2. 자신이 학생으로 enrollment에 등록된 분반들
-            List<DashboardCourseDto> enrolledSections = enrollmentRepository.findDashboardCoursesByUserId(userId);
-            result.addAll(enrolledSections);
-
-            // 중복 제거 (같은 sectionId가 있을 수 있으므로)
-            result = result.stream()
-                    .collect(java.util.stream.Collectors.toMap(
-                            DashboardCourseDto::getSectionId,
-                            dto -> dto,
-                            (existing, replacement) -> existing
-                    ))
-                    .values()
-                    .stream()
-                    .collect(java.util.stream.Collectors.toList());
-
-        } else {
-            // 학생인 경우: 수강하는 분반들 조회
-            result = enrollmentRepository.findDashboardCoursesByUserId(userId);
-        }
+        // 중복 제거 (같은 sectionId가 있을 수 있으므로)
+        result = result.stream()
+                .collect(java.util.stream.Collectors.toMap(
+                        DashboardCourseDto::getSectionId,
+                        dto -> dto,
+                        (existing, replacement) -> existing
+                ))
+                .values()
+                .stream()
+                .collect(java.util.stream.Collectors.toList());
 
 
         // 학생인 경우에만 읽지 않은 공지사항 수를 수동으로 계산
