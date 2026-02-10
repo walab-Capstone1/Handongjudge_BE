@@ -103,6 +103,13 @@ public class ProblemFileUtil {
         if (bestContent != null) {
             log.info("ZIP에서 description 추출 성공: {} ({} bytes)",
                     bestMatch, bestContent.length());
+            
+            // HTML 파일인 경우 정제
+            if (bestMatch != null && bestMatch.toLowerCase().endsWith(".html")) {
+                bestContent = sanitizeHtml(bestContent);
+                log.info("HTML 정제 후 크기: {} bytes", bestContent.length());
+            }
+            
             return bestContent;
         } else {
             log.warn("ZIP 파일에서 description 파일을 찾을 수 없습니다.");
@@ -344,6 +351,53 @@ public class ProblemFileUtil {
 
         return value;
     }
+    /**
+     * HTML 콘텐츠에서 불필요한 태그 제거
+     * - <style> 태그와 내용 제거
+     * - <script> 태그와 내용 제거
+     * - <head> 태그와 내용 제거
+     * - <!DOCTYPE>, <html>, <body> 태그만 제거 (내용은 유지)
+     */
+    private static String sanitizeHtml(String html) {
+        if (html == null || html.trim().isEmpty()) {
+            return html;
+        }
+
+        String sanitized = html;
+
+        // 1. <style> 태그와 내용 제거 (여러 줄 포함, (?s)는 DOTALL 모드)
+        sanitized = sanitized.replaceAll("(?is)<style[^>]*>.*?</style>", "");
+        
+        // 2. <script> 태그와 내용 제거
+        sanitized = sanitized.replaceAll("(?is)<script[^>]*>.*?</script>", "");
+        
+        // 3. <head> 태그와 내용 제거
+        sanitized = sanitized.replaceAll("(?is)<head[^>]*>.*?</head>", "");
+        
+        // 4. DOCTYPE 선언 제거
+        sanitized = sanitized.replaceAll("(?i)<!DOCTYPE[^>]*>", "");
+        
+        // 5. <html> 태그 제거 (내용은 유지)
+        sanitized = sanitized.replaceAll("(?i)<html[^>]*>", "");
+        sanitized = sanitized.replaceAll("(?i)</html>", "");
+        
+        // 6. <body> 태그 제거 (내용은 유지)
+        sanitized = sanitized.replaceAll("(?i)<body[^>]*>", "");
+        sanitized = sanitized.replaceAll("(?i)</body>", "");
+        
+        // 7. HTML 주석 제거 (여러 줄 포함)
+        sanitized = sanitized.replaceAll("(?s)<!--.*?-->", "");
+        
+        // 8. 여러 개의 연속된 빈 줄을 하나로 축소
+        sanitized = sanitized.replaceAll("\n{3,}", "\n\n");
+        
+        // 9. 앞뒤 공백 제거
+        sanitized = sanitized.trim();
+
+        log.debug("HTML 정제: {} bytes -> {} bytes", html.length(), sanitized.length());
+        return sanitized;
+    }
+
     /**
      * ZIP 엔트리가 problem_statement 폴더의 지원 파일인지 확인
      */
