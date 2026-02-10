@@ -21,6 +21,7 @@ public class QuizListDto {
     
     private String status;
     private Integer problemCount;
+    private Boolean active;
 }
 
 

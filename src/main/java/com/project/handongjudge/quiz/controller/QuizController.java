@@ -199,5 +199,21 @@ public class QuizController {
                 sectionId, quizId, userId, problemId, instructorId);
         return ResponseEntity.ok(response);
     }
+
+    /**
+     * 퀴즈 비활성화/활성화 토글
+     */
+    @PatchMapping("/{quizId}/active")
+    public ResponseEntity<QuizResponse> toggleQuizActive(
+            @PathVariable Long sectionId,
+            @PathVariable Long quizId,
+            @RequestBody Map<String, Boolean> request,
+            Authentication authentication
+    ) {
+        Long instructorId = Long.parseLong(authentication.getName());
+        Boolean active = request.get("active");
+        QuizResponse response = quizService.toggleQuizActive(quizId, active, instructorId);
+        return ResponseEntity.ok(response);
+    }
 }
 
