@@ -11,6 +11,8 @@ import org.hibernate.annotations.CreationTimestamp;
 
 import javax.persistence.*;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 
 @Entity
 @Getter
@@ -34,6 +36,13 @@ public class Section {
     @JoinColumn(name = "instructor_id")
     private User instructor;
 
+    // 수업 생성자 (새로운 권한 시스템에서 사용)
+    @JsonIgnore
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "creator_id")
+    private User creator;
+
+    @Column(name = "section_number", nullable = true)
     private Integer sectionNumber;
 
     @Column(name = "enrollment_code", length = 50, unique = true)
@@ -54,4 +63,41 @@ public class Section {
     @Column(name = "active", nullable = false)
     @Builder.Default
     private Boolean active = true;
+
+    // CASCADE 관계 설정 - Section 삭제 시 함께 삭제될 엔티티들
+    @JsonIgnore
+    @OneToMany(mappedBy = "section", cascade = CascadeType.ALL, orphanRemoval = true)
+    @Builder.Default
+    private List<com.project.handongjudge.assignment.entity.Assignment> assignments = new ArrayList<>();
+
+    @JsonIgnore
+    @OneToMany(mappedBy = "section", cascade = CascadeType.ALL, orphanRemoval = true)
+    @Builder.Default
+    private List<com.project.handongjudge.notice.entity.Notice> notices = new ArrayList<>();
+
+    @JsonIgnore
+    @OneToMany(mappedBy = "section", cascade = CascadeType.ALL, orphanRemoval = true)
+    @Builder.Default
+    private List<com.project.handongjudge.community.entity.Question> questions = new ArrayList<>();
+
+    @JsonIgnore
+    @OneToMany(mappedBy = "section", cascade = CascadeType.ALL, orphanRemoval = true)
+    @Builder.Default
+    private List<com.project.handongjudge.user.entity.Enrollment> enrollments = new ArrayList<>();
+
+    @JsonIgnore
+    @OneToMany(mappedBy = "section", cascade = CascadeType.ALL, orphanRemoval = true)
+    @Builder.Default
+    private List<com.project.handongjudge.community.entity.UserNickname> userNicknames = new ArrayList<>();
+
+    @JsonIgnore
+    @OneToMany(mappedBy = "section", cascade = CascadeType.ALL, orphanRemoval = true)
+    @Builder.Default
+    private List<com.project.handongjudge.submission.entity.Submission> submissions = new ArrayList<>();
+
+    // 수업별 사용자 역할 관계
+    @JsonIgnore
+    @OneToMany(mappedBy = "section", cascade = CascadeType.ALL, orphanRemoval = true)
+    @Builder.Default
+    private List<SectionUserRole> sectionUserRoles = new ArrayList<>();
 }

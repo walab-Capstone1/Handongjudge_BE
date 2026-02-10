@@ -14,5 +14,7 @@ public class ProblemDto {
     private String difficulty;
     private String domjudgeProblemId;
     private LocalDateTime createdAt;
+    private Integer points; // 배점 (AssignmentProblem에서 가져옴)
+    private Integer problemOrder; // 문제 순서 (AssignmentProblem에서 가져옴)
 
 }

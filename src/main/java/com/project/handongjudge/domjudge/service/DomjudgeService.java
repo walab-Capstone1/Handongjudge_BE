@@ -63,7 +63,13 @@ public class DomjudgeService {
             // 1. contest.json 내용 구성
             Map<String, Object> contestJson = new HashMap<>();
             contestJson.put("id", sectionId.toString()); // external ID = sectionId
-            contestJson.put("name", courseTitle + " " + sectionNumber + "분반"); // name = "오픈소스스튜디오 1분반"
+
+            // sectionNumber가 null이면 제목만 사용
+            String contestName = (sectionNumber != null)
+                    ? courseTitle + " " + sectionNumber + "분반"
+                    : courseTitle;
+            contestJson.put("name", contestName);
+
             contestJson.put("short_name", sectionId.toString()); // short_name = sectionId
 
             DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ssXXX");
@@ -122,15 +128,32 @@ public class DomjudgeService {
         
         Map<String, Object> requestBody = new HashMap<>();
         requestBody.put("label", domjudgeProblemId); // 반드시 포함
+        requestBody.put("lazy_eval_results", 2);
+        // EVAL_DEFAULT (0): 전역 설정 사용
+        //        EVAL_LAZY (1): 첫 실패 시 중단
+        //        EVAL_FULL (2): 모든 테스트 케이스 실행
+        //        EVAL_DEMAND (3): 요청 시에만 실행
 
         HttpEntity<Map<String, Object>> requestEntity = new HttpEntity<>(requestBody, headers);
 
-        restTemplate.exchange(
-                url,
-                HttpMethod.PUT,
-                requestEntity,
-                String.class
-        );
+        try {
+            restTemplate.exchange(
+                    url,
+                    HttpMethod.PUT,
+                    requestEntity,
+                    String.class
+            );
+        } catch (HttpClientErrorException e) {
+            // 이미 Contest에 연결된 문제인 경우 무시 (400 Bad Request: "Problem already linked to contest")
+            if (e.getStatusCode().value() == 400 && 
+                e.getResponseBodyAsString() != null && 
+                e.getResponseBodyAsString().contains("already linked to contest")) {
+                log.info("문제가 이미 Contest에 연결되어 있습니다. 무시합니다. contestId: {}, problemId: {}", contestId, domjudgeProblemId);
+                return;
+            }
+            // 다른 오류는 그대로 throw
+            throw e;
+        }
     }
 
     public void removeProblemFromContest(Long contestId, String domjudgeProblemId) {
@@ -180,6 +203,144 @@ public class DomjudgeService {
         String domjudgeProblemId = responseBody.path("problem_id").asText();
 
         return domjudgeProblemId;
+    }
+
+    /**
+     * DOMjudge에서 기존 문제 업데이트
+     * @param domjudgeProblemId 업데이트할 문제의 DOMjudge ID
+     * @param zipFile 업데이트할 ZIP 파일
+     * @return 업데이트된 문제의 DOMjudge ID (기존 ID와 동일)
+     * @throws IOException 파일 처리 오류
+     */
+    public String updateProblemInDomjudge(String domjudgeProblemId, MultipartFile zipFile) throws IOException {
+        HttpHeaders headers = createAuthHeaders();
+        headers.setContentType(MediaType.MULTIPART_FORM_DATA);
+
+        MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
+        body.add("zip", new MultipartInputStreamFileResource(
+                zipFile.getInputStream(), zipFile.getOriginalFilename()
+        ));
+        // problem ID를 문자열로 body에 추가
+        body.add("problem", domjudgeProblemId);
+
+        HttpEntity<MultiValueMap<String, Object>> requestEntity = new HttpEntity<>(body, headers);
+
+        try {
+            // POST 방식으로 업데이트 (uploadProblemToDomjudge와 유사한 방식)
+            ResponseEntity<JsonNode> response = restTemplate.postForEntity(
+                    DOMJUDGE_API_URL + "/api/v4/problems",
+                    requestEntity,
+                    JsonNode.class
+            );
+
+            JsonNode responseBody = response.getBody();
+            if (responseBody == null || !responseBody.has("messages")) {
+                throw new RuntimeException("DOMjudge 응답에서 메시지를 찾을 수 없습니다.");
+            }
+
+            // 업데이트된 문제 ID 반환 (기존 ID와 동일)
+            String updatedProblemId = responseBody.path("problem_id").asText();
+            if (updatedProblemId == null || updatedProblemId.isEmpty()) {
+                // 응답에 problem_id가 없으면 기존 ID 반환
+                return domjudgeProblemId;
+            }
+
+            log.info("DOMjudge 문제 업데이트 완료: problemId={}", updatedProblemId);
+            return updatedProblemId;
+        } catch (HttpClientErrorException e) {
+            String errorResponse = e.getResponseBodyAsString();
+            log.error("DOMjudge 문제 업데이트 실패: problemId={}, status={}, response={}", 
+                    domjudgeProblemId, e.getStatusCode(), errorResponse);
+            throw new RuntimeException("DOMjudge 문제 업데이트 실패: " + errorResponse, e);
+        }
+    }
+
+    /**
+     * Contest 내에서 문제 업데이트
+     * @param contestId Contest ID (Section ID)
+     * @param domjudgeProblemId 업데이트할 문제의 DOMjudge ID (기존 ID)
+     * @param zipFile 업데이트할 ZIP 파일
+     * @return 업데이트된 문제의 DOMjudge ID (기존 ID와 동일)
+     * @throws IOException 파일 처리 오류
+     */
+    public String updateProblemInContest(Long contestId, String domjudgeProblemId, MultipartFile zipFile) throws IOException {
+        HttpHeaders headers = createAuthHeaders();
+        headers.setContentType(MediaType.MULTIPART_FORM_DATA);
+
+        MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
+        body.add("zip", new MultipartInputStreamFileResource(
+                zipFile.getInputStream(), zipFile.getOriginalFilename()
+        ));
+        // problem ID를 문자열로 body에 추가 (기존 ID)
+        body.add("problem", domjudgeProblemId);
+
+        HttpEntity<MultiValueMap<String, Object>> requestEntity = new HttpEntity<>(body, headers);
+
+        try {
+            // POST 방식으로 Contest 내 문제 업데이트
+            String url = DOMJUDGE_API_URL + "/api/v4/contests/" + contestId + "/problems";
+            ResponseEntity<JsonNode> response = restTemplate.postForEntity(
+                    url,
+                    requestEntity,
+                    JsonNode.class
+            );
+
+            JsonNode responseBody = response.getBody();
+            if (responseBody == null || !responseBody.has("messages")) {
+                throw new RuntimeException("DOMjudge 응답에서 메시지를 찾을 수 없습니다.");
+            }
+
+            // 업데이트된 문제 ID 반환 (기존 ID와 동일)
+            String updatedProblemId = responseBody.path("problem_id").asText();
+            if (updatedProblemId == null || updatedProblemId.isEmpty()) {
+                // 응답에 problem_id가 없으면 기존 ID 반환
+                return domjudgeProblemId;
+            }
+
+            log.info("DOMjudge Contest 내 문제 업데이트 완료: contestId={}, problemId={}", contestId, updatedProblemId);
+            return updatedProblemId;
+        } catch (HttpClientErrorException e) {
+            String errorResponse = e.getResponseBodyAsString();
+            log.error("DOMjudge Contest 내 문제 업데이트 실패: contestId={}, problemId={}, status={}, response={}", 
+                    contestId, domjudgeProblemId, e.getStatusCode(), errorResponse);
+            throw new RuntimeException("DOMjudge Contest 내 문제 업데이트 실패: " + errorResponse, e);
+        }
+    }
+
+    /**
+     * DOMjudge에서 문제 삭제
+     * @param domjudgeProblemId 삭제할 문제의 DOMjudge ID
+     */
+    public void deleteProblemFromDomjudge(String domjudgeProblemId) {
+        try {
+            HttpHeaders headers = createAuthHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+
+            String url = DOMJUDGE_API_URL + "/api/v4/problems/" + domjudgeProblemId;
+
+            HttpEntity<Void> requestEntity = new HttpEntity<>(headers);
+
+            restTemplate.exchange(
+                    url,
+                    HttpMethod.DELETE,
+                    requestEntity,
+                    String.class
+            );
+
+            log.info("DOMjudge 문제 삭제 완료: problemId={}", domjudgeProblemId);
+        } catch (HttpClientErrorException e) {
+            if (e.getStatusCode().value() == 404) {
+                log.warn("DOMjudge에서 문제를 찾을 수 없음 (이미 삭제되었을 수 있음): problemId={}", domjudgeProblemId);
+                // 404는 이미 삭제된 것으로 간주하고 정상 처리
+                return;
+            }
+            log.error("DOMjudge 문제 삭제 실패: problemId={}, status={}, response={}", 
+                    domjudgeProblemId, e.getStatusCode(), e.getResponseBodyAsString());
+            throw new RuntimeException("DOMjudge 문제 삭제 실패: " + e.getMessage(), e);
+        } catch (Exception e) {
+            log.error("DOMjudge 문제 삭제 중 예외 발생: problemId={}", domjudgeProblemId, e);
+            throw new RuntimeException("DOMjudge 문제 삭제 실패: " + e.getMessage(), e);
+        }
     }
 
     private String extractProblemId(String infoMessage) {

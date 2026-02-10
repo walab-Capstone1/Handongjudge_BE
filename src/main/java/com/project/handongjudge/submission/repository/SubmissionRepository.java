@@ -5,7 +5,6 @@ import com.project.handongjudge.submission.entity.Submission;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
-import java.awt.print.Pageable;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -108,4 +107,37 @@ public interface SubmissionRepository extends JpaRepository<Submission, Long> {
     Optional<LocalDateTime> findFirstAcceptedSubmissionTime(@Param("userId") Long userId,
                                                             @Param("problemId") Long problemId,
                                                             @Param("sectionId") Long sectionId);
+
+    // 특정 학생의 특정 문제에 대한 첫 번째 accept된 제출 조회
+    @Query("SELECT s FROM Submission s " +
+            "WHERE s.user.id = :userId AND s.problem.id = :problemId " +
+            "AND s.section.id = :sectionId AND s.result = 'AC' " +
+            "ORDER BY s.submittedAt ASC")
+    List<Submission> findAcceptedSubmissionsByUserAndProblem(@Param("userId") Long userId,
+                                                              @Param("problemId") Long problemId,
+                                                              @Param("sectionId") Long sectionId);
+
+    // 시스템 관리자용: 모든 제출 조회 (관계 엔티티 포함)
+    @Query("SELECT s FROM Submission s " +
+            "JOIN FETCH s.user u " +
+            "JOIN FETCH s.problem p " +
+            "JOIN FETCH s.section sec " +
+            "JOIN FETCH sec.course c " +
+            "ORDER BY s.submittedAt DESC")
+    List<Submission> findAllWithDetails();
+    
+    // 특정 날짜 이후 제출 수
+    @Query("SELECT COUNT(s) FROM Submission s WHERE s.submittedAt >= :date")
+    long countBySubmittedAtAfter(@Param("date") LocalDateTime date);
+    
+    // 특정 문제들에 제출한 고유 사용자 수
+    @Query("SELECT COUNT(DISTINCT s.user.id) FROM Submission s " +
+            "WHERE s.problem.id IN :problemIds AND s.section.id = :sectionId")
+    long countDistinctUsersByProblemIdsAndSectionId(@Param("problemIds") List<Long> problemIds, 
+                                                     @Param("sectionId") Long sectionId);
+    
+    // 특정 문제에 대한 모든 제출 조회
+    @Query("SELECT s FROM Submission s WHERE s.problem.id = :problemId")
+    List<Submission> findByProblemId(@Param("problemId") Long problemId);
+    
 }

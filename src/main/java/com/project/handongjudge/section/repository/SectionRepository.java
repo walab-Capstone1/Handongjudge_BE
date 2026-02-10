@@ -15,4 +15,7 @@ public interface SectionRepository extends JpaRepository<Section, Long> {
 
     Optional<Section> findByEnrollmentCode(String enrollmentCode);
 
+    @Query("SELECT s FROM Section s WHERE s.course.id = :courseId")
+    List<Section> findByCourseId(@Param("courseId") Long courseId);
+
 }

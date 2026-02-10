@@ -1,6 +1,8 @@
 package com.project.handongjudge.problem.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.project.handongjudge.assignment.entity.AssignmentProblem;
+import com.project.handongjudge.user.entity.User;
 import lombok.*;
 
 import javax.persistence.*;
@@ -27,15 +29,29 @@ public class Problem {
     @Column(name = "domjudge_problem_id")
     private String domjudgeProblemId;
 
-    // 새로 추가되는 필드들
     @Column(name = "time_limit")
-    private Double timeLimit;  // 초 단위
+    private Double timeLimit;
 
     @Column(name = "memory_limit")
-    private Integer memoryLimit;  // MB 단위
-
+    private Integer memoryLimit;
 
     private LocalDateTime createdAt;
+
+    // 문제를 만든 instructor 정보
+    @JsonIgnore
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "created_by")
+    private User createdBy;
+
+    // 원본 ZIP 파일 경로 (기존 호환성 유지, 마이그레이션용)
+    @Column(name = "zip_file_path", length = 500)
+    private String zipFilePath;
+
+    // ZIP 파일 데이터 (BLOB)
+    @Lob
+    @Column(name = "zip_file_data", columnDefinition = "BLOB")
+    @JsonIgnore
+    private byte[] zipFileData;
 
     @OneToMany(mappedBy = "problem", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<AssignmentProblem> assignmentProblems;

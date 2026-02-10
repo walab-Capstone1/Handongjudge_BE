@@ -3,9 +3,9 @@ server:
   forward-headers-strategy: framework
 
 spring:
-#  # .env import
-#  config:
-#    import: optional:file:.env[.properties]
+  # .env import
+  config:
+    import: optional:file:.env[.properties]
 
   jackson:
     serialization:

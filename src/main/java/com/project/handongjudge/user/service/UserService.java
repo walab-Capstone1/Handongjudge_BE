@@ -11,6 +11,7 @@ import com.project.handongjudge.user.repository.UserRepository;
 import com.project.handongjudge.user.repository.UserReadStatusRepository;
 import com.project.handongjudge.user.entity.Enrollment;
 import com.project.handongjudge.section.repository.SectionRepository;
+import com.project.handongjudge.section.service.SectionRoleService;
 import com.project.handongjudge.notice.entity.Notice;
 import com.project.handongjudge.notice.repository.NoticeRepository;
 import com.project.handongjudge.assignment.entity.Assignment;
@@ -27,7 +28,9 @@ import com.project.handongjudge.domjudge.service.DomjudgeService;
 import java.util.ArrayList;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 @Service
@@ -39,6 +42,7 @@ public class UserService {
     private final EnrollmentRepository enrollmentRepository;
     private final PasswordEncoder passwordEncoder;
     private final SectionRepository sectionRepository;
+    private final SectionRoleService sectionRoleService;
     private final DomjudgeService domjudgeService;
     private final UserReadStatusRepository userReadStatusRepository;
     private final NoticeRepository noticeRepository;
@@ -51,6 +55,7 @@ public class UserService {
     public UserService(UserRepository userRepository,
                        EnrollmentRepository enrollmentRepository,
                        SectionRepository sectionRepository,
+                       SectionRoleService sectionRoleService,
                        DomjudgeService domjudgeService,
                        UserReadStatusRepository userReadStatusRepository,
                        NoticeRepository noticeRepository,
@@ -63,6 +68,7 @@ public class UserService {
         this.enrollmentRepository = enrollmentRepository;
         this.passwordEncoder = passwordEncoder;
         this.sectionRepository = sectionRepository;
+        this.sectionRoleService = sectionRoleService;
         this.domjudgeService = domjudgeService;
         this.userReadStatusRepository = userReadStatusRepository;
         this.noticeRepository = noticeRepository;
@@ -148,8 +154,8 @@ public class UserService {
         List<DashboardCourseDto> result = new ArrayList<>();
 
         // 사용자 역할에 따라 다른 쿼리 사용
-        if (user.getRole() == User.Role.ADMIN) {
-            // 교수인 경우: 담당하는 분반들 + 학생으로 등록된 분반들 모두 조회
+        if (user.getRole() == User.Role.ADMIN || user.getRole() == User.Role.SUPER_ADMIN) {
+            // 교수 또는 시스템 관리자인 경우: 담당하는 분반들 + 학생으로 등록된 분반들 모두 조회
 
             // 1. 자신이 instructor인 분반들
             List<DashboardCourseDto> instructorSections = enrollmentRepository.findDashboardCoursesByInstructorId(userId);
@@ -177,7 +183,7 @@ public class UserService {
 
 
         // 학생인 경우에만 읽지 않은 공지사항 수를 수동으로 계산
-        if (user.getRole() != User.Role.ADMIN) {
+        if (user.getRole() != User.Role.ADMIN && user.getRole() != User.Role.SUPER_ADMIN) {
             for (DashboardCourseDto dto : result) {
                 // 해당 분반의 새로운 공지사항 중 읽지 않은 것들의 수 계산
                 long unreadNoticeCount = noticeRepository.findNewNoticesBySectionId(dto.getSectionId())
@@ -221,6 +227,9 @@ public class UserService {
         // 참가 처리
         enrollmentRepository.save(enrollment);
 
+        // SectionUserRole에 STUDENT 역할 부여
+        sectionRoleService.assignStudentRole(enrollment.getSection().getId(), enrollment.getUser().getId());
+
         EnrollmentResponseDTO response = new EnrollmentResponseDTO();
         response.setId(enrollment.getId());
         response.setTeamId(enrollment.getTeamId());
@@ -240,6 +249,14 @@ public class UserService {
         // 각 학생의 과제 진도율 계산
         for (StudentDto student : students) {
             calculateAssignmentProgress(student, sectionId);
+        }
+
+        // 분반 내 역할 설정 (ADMIN, TUTOR, STUDENT)
+        for (StudentDto student : students) {
+            String roleName = sectionRoleService.getUserRoleInSection(student.getUserId(), sectionId)
+                    .map(Enum::name)
+                    .orElse("STUDENT");
+            student.setRole(roleName);
         }
 
         return students;
@@ -447,5 +464,119 @@ public class UserService {
         }
 
         return problemStatusList;
+    }
+
+    /**
+     * 관리자 대시보드 통계 조회
+     */
+    public AdminDashboardStatsDto getAdminDashboardStats(Long instructorId) {
+        // 사용자 조회 및 권한 확인
+        User user = userRepository.findById(instructorId)
+                .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다: " + instructorId));
+
+        if (user.getRole() != User.Role.ADMIN && user.getRole() != User.Role.SUPER_ADMIN) {
+            throw new IllegalArgumentException("관리자 권한이 필요합니다.");
+        }
+
+        // 담당하는 모든 분반 조회
+        List<DashboardCourseDto> sections = enrollmentRepository.findDashboardCoursesByInstructorId(instructorId);
+        List<Long> sectionIds = sections.stream()
+                .map(DashboardCourseDto::getSectionId)
+                .collect(java.util.stream.Collectors.toList());
+
+        // 전체 통계 계산
+        long totalSections = sections.size();
+        long totalAssignments = sections.stream()
+                .mapToLong(DashboardCourseDto::getAssignmentCount)
+                .sum();
+        long totalProblems = problemRepository.countByCreatedById(instructorId);
+        long totalStudents = sections.stream()
+                .mapToLong(DashboardCourseDto::getStudentCount)
+                .sum();
+
+        // 최근 7일 활동
+        LocalDateTime sevenDaysAgo = LocalDateTime.now().minusDays(7);
+        long recentSubmissions = submissionRepository.countBySubmittedAtAfter(sevenDaysAgo);
+        long recentAssignments = assignmentRepository.countByCreatedAtAfterAndSectionInstructorId(sevenDaysAgo, instructorId);
+
+        // 과제별 통계
+        List<AdminDashboardStatsDto.AssignmentStatsDto> assignmentStats = new ArrayList<>();
+        if (!sectionIds.isEmpty()) {
+            List<Assignment> assignments = assignmentRepository.findBySectionIdIn(sectionIds);
+            for (Assignment assignment : assignments) {
+                Long sectionId = assignment.getSection().getId();
+                Long totalStudentsInSection = enrollmentRepository.countBySectionId(sectionId);
+                
+                // 과제의 문제 수
+                List<Long> problemIds = assignmentProblemRepository.findProblemIdsByAssignmentId(assignment.getId());
+                
+                // 제출한 학생 수 (과제의 문제 중 하나라도 제출한 학생)
+                long submittedStudents = submissionRepository.countDistinctUsersByProblemIdsAndSectionId(problemIds, sectionId);
+                
+                // 완료한 학생 수 (과제의 모든 문제를 정답으로 제출한 학생)
+                // 간단하게 계산: 각 학생이 푼 문제 수를 확인
+                long completedStudents = 0;
+                if (!problemIds.isEmpty()) {
+                    // 분반의 모든 학생 조회
+                    List<User> students = enrollmentRepository.findUsersBySectionId(sectionId);
+                    for (User student : students) {
+                        // 학생이 푼 문제 ID 목록 (정답만)
+                        List<Long> solvedProblemIds = submissionRepository.findAcceptedProblemIdsByUserAndProblems(
+                            student.getId(), problemIds);
+                        // 모든 문제를 다 풀었는지 확인
+                        if (solvedProblemIds.size() == problemIds.size() && 
+                            solvedProblemIds.containsAll(problemIds)) {
+                            completedStudents++;
+                        }
+                    }
+                }
+
+                double submissionRate = totalStudentsInSection > 0 
+                    ? (double) submittedStudents / totalStudentsInSection * 100 
+                    : 0.0;
+                double completionRate = totalStudentsInSection > 0 
+                    ? (double) completedStudents / totalStudentsInSection * 100 
+                    : 0.0;
+
+                assignmentStats.add(AdminDashboardStatsDto.AssignmentStatsDto.builder()
+                        .assignmentId(assignment.getId())
+                        .assignmentTitle(assignment.getTitle())
+                        .sectionId(sectionId)
+                        .sectionTitle(sections.stream()
+                                .filter(s -> s.getSectionId().equals(sectionId))
+                                .findFirst()
+                                .map(DashboardCourseDto::getCourseTitle)
+                                .orElse(""))
+                        .totalStudents(totalStudentsInSection)
+                        .submittedStudents(submittedStudents)
+                        .completedStudents(completedStudents)
+                        .submissionRate(submissionRate)
+                        .completionRate(completionRate)
+                        .build());
+            }
+        }
+
+        // 수업별 통계
+        List<AdminDashboardStatsDto.SectionStatsDto> sectionStats = sections.stream()
+                .map(section -> AdminDashboardStatsDto.SectionStatsDto.builder()
+                        .sectionId(section.getSectionId())
+                        .sectionTitle(section.getCourseTitle() + " " + section.getSectionNumber() + "분반")
+                        .studentCount(section.getStudentCount())
+                        .assignmentCount(section.getAssignmentCount())
+                        .activeAssignmentCount(assignmentRepository.countActiveBySectionId(section.getSectionId()))
+                        .noticeCount(section.getNoticeCount())
+                        .build())
+                .collect(java.util.stream.Collectors.toList());
+
+        return AdminDashboardStatsDto.builder()
+                .totalSections(totalSections)
+                .totalAssignments(totalAssignments)
+                .totalProblems(totalProblems)
+                .totalStudents(totalStudents)
+                .recentSubmissions(recentSubmissions)
+                .recentAssignments(recentAssignments)
+                .assignmentStats(assignmentStats)
+                .sectionStats(sectionStats)
+                .build();
     }
 }

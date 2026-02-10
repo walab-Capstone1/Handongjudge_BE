@@ -4,6 +4,10 @@ import com.project.handongjudge.user.dto.*;
 import com.project.handongjudge.user.entity.User;
 import com.project.handongjudge.user.repository.UserRepository;
 import com.project.handongjudge.user.service.UserService;
+import com.project.handongjudge.section.service.SectionRoleService;
+import com.project.handongjudge.section.entity.SectionUserRole;
+import com.project.handongjudge.section.dto.SectionInfoDto;
+import com.project.handongjudge.section.service.SectionService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -24,6 +28,8 @@ public class UserController {
 
     private final UserService userService;
     private final UserRepository userRepository;
+    private final SectionRoleService sectionRoleService;
+    private final SectionService sectionService;
     /**
      * 현재 로그인한 사용자 정보 반환
      */
@@ -62,6 +68,10 @@ public class UserController {
      */
     @GetMapping("/dashboard")
     public ResponseEntity<Map<String, Object>> getDashboardCourses(Authentication authentication) {
+        if (authentication == null || !authentication.isAuthenticated()
+                || authentication.getPrincipal() == null || "anonymousUser".equals(authentication.getName())) {
+            return buildErrorResponse("로그인이 필요합니다.");
+        }
         try {
             Long userId = Long.parseLong(authentication.getName());
             List<DashboardCourseDto> courses = userService.getDashboardCourses(userId);
@@ -73,7 +83,8 @@ public class UserController {
             return ResponseEntity.ok(response);
 
         } catch (Exception e) {
-            log.error("대시보드 조회 실패: {}", authentication.getName(), e);
+            String name = authentication != null ? authentication.getName() : "null";
+            log.error("대시보드 조회 실패: {}", name, e);
             return buildErrorResponse("대시보드 정보를 가져오지 못했습니다.");
         }
     }
@@ -187,7 +198,7 @@ public class UserController {
     /**
      * 특정 학생의 특정 분반 과제 진도율 조회
      */
-    @GetMapping("/students/{userId}/sections/{sectionId}/assignments-progress")
+    @GetMapping("/studen    sts/{userId}/sections/{sectionId}/assignments-progress")
     public ResponseEntity<Map<String, Object>> getStudentAssignmentsProgress(
             @PathVariable Long userId,
             @PathVariable Long sectionId,
@@ -199,8 +210,12 @@ public class UserController {
             User requestUser = userRepository.findById(requestUserId)
                     .orElseThrow(() -> new RuntimeException("User not found"));
 
-            // 권한 검증 로직 (선택사항)
-            if (requestUser.getRole() != User.Role.ADMIN && !requestUserId.equals(userId)) {
+            // 권한 검증 로직: 교수이거나 시스템 관리자이거나 자기 자신인 경우만 조회 가능
+            boolean isAuthorized = requestUser.getRole() == User.Role.ADMIN ||
+                    requestUser.getRole() == User.Role.SUPER_ADMIN ||
+                    requestUserId.equals(userId);
+            
+            if (!isAuthorized) {
                 return buildErrorResponse("권한이 없습니다.");
             }
 
@@ -233,7 +248,12 @@ public class UserController {
             User requestUser = userRepository.findById(requestUserId)
                     .orElseThrow(() -> new RuntimeException("User not found"));
 
-            if (requestUser.getRole() != User.Role.ADMIN && !requestUserId.equals(userId)) {
+            // 권한 검증: 교수이거나 시스템 관리자이거나 자기 자신인 경우만 조회 가능
+            boolean isAuthorized = requestUser.getRole() == User.Role.ADMIN ||
+                    requestUser.getRole() == User.Role.SUPER_ADMIN ||
+                    requestUserId.equals(userId);
+            
+            if (!isAuthorized) {
                 return buildErrorResponse("권한이 없습니다.");
             }
 
@@ -249,6 +269,117 @@ public class UserController {
         } catch (Exception e) {
             log.error("학생 문제 상태 조회 실패: userId={}, assignmentId={}", userId, assignmentId, e);
             return buildErrorResponse("문제 상태를 가져오지 못했습니다.");
+        }
+    }
+
+    /**
+     * 사용자의 모든 수업별 역할 목록 조회
+     */
+    @GetMapping("/sections/roles")
+    public ResponseEntity<Map<String, Object>> getMySectionRoles(Authentication authentication) {
+        try {
+            Long userId = Long.parseLong(authentication.getName());
+            List<SectionUserRole> sectionRoles = sectionRoleService.getAllSectionRoles(userId);
+
+            List<Map<String, Object>> roleList = sectionRoles.stream()
+                    .map(sur -> {
+                        SectionInfoDto sectionInfo = sectionService.getSectionInfo(sur.getSection().getId());
+                        Map<String, Object> roleInfo = new HashMap<>();
+                        roleInfo.put("sectionId", sur.getSection().getId());
+                        roleInfo.put("role", sur.getRole().name());
+                        roleInfo.put("sectionInfo", Map.of(
+                                "sectionId", sectionInfo.getSectionId(),
+                                "sectionNumber", sectionInfo.getSectionNumber() != null ? sectionInfo.getSectionNumber() : "",
+                                "courseTitle", sectionInfo.getCourseTitle(),
+                                "instructorName", sectionInfo.getInstructorName(),
+                                "enrollmentCode", sectionInfo.getEnrollmentCode() != null ? sectionInfo.getEnrollmentCode() : "",
+                                "active", sectionInfo.getActive() != null ? sectionInfo.getActive() : false
+                        ));
+                        return roleInfo;
+                    })
+                    .collect(java.util.stream.Collectors.toList());
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("data", roleList);
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            log.error("수업별 역할 목록 조회 실패: {}", authentication.getName(), e);
+            return buildErrorResponse("수업별 역할 목록을 가져오지 못했습니다.");
+        }
+    }
+
+    /**
+     * 사용자가 수강 중인 수업 목록 조회 (STUDENT 역할)
+     */
+    @GetMapping("/sections/enrolled")
+    public ResponseEntity<Map<String, Object>> getEnrolledSections(Authentication authentication) {
+        try {
+            Long userId = Long.parseLong(authentication.getName());
+            List<SectionUserRole> enrolledSections = sectionRoleService.getEnrolledSections(userId);
+
+            List<Map<String, Object>> sectionList = enrolledSections.stream()
+                    .map(sur -> {
+                        SectionInfoDto sectionInfo = sectionService.getSectionInfo(sur.getSection().getId());
+                        Map<String, Object> sectionData = new HashMap<>();
+                        sectionData.put("sectionId", sur.getSection().getId());
+                        sectionData.put("role", sur.getRole().name());
+                        sectionData.put("sectionInfo", Map.of(
+                                "sectionId", sectionInfo.getSectionId(),
+                                "sectionNumber", sectionInfo.getSectionNumber() != null ? sectionInfo.getSectionNumber() : "",
+                                "courseTitle", sectionInfo.getCourseTitle(),
+                                "instructorName", sectionInfo.getInstructorName(),
+                                "enrollmentCode", sectionInfo.getEnrollmentCode() != null ? sectionInfo.getEnrollmentCode() : "",
+                                "active", sectionInfo.getActive() != null ? sectionInfo.getActive() : false
+                        ));
+                        return sectionData;
+                    })
+                    .collect(java.util.stream.Collectors.toList());
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("data", sectionList);
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            log.error("수강 중인 수업 목록 조회 실패: {}", authentication.getName(), e);
+            return buildErrorResponse("수강 중인 수업 목록을 가져오지 못했습니다.");
+        }
+    }
+
+    /**
+     * 사용자가 관리 중인 수업 목록 조회 (ADMIN 또는 TUTOR 역할)
+     */
+    @GetMapping("/sections/managing")
+    public ResponseEntity<Map<String, Object>> getManagingSections(Authentication authentication) {
+        try {
+            Long userId = Long.parseLong(authentication.getName());
+            List<SectionUserRole> managingSections = sectionRoleService.getManagingSections(userId);
+
+            List<Map<String, Object>> sectionList = managingSections.stream()
+                    .map(sur -> {
+                        SectionInfoDto sectionInfo = sectionService.getSectionInfo(sur.getSection().getId());
+                        Map<String, Object> sectionData = new HashMap<>();
+                        sectionData.put("sectionId", sur.getSection().getId());
+                        sectionData.put("role", sur.getRole().name());
+                        sectionData.put("sectionInfo", Map.of(
+                                "sectionId", sectionInfo.getSectionId(),
+                                "sectionNumber", sectionInfo.getSectionNumber() != null ? sectionInfo.getSectionNumber() : "",
+                                "courseTitle", sectionInfo.getCourseTitle(),
+                                "instructorName", sectionInfo.getInstructorName(),
+                                "enrollmentCode", sectionInfo.getEnrollmentCode() != null ? sectionInfo.getEnrollmentCode() : "",
+                                "active", sectionInfo.getActive() != null ? sectionInfo.getActive() : false
+                        ));
+                        return sectionData;
+                    })
+                    .collect(java.util.stream.Collectors.toList());
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("data", sectionList);
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            log.error("관리 중인 수업 목록 조회 실패: {}", authentication.getName(), e);
+            return buildErrorResponse("관리 중인 수업 목록을 가져오지 못했습니다.");
         }
     }
 }

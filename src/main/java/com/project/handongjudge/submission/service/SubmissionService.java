@@ -24,6 +24,15 @@ import com.project.handongjudge.user.entity.User;
 import com.project.handongjudge.problem.entity.Problem;
 import com.project.handongjudge.section.entity.Section;
 import com.project.handongjudge.user.repository.EnrollmentRepository;
+import com.project.handongjudge.assignment.repository.AssignmentRepository;
+import com.project.handongjudge.assignment.repository.AssignmentProblemRepository;
+import com.project.handongjudge.assignment.entity.Assignment;
+import com.project.handongjudge.assignment.entity.AssignmentProblem;
+import com.project.handongjudge.section.service.SectionRoleService;
+import com.project.handongjudge.quiz.repository.QuizRepository;
+import com.project.handongjudge.quiz.repository.QuizProblemRepository;
+import com.project.handongjudge.quiz.entity.Quiz;
+import com.project.handongjudge.quiz.entity.QuizProblem;
 
 import java.awt.print.Pageable;
 import java.io.File;
@@ -48,6 +57,11 @@ public class SubmissionService {
     private final EnrollmentRepository enrollmentRepository;
     private final DomjudgeService domjudgeService;
     private final ContestRepository contestRepository; // 추가해줘야 함
+    private final AssignmentRepository assignmentRepository;
+    private final AssignmentProblemRepository assignmentProblemRepository;
+    private final SectionRoleService sectionRoleService;
+    private final QuizRepository quizRepository;
+    private final QuizProblemRepository quizProblemRepository;
 
     public SubmissionResponseDTO submitCode(SubmissionRequestDTO submissionRequestDTO) {
         User user = userRepository.findById(submissionRequestDTO.getUserId())
@@ -73,6 +87,16 @@ public class SubmissionService {
                 submissionRequestDTO.getLanguage(),
                 codeFile
         );
+
+        // Delete TmpFile immediately after submission (before DB save)
+        if(codeFile != null) {
+            try {
+                Files.deleteIfExists(codeFile.toPath());
+                log.debug("TmpFile deleted: {}", codeFile.getName());
+            } catch (IOException e) {
+                log.error("Failed to delete TmpFile: {}", e.getMessage());
+            }
+        }
 
         Submission submission = toSubmission(submissionRequestDTO);
         submission.setSection(section);
@@ -142,6 +166,13 @@ public class SubmissionService {
                 .orElseThrow(() -> new RuntimeException("Problem not found"));
         Section section = sectionRepository.findById(submissionRequestDTO.getSectionId())
                 .orElseThrow(() -> new RuntimeException("Section not found"));
+
+        // 과제/퀴즈 마감일 및 비활성화 체크
+        validateSubmission(
+                submissionRequestDTO.getProblemId(),
+                submissionRequestDTO.getSectionId(),
+                userId
+        );
 
         String contestId = String.valueOf(section.getId());
         String teamId = enrollmentRepository.findTeamIdByUserIdAndSectionId(user.getId(), section.getId());
@@ -249,6 +280,13 @@ public class SubmissionService {
         Section section = sectionRepository.findById(submissionRequestDTO.getSectionId())
                 .orElseThrow(() -> new RuntimeException("Section not found"));
 
+        // 과제/퀴즈 마감일 및 비활성화 체크
+        validateSubmission(
+                submissionRequestDTO.getProblemId(),
+                submissionRequestDTO.getSectionId(),
+                userId
+        );
+
         String contestId = String.valueOf(section.getId());
         String teamId = enrollmentRepository.findTeamIdByUserIdAndSectionId(user.getId(), section.getId());
         String domjudgeProblemId = problem.getDomjudgeProblemId();
@@ -302,8 +340,25 @@ public class SubmissionService {
         while (attempts < maxAttempts) {
             try {
                 SubmissionOutputResponseDTO result = domjudgeService.getResultOutput(cid, submissionId);
+                // 기존 조건: 전체 judgement의 result만 확인 (lazy evaluation 시 첫 실패에서 중단됨)
+                // if (result != null && !result.getResult().isEmpty()) {
+                //     return result;
+                // }
+                
+                // 새로운 조건: 모든 테스트케이스가 완료될 때까지 기다림
                 if (result != null && !result.getResult().isEmpty()) {
-                    return result;
+                    // runs 배열의 모든 항목이 result를 가지고 있는지 확인
+                    if (result.getOutputList() != null && !result.getOutputList().isEmpty()) {
+                        boolean allCompleted = result.getOutputList().stream()
+                            .allMatch(output -> output.getResult() != null && !output.getResult().isEmpty());
+                        
+                        if (allCompleted) {
+                            return result;
+                        }
+                    } else {
+                        // outputList가 없으면 전체 result만 확인
+                        return result;
+                    }
                 }
             } catch (Exception e) {
                 // 결과가 아직 준비되지 않은 경우 무시하고 계속 시도
@@ -333,6 +388,99 @@ public class SubmissionService {
                 .orElse(null);
 
         return result;
+    }
+
+    /**
+     * 문제가 속한 과제/퀴즈를 찾고, 마감일 및 비활성화 상태를 체크
+     * @param problemId 문제 ID
+     * @param sectionId 분반 ID
+     * @param userId 사용자 ID
+     * @throws IllegalArgumentException 마감일이 지났거나 비활성화된 경우 (학생만)
+     * 
+     * 비고:
+     * - 관리자/튜터는 비활성화된 과제/퀴즈도 제출 가능
+     * - 학생은 마감일이 지나면 제출 불가
+     * - 관리자/튜터는 퀴즈 종료 후에도 제출 가능 (과제는 마감일 체크)
+     */
+    private void validateSubmission(Long problemId, Long sectionId, Long userId) {
+        // 관리자인지 확인
+        boolean isManager = sectionRoleService.isManager(userId, sectionId);
+        
+        // 문제가 속한 과제 목록 조회
+        List<AssignmentProblem> assignmentProblems = assignmentProblemRepository.findByProblemId(problemId);
+        
+        // 문제가 속한 퀴즈 목록 조회
+        List<QuizProblem> quizProblems = quizProblemRepository.findByProblemId(problemId);
+        
+        // 과제와 퀴즈 모두에 속하지 않은 경우
+        if (assignmentProblems.isEmpty() && quizProblems.isEmpty()) {
+            throw new IllegalArgumentException("해당 문제는 과제나 코딩 테스트에 속해있지 않습니다");
+        }
+        
+        LocalDateTime now = LocalDateTime.now();
+        boolean assignmentValid = false;
+        boolean quizValid = false;
+        
+        // 과제 검증
+        if (!assignmentProblems.isEmpty()) {
+            Assignment targetAssignment = null;
+            for (AssignmentProblem ap : assignmentProblems) {
+                Assignment assignment = ap.getAssignment();
+                if (assignment.getSection().getId().equals(sectionId)) {
+                    targetAssignment = assignment;
+                    break;
+                }
+            }
+            
+            if (targetAssignment != null) {
+                // 학생이고 과제가 비활성화되어 있으면 제출 불가
+                if (!isManager && !targetAssignment.getActive()) {
+                    throw new IllegalArgumentException("해당 과제는 비활성화되어 있어 제출할 수 없습니다");
+                }
+                
+                // 마감일 체크 (관리자/튜터도 과제 마감일이 지나면 제출 불가)
+                if (targetAssignment.getEndDate() != null && now.isAfter(targetAssignment.getEndDate())) {
+                    throw new IllegalArgumentException("과제 마감일이 지났습니다");
+                }
+                
+                assignmentValid = true;
+            }
+        }
+        
+        // 퀴즈 검증
+        if (!quizProblems.isEmpty()) {
+            Quiz targetQuiz = null;
+            for (QuizProblem qp : quizProblems) {
+                Quiz quiz = qp.getQuiz();
+                if (quiz.getSection().getId().equals(sectionId)) {
+                    targetQuiz = quiz;
+                    break;
+                }
+            }
+            
+            if (targetQuiz != null) {
+                // 학생이고 퀴즈가 비활성화되어 있으면 제출 불가
+                if (!isManager && !targetQuiz.getActive()) {
+                    throw new IllegalArgumentException("해당 코딩 테스트는 비활성화되어 있어 제출할 수 없습니다");
+                }
+                
+                // 퀴즈 종료 시간 체크
+                if (targetQuiz.getEndTime() != null && now.isAfter(targetQuiz.getEndTime())) {
+                    // 학생은 퀴즈 종료 후 제출 불가
+                    if (!isManager) {
+                        throw new IllegalArgumentException("코딩 테스트 시간이 종료되었습니다");
+                    }
+                    // 관리자/튜터는 퀴즈 종료 후에도 제출 가능 (예외 처리 없음)
+                }
+                
+                quizValid = true;
+            }
+        }
+        
+        // 과제와 퀴즈 모두에 속하지 않은 경우 (sectionId가 다른 경우)
+        if (!assignmentValid && !quizValid) {
+            throw new IllegalArgumentException("해당 문제는 이 분반의 과제나 코딩 테스트에 속해있지 않습니다");
+        }
     }
 
 }

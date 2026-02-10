@@ -13,6 +13,7 @@ public interface AssignmentProblemRepository extends JpaRepository<AssignmentPro
     // 기존 메서드들
     List<AssignmentProblem> findByAssignmentIdOrderByProblemOrderAsc(Long assignmentId);
     Optional<AssignmentProblem> findByAssignmentIdAndProblemId(Long assignmentId, Long problemId);
+    List<AssignmentProblem> findAllByAssignmentIdAndProblemId(Long assignmentId, Long problemId);
 
     // 새로 추가할 메서드
     List<AssignmentProblem> findByAssignmentId(Long assignmentId);
@@ -21,4 +22,7 @@ public interface AssignmentProblemRepository extends JpaRepository<AssignmentPro
     void deleteByAssignmentId(@Param("assignmentId") Long assignmentId);
     @Query("SELECT ap.problem.id FROM AssignmentProblem ap WHERE ap.assignment.id = :assignmentId")
     List<Long> findProblemIdsByAssignmentId(@Param("assignmentId") Long assignmentId);
+    
+    // 문제 ID로 AssignmentProblem 목록 조회
+    List<AssignmentProblem> findByProblemId(Long problemId);
 }

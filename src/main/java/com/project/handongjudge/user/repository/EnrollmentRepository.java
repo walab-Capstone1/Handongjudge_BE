@@ -1,5 +1,6 @@
 package com.project.handongjudge.user.repository;
 
+import com.project.handongjudge.section.entity.Section;
 import com.project.handongjudge.user.dto.DashboardCourseDto;
 import com.project.handongjudge.user.dto.StudentDto;
 import com.project.handongjudge.user.entity.Enrollment;
@@ -28,10 +29,10 @@ public interface EnrollmentRepository extends CrudRepository<Enrollment, Long> {
 
 
     @Query("SELECT new com.project.handongjudge.user.dto.StudentDto(" +
-            "u.id, u.name, u.email, '', e.teamId, s.id, " +
+            "u.id, u.name, u.email, COALESCE(u.studentId, ''), e.teamId, s.id, " +
             "CONCAT(c.title, ' - Section ', s.sectionNumber), c.title, s.sectionNumber, " +
             "e.joinedAt, u.updatedAt, " +
-            "CAST(0.0 AS double), CAST(0 AS int), CAST(0 AS int)) " +
+            "0.0, 0, 0, '') " +
             "FROM Enrollment e " +
             "JOIN e.user u " +
             "JOIN e.section s " +
@@ -43,7 +44,7 @@ public interface EnrollmentRepository extends CrudRepository<Enrollment, Long> {
             "u.id, u.name, u.email, '', e.teamId, s.id, " +
             "CONCAT(c.title, ' - Section ', s.sectionNumber), c.title, s.sectionNumber, " +
             "e.joinedAt, u.updatedAt, " +
-            "CAST(0.0 AS double), CAST(0 AS int), CAST(0 AS int)) " +
+            "0.0, 0, 0, '') " +
             "FROM Enrollment e " +
             "JOIN e.user u " +
             "JOIN e.section s " +
@@ -114,4 +115,39 @@ public interface EnrollmentRepository extends CrudRepository<Enrollment, Long> {
             "WHERE e.user.id = :userId " +
             "GROUP BY c.id, c.title, s.id, s.sectionNumber, u.name, s.createdAt, s.year, s.semester, s.enrollmentCode, s.active")
     List<DashboardCourseDto> findDashboardCoursesByUserId(@Param("userId") Long userId);
+
+    // 시스템 관리자용: 모든 수업 조회
+    @Query("SELECT new com.project.handongjudge.user.dto.DashboardCourseDto(" +
+            "c.id, " +                              // courseId
+            "c.title, " +                           // courseTitle
+            "s.id, " +                              // sectionId
+            "s.sectionNumber, " +                    // sectionNumber
+            "u.name, " +                             // instructorName
+            "CAST(COALESCE(SUM(CASE WHEN n.isNew = true THEN 1 ELSE 0 END), 0) AS long), " +  // newNoticeCount
+            "CAST(COALESCE(SUM(CASE WHEN a.isNew = true THEN 1 ELSE 0 END), 0) AS long), " +  // newAssignmentCount
+            "CAST(COUNT(DISTINCT a.id) AS long), " +  // assignmentCount
+            "CAST(COUNT(DISTINCT n.id) AS long), " +  // noticeCount
+            "CAST((SELECT COUNT(e2.id) FROM Enrollment e2 WHERE e2.section.id = s.id) AS long), " +  // studentCount
+            "s.createdAt, " +                       // createdAt
+            "s.year, " +                            // year
+            "s.semester, " +                        // semester
+            "s.enrollmentCode, " +                  // enrollmentCode
+            "COALESCE(s.active, true)) " +          // active
+            "FROM Section s " +
+            "JOIN Course c ON s.course.id = c.id " +
+            "JOIN User u ON s.instructor.id = u.id " +
+            "LEFT JOIN Notice n ON n.section.id = s.id " +
+            "LEFT JOIN Assignment a ON a.section.id = s.id " +
+            "GROUP BY c.id, c.title, s.id, s.sectionNumber, u.name, s.createdAt, s.year, s.semester, s.enrollmentCode, s.active " +
+            "ORDER BY s.year DESC, s.semester, c.title, s.sectionNumber")
+    List<DashboardCourseDto> findAllDashboardCourses();
+
+    // 섹션별 수강생 조회 (알림 발송용)
+    List<Enrollment> findBySection(Section section);
+    
+    // 사용자 ID로 Enrollment 목록 조회
+    List<Enrollment> findByUserId(Long userId);
+    
+    // 특정 분반의 수강생 수
+    long countBySectionId(Long sectionId);
 }
