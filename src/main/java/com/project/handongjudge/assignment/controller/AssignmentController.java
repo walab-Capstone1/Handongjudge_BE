@@ -6,6 +6,7 @@ import com.project.handongjudge.assignment.dto.AssignmentSubmissionStatsResponse
 import com.project.handongjudge.assignment.dto.UpcomingAssignmentResponse;
 import com.project.handongjudge.assignment.dto.UserSubmissionStatusResponse;
 import com.project.handongjudge.assignment.service.AssignmentService;
+import com.project.handongjudge.problem.dto.ProblemDto;
 import com.project.handongjudge.problem.entity.Problem;
 import com.project.handongjudge.problem.service.ProblemService;
 import lombok.RequiredArgsConstructor;
@@ -61,12 +62,12 @@ public class AssignmentController {
     }
 
     @GetMapping("/{assignmentId}/problems")
-    public ResponseEntity<List<Problem>> getAssignmentProblems( // 과제 문제 목록 조회
+    public ResponseEntity<List<ProblemDto>> getAssignmentProblems( // 과제 문제 목록 조회 (순서대로)
             @PathVariable Long sectionId,
             @PathVariable Long assignmentId
     ) {
         return ResponseEntity.ok(
-                problemService.getProblemsByAssignmentId(assignmentId)
+                assignmentService.getAssignmentProblems(assignmentId).getProblems()
         );
     }
 

@@ -142,9 +142,9 @@ public class AssignmentService {
     }
 
     public AssignmentProblemsResponse getAssignmentProblems(Long assignmentId) {
-        // AssignmentProblem을 조회하여 배점 정보와 문제 순서 포함
+        // AssignmentProblem을 과제에 추가한 순서(DB id 순)대로 조회
         List<AssignmentProblem> assignmentProblems = 
-                assignmentProblemRepository.findByAssignmentIdOrderByProblemOrderAsc(assignmentId);
+                assignmentProblemRepository.findByAssignmentIdOrderByIdAsc(assignmentId);
 
         // Entity를 DTO로 변환 (배점 정보 포함)
         List<ProblemDto> problemDtos = assignmentProblems.stream()

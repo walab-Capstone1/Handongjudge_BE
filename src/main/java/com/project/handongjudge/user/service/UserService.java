@@ -20,6 +20,7 @@ import com.project.handongjudge.notice.repository.NoticeRepository;
 import com.project.handongjudge.assignment.entity.Assignment;
 import com.project.handongjudge.assignment.repository.AssignmentRepository;
 import com.project.handongjudge.assignment.repository.AssignmentProblemRepository;
+import com.project.handongjudge.quiz.repository.QuizProblemRepository;
 import com.project.handongjudge.submission.repository.SubmissionRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -55,6 +56,7 @@ public class UserService {
     private final AssignmentProblemRepository assignmentProblemRepository;
     private final SubmissionRepository submissionRepository;
     private final ProblemRepository problemRepository;
+    private final QuizProblemRepository quizProblemRepository;
 
     @Autowired
     public UserService(UserRepository userRepository,
@@ -69,6 +71,7 @@ public class UserService {
                        AssignmentProblemRepository assignmentProblemRepository,
                        SubmissionRepository submissionRepository,
                        ProblemRepository problemRepository,
+                       QuizProblemRepository quizProblemRepository,
                        @Lazy PasswordEncoder passwordEncoder) {
         this.userRepository = userRepository;
         this.enrollmentRepository = enrollmentRepository;
@@ -83,6 +86,7 @@ public class UserService {
         this.assignmentProblemRepository = assignmentProblemRepository;
         this.submissionRepository = submissionRepository;
         this.problemRepository = problemRepository;
+        this.quizProblemRepository = quizProblemRepository;
     }
 
     public Optional<User> findByEmail(String email) {
@@ -549,6 +553,37 @@ public class UserService {
                     .build();
 
             problemStatusList.add(statusDto);
+        }
+
+        return problemStatusList;
+    }
+
+    /**
+     * 특정 학생의 특정 코딩 퀴즈(코딩 테스트)의 문제별 제출 상태 조회
+     */
+    public List<StudentProblemStatusDto> getStudentQuizProblemsStatus(Long userId, Long sectionId, Long quizId) {
+        List<Long> problemIds = quizProblemRepository.findProblemIdsByQuizId(quizId);
+
+        List<StudentProblemStatusDto> problemStatusList = new ArrayList<>();
+
+        for (Long problemId : problemIds) {
+            Problem problem = problemRepository.findById(problemId).orElse(null);
+            if (problem == null) continue;
+
+            String status = "NOT_SUBMITTED";
+            int submissionCount = submissionRepository.countByUserIdAndProblemId(userId, problemId);
+
+            if (submissionCount > 0) {
+                int acceptedCount = submissionRepository.countAcceptedByUserIdAndProblemId(userId, problemId);
+                status = acceptedCount > 0 ? "ACCEPTED" : "SUBMITTED";
+            }
+
+            problemStatusList.add(StudentProblemStatusDto.builder()
+                    .problemId(problemId)
+                    .problemTitle(problem.getTitle())
+                    .status(status)
+                    .submissionCount(submissionCount)
+                    .build());
         }
 
         return problemStatusList;
