@@ -13,7 +13,9 @@ import com.project.handongjudge.community.repository.QuestionRepository;
 import com.project.handongjudge.notice.entity.Notice;
 import com.project.handongjudge.notice.repository.NoticeRepository;
 import com.project.handongjudge.section.entity.Section;
+import com.project.handongjudge.section.entity.SectionUserRole;
 import com.project.handongjudge.section.repository.SectionRepository;
+import com.project.handongjudge.section.repository.SectionUserRoleRepository;
 import com.project.handongjudge.user.entity.Enrollment;
 import com.project.handongjudge.user.entity.User;
 import com.project.handongjudge.user.repository.EnrollmentRepository;
@@ -39,6 +41,7 @@ public class NotificationService {
     private final QuestionRepository questionRepository;
     private final CommentRepository commentRepository;
     private final SectionRepository sectionRepository;
+    private final SectionUserRoleRepository sectionUserRoleRepository;
     private final NoticeRepository noticeRepository;
     private final AssignmentRepository assignmentRepository;
 
@@ -320,8 +323,19 @@ public class NotificationService {
         }
     }
 
+    /** 해당 섹션의 관리자(교수·튜터) 목록 조회 */
+    private List<User> getSectionManagers(Section section) {
+        List<SectionUserRole> roles = sectionUserRoleRepository.findBySectionId(section.getId());
+        return roles.stream()
+                .filter(sur -> sur.getRole() == SectionUserRole.SectionRole.ADMIN
+                        || sur.getRole() == SectionUserRole.SectionRole.TUTOR)
+                .map(SectionUserRole::getUser)
+                .distinct()
+                .collect(Collectors.toList());
+    }
+
     /**
-     * 새 공지사항이 작성되었을 때 (섹션의 모든 학생에게 알림)
+     * 새 공지사항이 작성되었을 때 (섹션의 모든 학생 + 교수·튜터에게 알림)
      */
     @Async("taskExecutor")
     @Transactional
@@ -351,6 +365,18 @@ public class NotificationService {
 
                 notificationRepository.save(notification);
             }
+
+            // 교수·튜터(수업 관리자)에게도 알림
+            for (User manager : getSectionManagers(loadedSection)) {
+                Notification notification = Notification.builder()
+                        .recipient(manager)
+                        .actor(loadedSection.getInstructor())
+                        .notice(loadedNotice)
+                        .type(Notification.NotificationType.NOTICE_CREATED)
+                        .message(String.format("새 공지사항: %s", loadedNotice.getTitle()))
+                        .build();
+                notificationRepository.save(notification);
+            }
         } catch (Exception e) {
             System.err.println("공지사항 알림 발송 실패: " + e.getMessage());
             e.printStackTrace();
@@ -358,7 +384,7 @@ public class NotificationService {
     }
 
     /**
-     * 새 과제가 생성되었을 때 (섹션의 모든 학생에게 알림)
+     * 새 과제가 생성되었을 때 (섹션의 모든 학생 + 교수·튜터에게 알림)
      */
     @Async("taskExecutor")
     @Transactional
@@ -390,6 +416,20 @@ public class NotificationService {
 
                 notificationRepository.save(notification);
             }
+
+            // 교수·튜터(수업 관리자)에게도 알림
+            for (User manager : getSectionManagers(loadedSection)) {
+                Notification notification = Notification.builder()
+                        .recipient(manager)
+                        .actor(loadedSection.getInstructor())
+                        .assignment(loadedAssignment)
+                        .type(Notification.NotificationType.ASSIGNMENT_CREATED)
+                        .message(String.format("새 과제: %s (마감: %s)",
+                                loadedAssignment.getTitle(),
+                                loadedAssignment.getEndDate().toLocalDate()))
+                        .build();
+                notificationRepository.save(notification);
+            }
         } catch (Exception e) {
             System.err.println("과제 알림 발송 실패: " + e.getMessage());
             e.printStackTrace();
@@ -397,7 +437,7 @@ public class NotificationService {
     }
 
     /**
-     * 학생이 수업에 추가되었을 때 (교수에게 알림)
+     * 학생이 수업에 추가되었을 때 (교수·튜터에게 알림)
      */
     @Async("taskExecutor")
     @Transactional
@@ -413,18 +453,17 @@ public class NotificationService {
                 return;
             }
 
-            // 교수에게 알림 발송
-            User instructor = loadedSection.getInstructor();
-            if (instructor != null) {
+            String message = String.format("새 학생이 수업에 추가되었습니다: %s (%s)",
+                    loadedEnrollment.getUser().getName(),
+                    loadedSection.getCourse().getTitle() + " - Section " + loadedSection.getSectionNumber());
+
+            for (User manager : getSectionManagers(loadedSection)) {
                 Notification notification = Notification.builder()
-                        .recipient(instructor)
+                        .recipient(manager)
                         .actor(loadedEnrollment.getUser())
                         .type(Notification.NotificationType.STUDENT_ENROLLED)
-                        .message(String.format("새 학생이 수업에 추가되었습니다: %s (%s)", 
-                                loadedEnrollment.getUser().getName(),
-                                loadedSection.getCourse().getTitle() + " - Section " + loadedSection.getSectionNumber()))
+                        .message(message)
                         .build();
-
                 notificationRepository.save(notification);
             }
         } catch (Exception e) {
@@ -434,7 +473,7 @@ public class NotificationService {
     }
 
     /**
-     * 과제 마감 알림 (교수에게 알림)
+     * 과제 마감 알림 (교수·튜터에게 알림)
      * 마감일이 임박했거나 마감된 과제에 대해 알림 발송
      */
     @Async("taskExecutor")
@@ -451,29 +490,27 @@ public class NotificationService {
                 return;
             }
 
-            // 교수에게 알림 발송
-            User instructor = loadedSection.getInstructor();
-            if (instructor != null) {
-                String message;
-                if (isExpired) {
-                    message = String.format("과제가 마감되었습니다: %s (%s)", 
-                            loadedAssignment.getTitle(),
-                            loadedSection.getCourse().getTitle() + " - Section " + loadedSection.getSectionNumber());
-                } else {
-                    message = String.format("과제 마감이 임박했습니다: %s (마감: %s) (%s)", 
-                            loadedAssignment.getTitle(),
-                            loadedAssignment.getEndDate().toLocalDate(),
-                            loadedSection.getCourse().getTitle() + " - Section " + loadedSection.getSectionNumber());
-                }
+            String message;
+            if (isExpired) {
+                message = String.format("과제가 마감되었습니다: %s (%s)",
+                        loadedAssignment.getTitle(),
+                        loadedSection.getCourse().getTitle() + " - Section " + loadedSection.getSectionNumber());
+            } else {
+                message = String.format("과제 마감이 임박했습니다: %s (마감: %s) (%s)",
+                        loadedAssignment.getTitle(),
+                        loadedAssignment.getEndDate().toLocalDate(),
+                        loadedSection.getCourse().getTitle() + " - Section " + loadedSection.getSectionNumber());
+            }
 
+            User instructor = loadedSection.getInstructor();
+            for (User manager : getSectionManagers(loadedSection)) {
                 Notification notification = Notification.builder()
-                        .recipient(instructor)
-                        .actor(instructor) // 시스템 알림이므로 actor는 교수 본인
+                        .recipient(manager)
+                        .actor(instructor != null ? instructor : manager)
                         .assignment(loadedAssignment)
                         .type(Notification.NotificationType.ASSIGNMENT_DEADLINE)
                         .message(message)
                         .build();
-
                 notificationRepository.save(notification);
             }
         } catch (Exception e) {

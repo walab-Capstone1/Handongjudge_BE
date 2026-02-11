@@ -24,7 +24,7 @@ public class ProblemSet {
     @Column(nullable = false, length = 200)
     private String title;
 
-    @Column(length = 1000)
+    @Column(columnDefinition = "LONGTEXT")
     private String description;
 
     @Column(length = 500)

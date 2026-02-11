@@ -109,9 +109,9 @@ public class NoticeService {
         Notice notice = noticeRepository.findById(noticeId)
                 .orElseThrow(() -> new IllegalArgumentException("공지사항을 찾을 수 없습니다: " + noticeId));
 
-        // 권한 확인: 해당 Section의 ADMIN만 삭제 가능
-        if (!sectionRoleService.isAdmin(instructorId, notice.getSection().getId())) {
-            throw new IllegalArgumentException("공지사항 삭제는 수업 관리자만 가능합니다");
+        // 권한 확인: 해당 Section의 ADMIN 또는 TUTOR(수업 관리자/조교) 삭제 가능
+        if (!sectionRoleService.isManager(instructorId, notice.getSection().getId())) {
+            throw new IllegalArgumentException("공지사항 삭제는 수업 관리자(교수/조교)만 가능합니다");
         }
 
         noticeRepository.delete(notice);

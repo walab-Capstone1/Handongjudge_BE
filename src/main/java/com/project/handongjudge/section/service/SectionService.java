@@ -29,6 +29,7 @@ import com.project.handongjudge.problem.repository.ProblemRepository;
 import com.project.handongjudge.problem.service.ProblemService;
 import com.project.handongjudge.notice.entity.Notice;
 import com.project.handongjudge.notice.repository.NoticeRepository;
+import com.project.handongjudge.community.repository.NotificationRepository;
 import lombok.extern.slf4j.Slf4j;
 import java.io.IOException;
 import java.time.LocalDateTime;
@@ -50,6 +51,7 @@ public class SectionService {
     private final ProblemRepository problemRepository;
     private final ProblemService problemService;
     private final NoticeRepository noticeRepository;  // ✨ 공지사항 복사용
+    private final NotificationRepository notificationRepository;
 
     private String generateEnrollmentCode() {
         // UUID 기반 고유 코드 생성
@@ -114,7 +116,7 @@ public class SectionService {
 
         // 권한 확인: 해당 Section의 ADMIN만 활성화/비활성화 가능
         if (!sectionRoleService.isAdmin(userId, sectionId)) {
-            throw new IllegalArgumentException("수업 활성화/비활성화는 수업 관리자만 가능합니다");
+            throw new IllegalArgumentException("수업 활성화/비활성화는 수업 관리자(교수)만 가능합니다");
         }
 
         section.setActive(active);
@@ -126,9 +128,15 @@ public class SectionService {
         Section section = sectionRepository.findById(sectionId)
                 .orElseThrow(() -> new IllegalArgumentException("분반을 찾을 수 없습니다: " + sectionId));
 
-        // 권한 확인: 해당 분반의 ADMIN인지 확인
+        // 권한 확인: 해당 분반의 ADMIN만 삭제 가능
         if (!sectionRoleService.isAdmin(instructorId, sectionId)) {
             throw new IllegalArgumentException("해당 분반을 삭제할 권한이 없습니다");
+        }
+
+        // notifications.assignment_id FK 제약 회피: 해당 분반 과제를 참조하는 알림 먼저 삭제
+        List<Long> assignmentIds = assignmentRepository.findAssignmentIdsBySectionId(sectionId);
+        if (!assignmentIds.isEmpty()) {
+            notificationRepository.deleteByAssignment_IdIn(assignmentIds);
         }
 
         // Section 삭제 (CASCADE 설정에 따라 관련 데이터도 함께 삭제됨)
@@ -162,7 +170,7 @@ public class SectionService {
         Section sourceSection = sectionRepository.findById(sourceSectionId)
                 .orElseThrow(() -> new IllegalArgumentException("원본 Section을 찾을 수 없습니다: " + sourceSectionId));
 
-        // 권한 체크: 해당 Section의 ADMIN인지 확인
+        // 권한 체크: 해당 Section의 ADMIN만 복사 가능
         if (!sectionRoleService.isAdmin(instructorId, sourceSectionId)) {
             throw new IllegalArgumentException("이 수업을 복사할 권한이 없습니다.");
         }

@@ -148,9 +148,14 @@ public class ProblemService {
         User instructor = userRepository.findById(instructorId)
                 .orElseThrow(() -> new IllegalArgumentException("Instructor not found: " + instructorId));
 
+        String difficulty = (request.getDifficulty() != null && !request.getDifficulty().trim().isEmpty())
+                ? request.getDifficulty().trim()
+                : "1";
+
         Problem problem = Problem.builder()
                 .title(request.getTitle())
                 .description(fullDescription)
+                .difficulty(difficulty)
                 .domjudgeProblemId(domjudgeProblemId)
                 .timeLimit(Double.parseDouble(request.getTimeLimit()))
                 .memoryLimit(Integer.parseInt(request.getMemoryLimit()))
@@ -316,10 +321,12 @@ public class ProblemService {
                 .title(problem.getTitle())
                 .description(problem.getDescription())
                 .difficulty(problem.getDifficulty())
-                .memoryLimit(problem.getMemoryLimit())     // 새로 추가
-                .timeLimit(problem.getTimeLimit())         // 새로 추가
+                .memoryLimit(problem.getMemoryLimit())
+                .timeLimit(problem.getTimeLimit())
                 .isUsed(isUsed)
                 .assignmentCount(assignmentCount)
+                .problemSetCount(problemSetCount)
+                .quizCount(quizCount)
                 .createdAt(problem.getCreatedAt())
                 .build();
     }
@@ -343,8 +350,8 @@ public class ProblemService {
                 .build();
     }
 
-    public void addProblem(Long problemId, Long assignmentId) {
-        assignmentProblemService.addProblemToAssignment(assignmentId, problemId);
+    public void addProblem(Long problemId, Long assignmentId, Long instructorId) {
+        assignmentProblemService.addProblemToAssignment(assignmentId, problemId, instructorId);
     }
     // ProblemService.java에 추가
     public List<ProblemResponse> getAllProblems(Long instructorId) {

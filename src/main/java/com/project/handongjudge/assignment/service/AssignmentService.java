@@ -49,12 +49,12 @@ public class AssignmentService {
         Section section = sectionRepository.findById(sectionId)
                 .orElseThrow(() -> new IllegalArgumentException("Section not found"));
 
-        // 권한 확인: 해당 Section의 관리자(ADMIN 또는 TUTOR)인지 확인
-        if (!sectionRoleService.isManager(userId, sectionId)) {
+        // 권한 확인: 과제 생성은 ADMIN(교수)만 가능
+        if (!sectionRoleService.isAdmin(userId, sectionId)) {
             throw new IllegalArgumentException("해당 분반의 과제를 생성할 권한이 없습니다");
         }
 
-        // 2. Assignment 엔티티 생성 및 저장
+        // 2. Assignment 엔티티 생성 및 저장 (생성 시 비활성화 상태)
         Assignment assignment = Assignment.builder()
                 .section(section)
                 .assignmentNumber(request.getAssignmentNumber())
@@ -62,7 +62,7 @@ public class AssignmentService {
                 .description(request.getDescription())
                 .startDate(request.getStartDate())
                 .endDate(request.getEndDate())
-                .active(true)  // 추가
+                .active(false)
                 .build();
 
         Assignment savedAssignment = assignmentRepository.save(assignment);
@@ -296,9 +296,9 @@ public class AssignmentService {
         Assignment assignment = assignmentRepository.findById(assignmentId)
                 .orElseThrow(() -> new IllegalArgumentException("Assignment not found"));
 
-        // 2. 권한 확인: 해당 Section의 관리자인지 확인
+        // 2. 권한 확인: 과제 수정은 ADMIN(교수)만 가능
         Section section = assignment.getSection();
-        if (!sectionRoleService.isManager(userId, section.getId())) {
+        if (!sectionRoleService.isAdmin(userId, section.getId())) {
             throw new IllegalArgumentException("해당 과제를 수정할 권한이 없습니다");
         }
 
@@ -467,9 +467,9 @@ public class AssignmentService {
             throw new IllegalArgumentException("Section ID가 일치하지 않습니다.");
         }
 
-        // 권한 확인: 해당 Section의 ADMIN만 삭제 가능
-        if (!sectionRoleService.isAdmin(userId, assignment.getSection().getId())) {
-            throw new IllegalArgumentException("과제 삭제는 수업 관리자만 가능합니다");
+        // 권한 확인: 과제 삭제는 ADMIN(교수) 또는 TUTOR(조교) 가능
+        if (!sectionRoleService.isManager(userId, assignment.getSection().getId())) {
+            throw new IllegalArgumentException("과제 삭제는 수업 관리자(교수/조교)만 가능합니다");
         }
 
         // 과제에 연결된 문제 관계 삭제
