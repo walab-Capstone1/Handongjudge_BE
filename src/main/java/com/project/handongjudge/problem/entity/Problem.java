@@ -21,7 +21,7 @@ public class Problem {
 
     private String title;
 
-    @Column(length = 1000)
+    @Column(columnDefinition = "LONGTEXT")
     private String description;
 
     private String difficulty;

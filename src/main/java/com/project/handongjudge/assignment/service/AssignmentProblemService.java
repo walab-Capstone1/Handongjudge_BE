@@ -7,6 +7,7 @@ import com.project.handongjudge.assignment.repository.AssignmentRepository;
 import com.project.handongjudge.problem.entity.Problem;
 import com.project.handongjudge.problem.repository.ProblemRepository;
 import com.project.handongjudge.domjudge.service.DomjudgeService;
+import com.project.handongjudge.section.service.SectionRoleService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -21,10 +22,14 @@ public class AssignmentProblemService {
     private final AssignmentProblemRepository assignmentProblemRepository;
     private final ProblemRepository problemRepository;
     private final DomjudgeService domjudgeService;
+    private final SectionRoleService sectionRoleService;
 
-    public void addProblemToAssignment(Long assignmentId, Long problemId) {
+    public void addProblemToAssignment(Long assignmentId, Long problemId, Long userId) {
         Assignment assignment = assignmentRepository.findById(assignmentId)
                 .orElseThrow(() -> new IllegalArgumentException("Assignment not found"));
+        if (!sectionRoleService.isAdmin(userId, assignment.getSection().getId())) {
+            throw new IllegalArgumentException("과제에 문제를 추가할 권한이 없습니다(교수만 가능)");
+        }
         Problem problem = problemRepository.findById(problemId)
                 .orElseThrow(() -> new IllegalArgumentException("Problem not found"));
 
@@ -51,7 +56,12 @@ public class AssignmentProblemService {
         String label = "A";
         domjudgeService.addProblemToContest(contestId, domjudgeProblemId);
     }
-    public void removeProblemFromAssignment(Long assignmentId, Long problemId) {
+    public void removeProblemFromAssignment(Long assignmentId, Long problemId, Long userId) {
+        Assignment assignment = assignmentRepository.findById(assignmentId)
+                .orElseThrow(() -> new IllegalArgumentException("Assignment not found"));
+        if (!sectionRoleService.isAdmin(userId, assignment.getSection().getId())) {
+            throw new IllegalArgumentException("과제에서 문제를 제거할 권한이 없습니다(교수만 가능)");
+        }
         // 여러 개의 관계가 있을 수 있으므로 List로 조회
         List<AssignmentProblem> relations = assignmentProblemRepository
                 .findAllByAssignmentIdAndProblemId(assignmentId, problemId);
@@ -64,8 +74,6 @@ public class AssignmentProblemService {
         assignmentProblemRepository.deleteAll(relations);
         
         // DOMjudge Contest에서도 문제 제거
-        Assignment assignment = assignmentRepository.findById(assignmentId)
-                .orElseThrow(() -> new IllegalArgumentException("Assignment not found"));
         Problem problem = problemRepository.findById(problemId)
                 .orElseThrow(() -> new IllegalArgumentException("Problem not found"));
         

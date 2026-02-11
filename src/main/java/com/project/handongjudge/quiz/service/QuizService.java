@@ -337,12 +337,11 @@ public class QuizService {
 
             for (QuizProblem qp : quizProblems) {
                 Problem problem = qp.getProblem();
-                int problemPoints = (qp.getPoints() != null && qp.getPoints() > 0) ? qp.getPoints() : 1;
                 StudentGradeSummaryDTO.ProblemGradeDTO pg = new StudentGradeSummaryDTO.ProblemGradeDTO();
                 pg.setProblemId(problem.getId());
                 pg.setProblemTitle(problem.getTitle());
-                pg.setPoints(problemPoints);
-                totalPoints += problemPoints;
+                pg.setPoints(1); // 퀴즈: 통과 시 1점
+                totalPoints += 1;
 
                 Optional<Submission> submission = submissionRepository
                         .findAcceptedSubmissionsByUserAndProblem(
@@ -364,22 +363,16 @@ public class QuizService {
                     } else {
                         pg.setIsOnTime(true);
                     }
+                    // 테스트 케이스 전부 통과(AC)면 자동 1점
+                    if ("AC".equals(sub.getResult())) {
+                        pg.setScore(1);
+                        totalScore += 1;
+                    } else {
+                        pg.setScore(0);
+                    }
                 } else {
                     pg.setSubmitted(false);
                     pg.setIsOnTime(false);
-                }
-
-                // 저장된 성적(수동 입력)이 있으면 우선 사용, 없으면 제출 기반 자동 채점
-                Optional<QuizGrade> savedGrade = quizGradeRepository
-                        .findByQuizIdAndProblemIdAndStudentId(quizId, problem.getId(), student.getId());
-
-                if (savedGrade.isPresent() && savedGrade.get().getScore() != null) {
-                    pg.setScore(savedGrade.get().getScore());
-                    totalScore += savedGrade.get().getScore();
-                } else if (submission.isPresent() && "AC".equals(submission.get().getResult())) {
-                    pg.setScore(problemPoints);
-                    totalScore += problemPoints;
-                } else {
                     pg.setScore(0);
                 }
 

@@ -18,4 +18,6 @@ public class ProblemResponse {
     private Integer memoryLimit;  // MB 단위
     private Boolean isUsed;  // 사용 중인지 여부
     private Integer assignmentCount;  // 사용 중인 과제 개수
+    private Integer problemSetCount;  // 사용 중인 문제집 개수
+    private Integer quizCount;  // 사용 중인 코딩테스트(퀴즈) 개수
 }
