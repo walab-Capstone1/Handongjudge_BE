@@ -25,6 +25,7 @@ public class QuestionListDto {
     private String assignmentTitle;
     private String problemTitle;
     private Boolean hasAcceptedAnswer;
+    private Boolean isPublic;
 
     // Entity -> DTO 변환 (목록용 축약)
     public static QuestionListDto fromEntity(Question question) {
@@ -41,6 +42,7 @@ public class QuestionListDto {
                 .createdAt(question.getCreatedAt())
                 .assignmentTitle(question.getAssignment() != null ? question.getAssignment().getTitle() : null)
                 .problemTitle(question.getProblem() != null ? question.getProblem().getTitle() : null)
+                .isPublic(question.getIsPublic())
                 .build();
     }
 }

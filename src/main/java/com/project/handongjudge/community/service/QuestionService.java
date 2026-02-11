@@ -18,11 +18,14 @@ import com.project.handongjudge.user.entity.User;
 import com.project.handongjudge.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -109,7 +112,18 @@ public class QuestionService {
         Page<QuestionListDto> result = questions.map(QuestionListDto::fromEntity);
         
         if (!isInstructor(user, section)) {
-            // 필터링은 application level에서 처리 (성능 고려시 쿼리 레벨에서 처리 필요)
+            // 비공개 질문 필터링: 작성자 본인 또는 교수만 볼 수 있음
+            List<QuestionListDto> filteredContent = result.getContent().stream()
+                    .filter(q -> {
+                        // 공개 글이거나, 작성자 본인인 경우만 표시
+                        if (q.getIsPublic()) return true;
+                        // 비공개 글은 작성자만 볼 수 있음
+                        Question originalQuestion = questionRepository.findById(q.getId()).orElse(null);
+                        return originalQuestion != null && originalQuestion.getAuthor().getId().equals(userId);
+                    })
+                    .collect(Collectors.toList());
+            
+            return new PageImpl<>(filteredContent, pageable, filteredContent.size());
         }
 
         return result;
@@ -257,6 +271,21 @@ public class QuestionService {
 
         // 비공개 질문 필터링
         Page<QuestionListDto> result = questions.map(QuestionListDto::fromEntity);
+
+        if (!isInstructor(user, section)) {
+            // 비공개 질문 필터링: 작성자 본인 또는 교수만 볼 수 있음
+            List<QuestionListDto> filteredContent = result.getContent().stream()
+                    .filter(q -> {
+                        // 공개 글이거나, 작성자 본인인 경우만 표시
+                        if (q.getIsPublic()) return true;
+                        // 비공개 글은 작성자만 볼 수 있음
+                        Question originalQuestion = questionRepository.findById(q.getId()).orElse(null);
+                        return originalQuestion != null && originalQuestion.getAuthor().getId().equals(userId);
+                    })
+                    .collect(Collectors.toList());
+            
+            return new PageImpl<>(filteredContent, pageable, filteredContent.size());
+        }
 
         return result;
     }
