@@ -156,21 +156,10 @@ public class GradeServiceImpl implements GradeService {
                 StudentGradeSummaryDTO.ProblemGradeDTO pg = new StudentGradeSummaryDTO.ProblemGradeDTO();
                 pg.setProblemId(problem.getId());
                 pg.setProblemTitle(problem.getTitle());
-                pg.setPoints(ap.getPoints());
-                totalPoints += ap.getPoints();
+                pg.setPoints(1); // 과제/퀴즈: 통과 시 1점
+                totalPoints += 1;
 
-                // 성적 조회
-                Optional<Grade> grade = gradeRepository
-                        .findByAssignmentIdAndProblemIdAndStudentId(
-                                assignmentId, problem.getId(), student.getId()
-                        );
-
-                if (grade.isPresent() && grade.get().getScore() != null) {
-                    pg.setScore(grade.get().getScore());
-                    totalScore += grade.get().getScore();
-                }
-
-                // 제출 정보 조회
+                // 제출 정보 조회 (AC = 테스트 케이스 전부 통과)
                 Optional<Submission> submission = submissionRepository
                         .findAcceptedSubmissionsByUserAndProblem(
                                 student.getId(), problem.getId(), sectionId
@@ -181,8 +170,6 @@ public class GradeServiceImpl implements GradeService {
                 if (submission.isPresent()) {
                     pg.setSubmitted(true);
                     pg.setSubmittedAt(submission.get().getSubmittedAt());
-                    
-                    // 제시간 제출 여부 확인
                     if (assignment.getEndDate() != null) {
                         pg.setIsOnTime(
                                 submission.get().getSubmittedAt().isBefore(assignment.getEndDate()) ||
@@ -191,11 +178,18 @@ public class GradeServiceImpl implements GradeService {
                     } else {
                         pg.setIsOnTime(true);
                     }
-                    
                     pg.setResult(submission.get().getResult());
+                    // 테스트 케이스 전부 통과(AC)면 자동 1점
+                    if ("AC".equals(submission.get().getResult())) {
+                        pg.setScore(1);
+                        totalScore += 1;
+                    } else {
+                        pg.setScore(0);
+                    }
                 } else {
                     pg.setSubmitted(false);
                     pg.setIsOnTime(false);
+                    pg.setScore(0);
                 }
 
                 problemGrades.add(pg);
@@ -237,20 +231,9 @@ public class GradeServiceImpl implements GradeService {
             StudentGradeSummaryDTO.ProblemGradeDTO pg = new StudentGradeSummaryDTO.ProblemGradeDTO();
             pg.setProblemId(problem.getId());
             pg.setProblemTitle(problem.getTitle());
-            pg.setPoints(ap.getPoints());
-            totalPoints += ap.getPoints();
+            pg.setPoints(1);
+            totalPoints += 1;
 
-            Optional<Grade> grade = gradeRepository
-                    .findByAssignmentIdAndProblemIdAndStudentId(
-                            assignmentId, problem.getId(), userId
-                    );
-
-            if (grade.isPresent() && grade.get().getScore() != null) {
-                pg.setScore(grade.get().getScore());
-                totalScore += grade.get().getScore();
-            }
-
-            // 제출 정보 조회
             Optional<Submission> submission = submissionRepository
                     .findAcceptedSubmissionsByUserAndProblem(
                             userId, problem.getId(), assignment.getSection().getId()
@@ -261,7 +244,6 @@ public class GradeServiceImpl implements GradeService {
             if (submission.isPresent()) {
                 pg.setSubmitted(true);
                 pg.setSubmittedAt(submission.get().getSubmittedAt());
-                
                 if (assignment.getEndDate() != null) {
                     pg.setIsOnTime(
                             submission.get().getSubmittedAt().isBefore(assignment.getEndDate()) ||
@@ -270,11 +252,17 @@ public class GradeServiceImpl implements GradeService {
                 } else {
                     pg.setIsOnTime(true);
                 }
-                
                 pg.setResult(submission.get().getResult());
+                if ("AC".equals(submission.get().getResult())) {
+                    pg.setScore(1);
+                    totalScore += 1;
+                } else {
+                    pg.setScore(0);
+                }
             } else {
                 pg.setSubmitted(false);
                 pg.setIsOnTime(false);
+                pg.setScore(0);
             }
 
             problemGrades.add(pg);

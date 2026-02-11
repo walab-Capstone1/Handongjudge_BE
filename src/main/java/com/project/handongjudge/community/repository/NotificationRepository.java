@@ -45,5 +45,8 @@ public interface NotificationRepository extends JpaRepository<Notification, Long
             @Param("recipient") User recipient,
             @Param("section") Section section,
             Pageable pageable);
+
+    /** 해당 과제들을 참조하는 알림 일괄 삭제 (분반 삭제 시 FK 제약 회피용) */
+    void deleteByAssignment_IdIn(List<Long> assignmentIds);
 }
 

@@ -12,6 +12,8 @@ import java.util.Optional;
 public interface AssignmentProblemRepository extends JpaRepository<AssignmentProblem, Long> {
     // 기존 메서드들
     List<AssignmentProblem> findByAssignmentIdOrderByProblemOrderAsc(Long assignmentId);
+    /** 과제에 추가한 순서(DB 저장 순서)대로 조회 */
+    List<AssignmentProblem> findByAssignmentIdOrderByIdAsc(Long assignmentId);
     Optional<AssignmentProblem> findByAssignmentIdAndProblemId(Long assignmentId, Long problemId);
     List<AssignmentProblem> findAllByAssignmentIdAndProblemId(Long assignmentId, Long problemId);
 

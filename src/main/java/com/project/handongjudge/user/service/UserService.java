@@ -10,14 +10,17 @@ import com.project.handongjudge.user.repository.EnrollmentRepository;
 import com.project.handongjudge.user.repository.UserRepository;
 import com.project.handongjudge.user.repository.UserReadStatusRepository;
 import com.project.handongjudge.user.entity.Enrollment;
+import com.project.handongjudge.section.entity.Section;
 import com.project.handongjudge.section.entity.SectionUserRole;
 import com.project.handongjudge.section.repository.SectionRepository;
+import com.project.handongjudge.section.repository.SectionUserRoleRepository;
 import com.project.handongjudge.section.service.SectionRoleService;
 import com.project.handongjudge.notice.entity.Notice;
 import com.project.handongjudge.notice.repository.NoticeRepository;
 import com.project.handongjudge.assignment.entity.Assignment;
 import com.project.handongjudge.assignment.repository.AssignmentRepository;
 import com.project.handongjudge.assignment.repository.AssignmentProblemRepository;
+import com.project.handongjudge.quiz.repository.QuizProblemRepository;
 import com.project.handongjudge.submission.repository.SubmissionRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -44,6 +47,7 @@ public class UserService {
     private final EnrollmentRepository enrollmentRepository;
     private final PasswordEncoder passwordEncoder;
     private final SectionRepository sectionRepository;
+    private final SectionUserRoleRepository sectionUserRoleRepository;
     private final SectionRoleService sectionRoleService;
     private final DomjudgeService domjudgeService;
     private final UserReadStatusRepository userReadStatusRepository;
@@ -52,11 +56,13 @@ public class UserService {
     private final AssignmentProblemRepository assignmentProblemRepository;
     private final SubmissionRepository submissionRepository;
     private final ProblemRepository problemRepository;
+    private final QuizProblemRepository quizProblemRepository;
 
     @Autowired
     public UserService(UserRepository userRepository,
                        EnrollmentRepository enrollmentRepository,
                        SectionRepository sectionRepository,
+                       SectionUserRoleRepository sectionUserRoleRepository,
                        SectionRoleService sectionRoleService,
                        DomjudgeService domjudgeService,
                        UserReadStatusRepository userReadStatusRepository,
@@ -65,11 +71,13 @@ public class UserService {
                        AssignmentProblemRepository assignmentProblemRepository,
                        SubmissionRepository submissionRepository,
                        ProblemRepository problemRepository,
+                       QuizProblemRepository quizProblemRepository,
                        @Lazy PasswordEncoder passwordEncoder) {
         this.userRepository = userRepository;
         this.enrollmentRepository = enrollmentRepository;
         this.passwordEncoder = passwordEncoder;
         this.sectionRepository = sectionRepository;
+        this.sectionUserRoleRepository = sectionUserRoleRepository;
         this.sectionRoleService = sectionRoleService;
         this.domjudgeService = domjudgeService;
         this.userReadStatusRepository = userReadStatusRepository;
@@ -78,6 +86,7 @@ public class UserService {
         this.assignmentProblemRepository = assignmentProblemRepository;
         this.submissionRepository = submissionRepository;
         this.problemRepository = problemRepository;
+        this.quizProblemRepository = quizProblemRepository;
     }
 
     public Optional<User> findByEmail(String email) {
@@ -267,25 +276,82 @@ public class UserService {
     }
 
     /**
-     * 특정 분반의 학생 목록 조회 (과제 진도율 포함)
+     * 특정 분반의 수강생·관리자 목록 조회 (과제 진도율 포함)
+     * Enrollment에 있는 수강생 + SectionUserRole에만 있는 ADMIN/TUTOR 포함 (어드민이 목록 맨 위에 오도록)
      */
     public List<StudentDto> getStudentsBySection(Long sectionId) {
-        List<StudentDto> students = enrollmentRepository.findStudentsBySectionId(sectionId);
+        Section section = sectionRepository.findById(sectionId)
+                .orElseThrow(() -> new IllegalArgumentException("분반을 찾을 수 없습니다: " + sectionId));
 
-        // 각 학생의 과제 진도율 계산
-        for (StudentDto student : students) {
-            calculateAssignmentProgress(student, sectionId);
+        // Enrollment 기준 수강생 목록 (진도율 계산)
+        List<StudentDto> fromEnrollment = enrollmentRepository.findStudentsBySectionId(sectionId);
+        Map<Long, StudentDto> userIdToDto = new HashMap<>();
+        for (StudentDto dto : fromEnrollment) {
+            calculateAssignmentProgress(dto, sectionId);
+            userIdToDto.put(dto.getUserId(), dto);
         }
 
-        // 분반 내 역할 설정 (ADMIN, TUTOR, STUDENT)
-        for (StudentDto student : students) {
-            String roleName = sectionRoleService.getUserRoleInSection(student.getUserId(), sectionId)
+        // 분반 내 모든 역할(ADMIN, TUTOR, STUDENT) 기준으로 목록 구성
+        List<SectionUserRole> sectionRoles = sectionUserRoleRepository.findBySectionId(sectionId);
+        String sectionName = section.getCourse().getTitle() + " - "
+                + (section.getSectionNumber() != null ? section.getSectionNumber() + "분반" : "");
+        Integer sectionNumber = section.getSectionNumber();
+
+        List<StudentDto> result = new ArrayList<>();
+        for (SectionUserRole sur : sectionRoles) {
+            Long userId = sur.getUser().getId();
+            String roleName = sur.getRole().name();
+            if (userIdToDto.containsKey(userId)) {
+                StudentDto dto = userIdToDto.get(userId);
+                dto.setRole(roleName);
+                result.add(dto);
+                userIdToDto.remove(userId); // 중복 방지
+            } else {
+                // Enrollment에 없고 SectionUserRole에만 있는 경우 (ADMIN·튜터 등)
+                User u = sur.getUser();
+                StudentDto dto = StudentDto.builder()
+                        .userId(u.getId())
+                        .name(u.getName())
+                        .email(u.getEmail() != null ? u.getEmail() : "")
+                        .studentId(u.getStudentId() != null ? u.getStudentId() : "")
+                        .teamId("")
+                        .sectionId(sectionId)
+                        .sectionName(sectionName)
+                        .courseTitle(section.getCourse().getTitle())
+                        .sectionNumber(sectionNumber)
+                        .enrolledAt(null)
+                        .lastLogin(null)
+                        .assignmentCompletionRate(0.0)
+                        .completedAssignments(0)
+                        .totalAssignments(assignmentRepository.countBySectionId(sectionId))
+                        .role(roleName)
+                        .build();
+                result.add(dto);
+            }
+        }
+
+        // Enrollment에만 있고 SectionUserRole에 없는 경우(레거시) STUDENT로 추가
+        for (StudentDto dto : userIdToDto.values()) {
+            dto.setRole(sectionRoleService.getUserRoleInSection(dto.getUserId(), sectionId)
                     .map(Enum::name)
-                    .orElse("STUDENT");
-            student.setRole(roleName);
+                    .orElse("STUDENT"));
+            result.add(dto);
         }
 
-        return students;
+        // 기본 정렬: 관리자(ADMIN)가 항상 위, 그다음 튜터(TUTOR), 그다음 수강생(STUDENT)
+        result.sort((a, b) -> {
+            int order = roleOrder(a.getRole()) - roleOrder(b.getRole());
+            if (order != 0) return order;
+            return Long.compare(a.getUserId(), b.getUserId());
+        });
+        return result;
+    }
+
+    private static int roleOrder(String role) {
+        if (role == null) return 2;
+        if ("ADMIN".equals(role)) return 0;
+        if ("TUTOR".equals(role)) return 1;
+        return 2; // STUDENT
     }
 
     /**
@@ -487,6 +553,37 @@ public class UserService {
                     .build();
 
             problemStatusList.add(statusDto);
+        }
+
+        return problemStatusList;
+    }
+
+    /**
+     * 특정 학생의 특정 코딩 퀴즈(코딩 테스트)의 문제별 제출 상태 조회
+     */
+    public List<StudentProblemStatusDto> getStudentQuizProblemsStatus(Long userId, Long sectionId, Long quizId) {
+        List<Long> problemIds = quizProblemRepository.findProblemIdsByQuizId(quizId);
+
+        List<StudentProblemStatusDto> problemStatusList = new ArrayList<>();
+
+        for (Long problemId : problemIds) {
+            Problem problem = problemRepository.findById(problemId).orElse(null);
+            if (problem == null) continue;
+
+            String status = "NOT_SUBMITTED";
+            int submissionCount = submissionRepository.countByUserIdAndProblemId(userId, problemId);
+
+            if (submissionCount > 0) {
+                int acceptedCount = submissionRepository.countAcceptedByUserIdAndProblemId(userId, problemId);
+                status = acceptedCount > 0 ? "ACCEPTED" : "SUBMITTED";
+            }
+
+            problemStatusList.add(StudentProblemStatusDto.builder()
+                    .problemId(problemId)
+                    .problemTitle(problem.getTitle())
+                    .status(status)
+                    .submissionCount(submissionCount)
+                    .build());
         }
 
         return problemStatusList;

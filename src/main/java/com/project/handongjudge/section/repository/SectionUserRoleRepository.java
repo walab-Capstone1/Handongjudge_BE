@@ -65,9 +65,9 @@ public interface SectionUserRoleRepository extends JpaRepository<SectionUserRole
     List<SectionUserRole> findEnrolledSectionsByUserId(@Param("userId") Long userId);
 
     /**
-     * 특정 수업에서 특정 사용자의 역할 삭제
+     * 특정 수업에서 특정 사용자의 역할 삭제 (clearAutomatically: 영속성 컨텍스트 반영)
      */
-    @Modifying
+    @Modifying(clearAutomatically = true)
     @Query("DELETE FROM SectionUserRole sur WHERE sur.section.id = :sectionId AND sur.user.id = :userId")
     void deleteBySectionIdAndUserId(@Param("sectionId") Long sectionId, @Param("userId") Long userId);
 }
