@@ -67,8 +67,8 @@ app:
   oauth2:
     authorized-redirect-uris:
       #- http://localhost:3000/auth/callback  # 프론트엔드 콜백 페이지
-       - https://hj.walab.info/auth/callback #개발용
-      #- https://hcl.walab.info/auth/callback
+      # - https://hj.walab.info/auth/callback #개발용
+      - https://hcl.walab.info/auth/callback
 logging:
   level:
     com.project.handongjudge: DEBUG
