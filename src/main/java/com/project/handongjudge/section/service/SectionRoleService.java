@@ -269,7 +269,7 @@ public class SectionRoleService {
     }
 
     /**
-     * 역할 제거
+     * 관리자/튜터 역할 제거 → 해당 수업에서 역할을 STUDENT로 변경 (행 삭제 X)
      * @param sectionId 수업 ID
      * @param userId 사용자 ID
      * @param adminUserId ADMIN 권한을 가진 사용자 ID (권한 체크용)
@@ -281,22 +281,29 @@ public class SectionRoleService {
             throw new IllegalArgumentException("역할을 제거할 권한이 없습니다");
         }
 
-        // ADMIN 역할은 제거 불가 (최소 1명의 ADMIN이 필요)
-        Optional<SectionUserRole> role = sectionUserRoleRepository
+        Optional<SectionUserRole> roleOpt = sectionUserRoleRepository
                 .findBySectionIdAndUserId(sectionId, userId);
-        
-        if (role.isPresent() && role.get().getRole() == SectionUserRole.SectionRole.ADMIN) {
-            // 해당 section의 ADMIN 수 확인
+
+        if (roleOpt.isEmpty()) {
+            log.warn("역할 없음 - sectionId: {}, userId: {}", sectionId, userId);
+            return;
+        }
+
+        SectionUserRole sur = roleOpt.get();
+
+        // ADMIN 역할: 최소 1명의 ADMIN이 필요하므로 마지막 ADMIN은 STUDENT로 변경 불가
+        if (sur.getRole() == SectionUserRole.SectionRole.ADMIN) {
             List<SectionUserRole> admins = sectionUserRoleRepository
                     .findAdminsBySectionId(sectionId);
-            
             if (admins.size() <= 1) {
                 throw new IllegalArgumentException("최소 1명의 ADMIN이 필요합니다");
             }
         }
 
-        sectionUserRoleRepository.deleteBySectionIdAndUserId(sectionId, userId);
-        log.info("역할 제거 완료 - sectionId: {}, userId: {}", sectionId, userId);
+        // 삭제하지 않고 STUDENT로 변경
+        sur.setRole(SectionUserRole.SectionRole.STUDENT);
+        sectionUserRoleRepository.save(sur);
+        log.info("역할을 STUDENT로 변경 완료 - sectionId: {}, userId: {}", sectionId, userId);
     }
 
     /**
