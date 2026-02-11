@@ -276,6 +276,45 @@ public class UserController {
     }
 
     /**
+     * 특정 학생의 특정 코딩 퀴즈의 문제별 제출 상태 조회
+     */
+    @GetMapping("/students/{userId}/sections/{sectionId}/quizzes/{quizId}/problems-status")
+    public ResponseEntity<Map<String, Object>> getStudentQuizProblemsStatus(
+            @PathVariable Long userId,
+            @PathVariable Long sectionId,
+            @PathVariable Long quizId,
+            Authentication authentication) {
+        try {
+            Long requestUserId = Long.parseLong(authentication.getName());
+            User requestUser = userRepository.findById(requestUserId)
+                    .orElseThrow(() -> new RuntimeException("User not found"));
+
+            // 전역 관리자이거나, 해당 분반의 관리자/조교이거나, 본인인 경우 접근 허용
+            boolean isAuthorized = requestUser.getRole() == User.Role.ADMIN
+                    || requestUser.getRole() == User.Role.SUPER_ADMIN
+                    || sectionRoleService.isManager(requestUserId, sectionId)
+                    || requestUserId.equals(userId);
+
+            if (!isAuthorized) {
+                return buildErrorResponse("권한이 없습니다.");
+            }
+
+            List<StudentProblemStatusDto> problemStatusList =
+                    userService.getStudentQuizProblemsStatus(userId, sectionId, quizId);
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("message", "퀴즈 문제 상태 조회 성공");
+            response.put("data", problemStatusList);
+            return ResponseEntity.ok(response);
+
+        } catch (Exception e) {
+            log.error("퀴즈 문제 상태 조회 실패: userId={}, quizId={}", userId, quizId, e);
+            return buildErrorResponse("문제 상태를 가져오지 못했습니다.");
+        }
+    }
+
+    /**
      * 사용자의 모든 수업별 역할 목록 조회
      */
     @GetMapping("/sections/roles")
