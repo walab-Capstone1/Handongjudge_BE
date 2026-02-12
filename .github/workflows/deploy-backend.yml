@@ -18,7 +18,7 @@ jobs:
             echo "🚀 Starting backend deployment..."
             
             # 백엔드 디렉토리로 이동
-            cd /path/to/handongjudge/docker/Handongjudge_BE
+            cd /home2/handongjudge/dev/Handongjudge_BE
             
             # 최신 코드 가져오기
             echo "📥 Pulling latest code..."
@@ -26,9 +26,9 @@ jobs:
             
             # Docker 컨테이너 재빌드 및 재시작
             echo "🔨 Building and restarting Docker container..."
-            cd /path/to/handongjudge/docker
-            docker-compose build backend
-            docker-compose up -d backend
+            cd /home2/handongjudge/dev
+            sudo docker compose build --no-cache backend
+            sudo docker compose up -d backend
             
             echo "✅ Backend deployment completed!"
 
