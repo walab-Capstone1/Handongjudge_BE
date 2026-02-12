@@ -403,11 +403,14 @@ public class UserController {
                         Map<String, Object> sectionData = new HashMap<>();
                         sectionData.put("sectionId", sur.getSection().getId());
                         sectionData.put("role", sur.getRole().name());
+                        sectionData.put("createdAt", sur.getSection().getCreatedAt() != null
+                                ? sur.getSection().getCreatedAt().toString()
+                                : null);
                         sectionData.put("sectionInfo", Map.of(
                                 "sectionId", sectionInfo.getSectionId(),
                                 "sectionNumber", sectionInfo.getSectionNumber() != null ? sectionInfo.getSectionNumber() : "",
-                                "courseTitle", sectionInfo.getCourseTitle(),
-                                "instructorName", sectionInfo.getInstructorName(),
+                                "courseTitle", sectionInfo.getCourseTitle() != null ? sectionInfo.getCourseTitle() : "",
+                                "instructorName", sectionInfo.getInstructorName() != null ? sectionInfo.getInstructorName() : "",
                                 "enrollmentCode", sectionInfo.getEnrollmentCode() != null ? sectionInfo.getEnrollmentCode() : "",
                                 "active", sectionInfo.getActive() != null ? sectionInfo.getActive() : false
                         ));

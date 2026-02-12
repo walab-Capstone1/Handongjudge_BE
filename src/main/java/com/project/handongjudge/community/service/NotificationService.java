@@ -16,12 +16,14 @@ import com.project.handongjudge.section.entity.Section;
 import com.project.handongjudge.section.entity.SectionUserRole;
 import com.project.handongjudge.section.repository.SectionRepository;
 import com.project.handongjudge.section.repository.SectionUserRoleRepository;
+import com.project.handongjudge.section.service.SectionRoleService;
 import com.project.handongjudge.user.entity.Enrollment;
 import com.project.handongjudge.user.entity.User;
 import com.project.handongjudge.user.repository.EnrollmentRepository;
 import com.project.handongjudge.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
@@ -44,6 +46,21 @@ public class NotificationService {
     private final SectionUserRoleRepository sectionUserRoleRepository;
     private final NoticeRepository noticeRepository;
     private final AssignmentRepository assignmentRepository;
+    private final SectionRoleService sectionRoleService;
+
+    /**
+     * 학생에게 비활성 과제 알림을 숨길지 여부. (관리자는 그대로 노출)
+     */
+    private boolean shouldHideAssignmentNotificationFromUser(Notification n, Long userId) {
+        if (n.getType() != Notification.NotificationType.ASSIGNMENT_CREATED || n.getAssignment() == null) {
+            return false;
+        }
+        Assignment a = n.getAssignment();
+        if (Boolean.TRUE.equals(a.getActive())) {
+            return false;
+        }
+        return !sectionRoleService.isManager(userId, a.getSection().getId());
+    }
 
     /**
      * 사용자의 알림 목록 조회
@@ -69,7 +86,13 @@ public class NotificationService {
                     user, pageable);
         }
 
-        return notifications.map(NotificationResponseDto::fromEntity);
+        // 학생에게는 비활성 과제 알림 미노출 (이미 저장된 알림도 조회 시 필터링)
+        List<Notification> filtered = notifications.getContent().stream()
+                .filter(n -> !shouldHideAssignmentNotificationFromUser(n, userId))
+                .collect(Collectors.toList());
+        Page<Notification> filteredPage = new PageImpl<>(
+                filtered, notifications.getPageable(), notifications.getTotalElements());
+        return filteredPage.map(NotificationResponseDto::fromEntity);
     }
 
     /**
@@ -82,7 +105,9 @@ public class NotificationService {
         List<Notification> notifications = notificationRepository
                 .findByRecipientAndIsReadFalseOrderByCreatedAtDesc(user);
 
+        // 학생에게는 비활성 과제 알림 미노출
         return notifications.stream()
+                .filter(n -> !shouldHideAssignmentNotificationFromUser(n, userId))
                 .map(NotificationResponseDto::fromEntity)
                 .collect(Collectors.toList());
     }
@@ -94,7 +119,13 @@ public class NotificationService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new CustomException("사용자를 찾을 수 없습니다"));
 
-        return notificationRepository.countByRecipientAndIsReadFalse(user);
+        List<Notification> unread = notificationRepository
+                .findByRecipientAndIsReadFalseOrderByCreatedAtDesc(user);
+        // 학생에게는 비활성 과제 알림 제외한 개수
+        long count = unread.stream()
+                .filter(n -> !shouldHideAssignmentNotificationFromUser(n, userId))
+                .count();
+        return count;
     }
 
     /**
@@ -384,7 +415,9 @@ public class NotificationService {
     }
 
     /**
-     * 새 과제가 생성되었을 때 (섹션의 모든 학생 + 교수·튜터에게 알림)
+     * 새 과제가 생성되었을 때 알림 발송.
+     * - 학생: 활성화(active=true)된 과제일 때만 알림.
+     * - 교수·튜터: 활성/비활성 구분 없이 항상 알림.
      */
     @Async("taskExecutor")
     @Transactional
@@ -400,24 +433,25 @@ public class NotificationService {
                 return;
             }
 
-            // 해당 섹션에 등록된 모든 학생 조회
-            List<Enrollment> enrollments = enrollmentRepository.findBySection(loadedSection);
-            
-            for (Enrollment enrollment : enrollments) {
-                Notification notification = Notification.builder()
-                        .recipient(enrollment.getUser())
-                        .actor(loadedSection.getInstructor())
-                        .assignment(loadedAssignment)
-                        .type(Notification.NotificationType.ASSIGNMENT_CREATED)
-                        .message(String.format("새 과제: %s (마감: %s)", 
-                                loadedAssignment.getTitle(), 
-                                loadedAssignment.getEndDate().toLocalDate()))
-                        .build();
+            // 학생에게는 활성화된 과제만 알림 (비활성화 상태로 생성된 과제는 학생에게 알리지 않음)
+            if (Boolean.TRUE.equals(loadedAssignment.getActive())) {
+                List<Enrollment> enrollments = enrollmentRepository.findBySection(loadedSection);
+                for (Enrollment enrollment : enrollments) {
+                    Notification notification = Notification.builder()
+                            .recipient(enrollment.getUser())
+                            .actor(loadedSection.getInstructor())
+                            .assignment(loadedAssignment)
+                            .type(Notification.NotificationType.ASSIGNMENT_CREATED)
+                            .message(String.format("새 과제: %s (마감: %s)",
+                                    loadedAssignment.getTitle(),
+                                    loadedAssignment.getEndDate().toLocalDate()))
+                            .build();
 
-                notificationRepository.save(notification);
+                    notificationRepository.save(notification);
+                }
             }
 
-            // 교수·튜터(수업 관리자)에게도 알림
+            // 교수·튜터(수업 관리자)에게는 과제 생성 시 항상 알림 (활성/비활성 구분 없음)
             for (User manager : getSectionManagers(loadedSection)) {
                 Notification notification = Notification.builder()
                         .recipient(manager)

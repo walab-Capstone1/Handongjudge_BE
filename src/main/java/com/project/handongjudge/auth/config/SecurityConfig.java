@@ -20,6 +20,7 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
@@ -60,7 +61,10 @@ public class SecurityConfig extends WebSecurityConfigurerAdapter {
 
     @Bean
     public RestTemplate restTemplate() {
-        return new RestTemplate();
+        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
+        factory.setConnectTimeout(10_000);   // 10초
+        factory.setReadTimeout(300_000);     // 5분 (문제 ZIP 업로드 등 대용량 요청 대비)
+        return new RestTemplate(factory);
     }
     /**
      * HTTP 보안 설정
