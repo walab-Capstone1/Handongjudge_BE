@@ -27,8 +27,8 @@ jobs:
             # Docker 컨테이너 재빌드 및 재시작
             echo "🔨 Building and restarting Docker container..."
             cd /home2/handongjudge/docker
-            sudo docker compose build --no-cache cl_backend
-            sudo docker compose up -d cl_backend
+            sudo docker compose build --no-cache backend
+            sudo docker compose up -d backend
             
             echo "✅ Backend deployment completed!"
 
