@@ -48,5 +48,8 @@ public interface NotificationRepository extends JpaRepository<Notification, Long
 
     /** 해당 과제들을 참조하는 알림 일괄 삭제 (분반 삭제 시 FK 제약 회피용) */
     void deleteByAssignment_IdIn(List<Long> assignmentIds);
+
+    /** 해당 공지들을 참조하는 알림 일괄 삭제 (분반 삭제 시 notice_id FK 제약 회피용) */
+    void deleteByNotice_IdIn(List<Long> noticeIds);
 }
 

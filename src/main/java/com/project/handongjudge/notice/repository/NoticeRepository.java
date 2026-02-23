@@ -26,4 +26,8 @@ public interface NoticeRepository extends JpaRepository<Notice, Long> {
 
     // 기존 메서드들에 추가
     List<Notice> findByIdIn(List<Long> ids);
+
+    /** 분반 삭제 시 해당 분반 공지 ID 목록 조회 (알림 FK 삭제용) */
+    @Query("SELECT n.id FROM Notice n WHERE n.section.id = :sectionId")
+    List<Long> findNoticeIdsBySectionId(@Param("sectionId") Long sectionId);
 }

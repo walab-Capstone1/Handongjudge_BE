@@ -37,5 +37,8 @@ public interface GradeRepository extends JpaRepository<Grade, Long> {
            "WHERE ap.assignment.id = :assignmentId AND ap.problem.id = :problemId")
     Optional<Integer> findProblemPoints(@Param("assignmentId") Long assignmentId,
                                        @Param("problemId") Long problemId);
+
+    /** 분반 삭제 시 FK 제약 회피: 해당 과제들을 참조하는 성적 삭제 */
+    void deleteByAssignment_IdIn(List<Long> assignmentIds);
 }
 
