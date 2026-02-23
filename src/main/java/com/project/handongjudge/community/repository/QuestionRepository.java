@@ -6,6 +6,7 @@ import com.project.handongjudge.user.entity.User;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -59,6 +60,11 @@ public interface QuestionRepository extends JpaRepository<Question, Long> {
 
     // 핀된 질문 목록
     List<Question> findBySectionAndIsPinnedTrueOrderByCreatedAtDesc(Section section);
+
+    /** 과제 삭제 시 FK 제약 회피: 해당 과제를 참조하는 질문의 assignment를 null로 변경 (질문은 유지) */
+    @Modifying
+    @Query("UPDATE Question q SET q.assignment = null WHERE q.assignment.id = :assignmentId")
+    int setAssignmentNullByAssignmentId(@Param("assignmentId") Long assignmentId);
 }
 
 
