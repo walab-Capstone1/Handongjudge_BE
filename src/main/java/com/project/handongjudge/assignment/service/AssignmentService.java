@@ -5,6 +5,8 @@ import com.project.handongjudge.assignment.entity.Assignment;
 import com.project.handongjudge.assignment.entity.AssignmentProblem;
 import com.project.handongjudge.assignment.repository.AssignmentRepository;
 import com.project.handongjudge.assignment.repository.AssignmentProblemRepository;
+import com.project.handongjudge.community.repository.NotificationRepository;
+import com.project.handongjudge.community.repository.QuestionRepository;
 import com.project.handongjudge.community.service.NotificationService;
 import com.project.handongjudge.problem.entity.Problem;
 import com.project.handongjudge.problem.repository.ProblemRepository;
@@ -42,6 +44,8 @@ public class AssignmentService {
     private final SubmissionRepository submissionRepository;
     private final EnrollmentRepository enrollmentRepository;
     private final NotificationService notificationService;
+    private final NotificationRepository notificationRepository;
+    private final QuestionRepository questionRepository;
     private final UserRepository userRepository;
 
     public AssignmentResponse createAssignment(Long sectionId, AssignmentRequest request, Long userId) {
@@ -471,6 +475,12 @@ public class AssignmentService {
         if (!sectionRoleService.isManager(userId, assignment.getSection().getId())) {
             throw new IllegalArgumentException("과제 삭제는 수업 관리자(교수/조교)만 가능합니다");
         }
+
+        // notifications.assignment_id FK 제약 회피: 이 과제를 참조하는 알림 먼저 삭제
+        notificationRepository.deleteByAssignment_IdIn(Collections.singletonList(assignmentId));
+
+        // questions.assignment_id FK 제약 회피: 해당 과제를 참조하는 질문의 연관만 해제 (질문은 수업에 남김)
+        questionRepository.setAssignmentNullByAssignmentId(assignmentId);
 
         // 과제에 연결된 문제 관계 삭제
         assignmentProblemRepository.deleteByAssignmentId(assignmentId);
