@@ -20,6 +20,13 @@ public interface QuizRepository extends JpaRepository<Quiz, Long> {
     
     @Query("SELECT COUNT(q) FROM Quiz q WHERE q.section.id = :sectionId")
     Integer countBySectionId(@Param("sectionId") Long sectionId);
+
+    /** 분반 삭제 시 해당 분반 퀴즈 ID 목록 조회 */
+    @Query("SELECT q.id FROM Quiz q WHERE q.section.id = :sectionId")
+    List<Long> findQuizIdsBySectionId(@Param("sectionId") Long sectionId);
+
+    /** 분반 삭제 시 해당 분반 퀴즈 일괄 삭제 (section_id FK 제약 회피용) */
+    void deleteBySection_Id(Long sectionId);
 }
 
 

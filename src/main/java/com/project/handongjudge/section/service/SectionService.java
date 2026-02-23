@@ -30,6 +30,10 @@ import com.project.handongjudge.problem.service.ProblemService;
 import com.project.handongjudge.notice.entity.Notice;
 import com.project.handongjudge.notice.repository.NoticeRepository;
 import com.project.handongjudge.community.repository.NotificationRepository;
+import com.project.handongjudge.grade.repository.GradeRepository;
+import com.project.handongjudge.quiz.repository.QuizRepository;
+import com.project.handongjudge.quiz.repository.QuizGradeRepository;
+import com.project.handongjudge.quiz.repository.QuizProblemRepository;
 import lombok.extern.slf4j.Slf4j;
 import java.io.IOException;
 import java.time.LocalDateTime;
@@ -52,6 +56,10 @@ public class SectionService {
     private final ProblemService problemService;
     private final NoticeRepository noticeRepository;  // ✨ 공지사항 복사용
     private final NotificationRepository notificationRepository;
+    private final GradeRepository gradeRepository;
+    private final QuizRepository quizRepository;
+    private final QuizGradeRepository quizGradeRepository;
+    private final QuizProblemRepository quizProblemRepository;
 
     private String generateEnrollmentCode() {
         // UUID 기반 고유 코드 생성
@@ -133,10 +141,25 @@ public class SectionService {
             throw new IllegalArgumentException("해당 분반을 삭제할 권한이 없습니다");
         }
 
-        // notifications.assignment_id FK 제약 회피: 해당 분반 과제를 참조하는 알림 먼저 삭제
+        // FK 제약 회피: 해당 분반 과제를 참조하는 알림·성적 먼저 삭제
         List<Long> assignmentIds = assignmentRepository.findAssignmentIdsBySectionId(sectionId);
         if (!assignmentIds.isEmpty()) {
             notificationRepository.deleteByAssignment_IdIn(assignmentIds);
+            gradeRepository.deleteByAssignment_IdIn(assignmentIds);
+        }
+
+        // FK 제약 회피: 해당 분반 공지를 참조하는 알림 먼저 삭제 (notice 삭제 시 notifications.notice_id FK 방지)
+        List<Long> noticeIds = noticeRepository.findNoticeIdsBySectionId(sectionId);
+        if (!noticeIds.isEmpty()) {
+            notificationRepository.deleteByNotice_IdIn(noticeIds);
+        }
+
+        // FK 제약 회피: 해당 분반 퀴즈 관련 데이터 선삭제 (quizzes.section_id FK 방지)
+        List<Long> quizIds = quizRepository.findQuizIdsBySectionId(sectionId);
+        if (!quizIds.isEmpty()) {
+            quizProblemRepository.deleteByQuiz_IdIn(quizIds);
+            quizGradeRepository.deleteByQuiz_IdIn(quizIds);
+            quizRepository.deleteBySection_Id(sectionId);
         }
 
         // Section 삭제 (CASCADE 설정에 따라 관련 데이터도 함께 삭제됨)
