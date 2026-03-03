@@ -319,7 +319,7 @@ public class ProblemService {
         return ProblemResponse.builder()
                 .id(problem.getId())
                 .title(problem.getTitle())
-                .description(problem.getDescription())
+                .description(ProblemFileUtil.stripDuplicateInputOutputExample(problem.getDescription()))
                 .difficulty(problem.getDifficulty())
                 .memoryLimit(problem.getMemoryLimit())
                 .timeLimit(problem.getTimeLimit())
@@ -342,10 +342,10 @@ public class ProblemService {
         return ProblemResponse.builder()
                 .id(problem.getId())
                 .title(problem.getTitle())
-                .description(problem.getDescription())
+                .description(ProblemFileUtil.stripDuplicateInputOutputExample(problem.getDescription()))
                 .difficulty(problem.getDifficulty())
-                .timeLimit(problem.getTimeLimit())         // 추가
-                .memoryLimit(problem.getMemoryLimit())     // 추가
+                .timeLimit(problem.getTimeLimit())
+                .memoryLimit(problem.getMemoryLimit())
                 .createdAt(problem.getCreatedAt())
                 .build();
     }
@@ -452,7 +452,7 @@ public class ProblemService {
 
         Problem newProblem = Problem.builder()
                 .title(problemTitle)
-                .description(sourceProblem.getDescription())
+                .description(ProblemFileUtil.stripDuplicateInputOutputExample(sourceProblem.getDescription()))
                 .domjudgeProblemId(newDomjudgeProblemId)
                 .timeLimit(sourceProblem.getTimeLimit())
                 .memoryLimit(sourceProblem.getMemoryLimit())
