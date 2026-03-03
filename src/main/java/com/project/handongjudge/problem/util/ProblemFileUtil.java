@@ -13,6 +13,35 @@ import java.util.*;
 @Slf4j
 public class ProblemFileUtil {
 
+    /**
+     * API 응답 시 사용: description에 "## 입력 형식"~"## 예제" 블록이 두 번 들어있으면
+     * 두 번째 블록부터 제거해 한 번만 보이게 합니다.
+     * (과거 저장 버그로 DB에 중복 저장된 경우 대비)
+     */
+    public static String stripDuplicateInputOutputExample(String description) {
+        if (description == null || !description.contains("입력 형식")) {
+            return description;
+        }
+        String normalized = description.replace("\r\n", "\n").replace("\r", "\n");
+        java.util.regex.Pattern pattern = java.util.regex.Pattern.compile(
+            "(\\n|^)\\s*##\\s*입력\\s*형식(?:[\\s\\n\\r]|$)",
+            java.util.regex.Pattern.MULTILINE
+        );
+        java.util.regex.Matcher matcher = pattern.matcher(normalized);
+        int firstStart = -1;
+        int secondStart = -1;
+        if (matcher.find()) {
+            firstStart = matcher.start();
+        }
+        if (matcher.find()) {
+            secondStart = matcher.start();
+        }
+        if (secondStart < 0) {
+            return description;
+        }
+        return normalized.substring(0, secondStart).trim();
+    }
+
     // 지원하는 파일 확장자에 .html 추가 (우선순위: tex -> md -> html -> txt)
     private static final List<String> SUPPORTED_EXTENSIONS = Arrays.asList(".tex", ".md", ".html", ".txt");
 
