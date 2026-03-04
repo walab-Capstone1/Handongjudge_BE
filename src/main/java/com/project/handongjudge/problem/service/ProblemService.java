@@ -976,6 +976,53 @@ public class ProblemService {
     }
 
     /**
+     * 여러 문제를 HandongJudge 포맷 ZIP 하나로 Export
+     */
+    public byte[] exportProblemsBulk(List<Long> problemIds, Long instructorId) throws IOException {
+        if (problemIds == null || problemIds.isEmpty()) {
+            throw new IllegalArgumentException("문제 ID 목록이 비어있습니다.");
+        }
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        try (ZipOutputStream zos = new ZipOutputStream(baos)) {
+            for (Long problemId : problemIds) {
+                try {
+                    byte[] singleZip = exportProblem(problemId, instructorId);
+                    mergeZipInto(zos, singleZip, problemId);
+                } catch (Exception e) {
+                    log.warn("문제 {} export 실패: {}", problemId, e.getMessage());
+                    throw new IOException("문제 " + problemId + " 내보내기 실패: " + e.getMessage(), e);
+                }
+            }
+        }
+        return baos.toByteArray();
+    }
+
+    /**
+     * 단일 문제 ZIP을 출력 스트림에 병합 (폴더명에 problemId 접두사로 충돌 방지)
+     */
+    private void mergeZipInto(ZipOutputStream zos, byte[] singleZip, long problemId) throws IOException {
+        try (ZipInputStream zis = new ZipInputStream(new ByteArrayInputStream(singleZip))) {
+            java.util.zip.ZipEntry entry;
+            byte[] buffer = new byte[8192];
+            while ((entry = zis.getNextEntry()) != null) {
+                if (entry.isDirectory()) continue;
+                String name = entry.getName();
+                int slash = name.indexOf('/');
+                String newName = slash >= 0
+                        ? problemId + "-" + name.substring(0, slash) + name.substring(slash)
+                        : problemId + "-" + name;
+                ZipEntry newEntry = new ZipEntry(newName);
+                zos.putNextEntry(newEntry);
+                int len;
+                while ((len = zis.read(buffer)) > 0) {
+                    zos.write(buffer, 0, len);
+                }
+                zos.closeEntry();
+            }
+        }
+    }
+
+    /**
      * 문제 수정
      * 안전한 순서: 업로드 → DB 갱신 → 기존 문제 삭제
      * 

@@ -259,7 +259,28 @@ public class ProblemController {
     }
 
     /**
-     * 문제 Export (HandongJudge 포맷 ZIP)
+     * Bulk Export (여러 문제를 HandongJudge 포맷 ZIP 하나로)
+     * GET /api/problems/export?ids=1&ids=2&ids=3
+     * (literal /export 먼저 선언하여 /{problemId}와 충돌 방지)
+     */
+    @GetMapping(value = "/export", produces = MediaType.APPLICATION_OCTET_STREAM_VALUE)
+    public ResponseEntity<byte[]> exportProblemsBulk(
+            @RequestParam("ids") List<Long> problemIds,
+            Authentication authentication) throws IOException {
+        if (problemIds == null || problemIds.isEmpty()) {
+            return ResponseEntity.badRequest().build();
+        }
+        Long instructorId = Long.parseLong(authentication.getName());
+        byte[] zipBytes = problemService.exportProblemsBulk(problemIds, instructorId);
+        return ResponseEntity.ok()
+                .header(org.springframework.http.HttpHeaders.CONTENT_DISPOSITION,
+                        "attachment; filename=\"problems-export.zip\"")
+                .contentType(MediaType.APPLICATION_OCTET_STREAM)
+                .body(zipBytes);
+    }
+
+    /**
+     * 단일 문제 Export (HandongJudge 포맷 ZIP)
      */
     @GetMapping("/{problemId}/export")
     public ResponseEntity<byte[]> exportProblem(
