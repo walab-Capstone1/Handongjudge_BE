@@ -14,6 +14,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 import com.project.handongjudge.problem.util.ProblemFileUtil;
+import com.project.handongjudge.problem.util.ProblemFileToDomjudgeConverter;
+import com.project.handongjudge.problem.util.ProblemFileParser;
 import lombok.extern.slf4j.Slf4j;
 import com.project.handongjudge.user.entity.User;
 import com.project.handongjudge.user.repository.UserRepository;
@@ -26,6 +28,7 @@ import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.io.IOException;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -105,15 +108,14 @@ public class ProblemService {
     }
 
     /**
-     * 폼 데이터로 문제 생성 (ZIP 생성 포함)
+     * 폼 데이터로 문제 생성 (JSON DTO 기반, testcases 포함)
      */
     private Long createProblemFromForm(ProblemCreateRequest request, Long instructorId) throws IOException {
         ObjectMapper mapper = new ObjectMapper();
 
-        // JSON 파싱
-        List<String> tags = mapper.readValue(request.getTags(), new TypeReference<List<String>>(){});
-        List<Map<String, String>> sampleInputs = mapper.readValue(request.getSampleInputs(),
-                new TypeReference<List<Map<String, String>>>(){});
+        // JSON 파싱 (null-safe)
+        List<String> tags = parseJsonList(request.getTags());
+        List<Map<String, String>> sampleInputs = parseJsonSampleInputs(request.getSampleInputs());
 
         // 전체 설명 생성 (description + inputFormat + outputFormat + samples)
         String fullDescription = buildFullDescription(
@@ -123,21 +125,22 @@ public class ProblemService {
                 sampleInputs
         );
 
-        // 고유한 externalid 생성 (문제 생성 시에는 타임스탬프만 사용)
-        String externalId = "problem-" + System.currentTimeMillis();
+        // ProblemFileParseResult 형태로 변환 후 DOMjudge ZIP 생성
+        com.project.handongjudge.problem.dto.ProblemFileParseResult parseResult =
+                com.project.handongjudge.problem.dto.ProblemFileParseResult.builder()
+                        .title(request.getTitle())
+                        .description(fullDescription)
+                        .timeLimit(parseDoubleOrNull(request.getTimeLimit(), 1.0))
+                        .memoryLimit(parseIntOrNull(request.getMemoryLimit(), 256))
+                        .testcases(request.getTestcases() != null ? request.getTestcases() : java.util.Collections.emptyList())
+                        .build();
 
-        // DOMjudge 형식의 ZIP 파일 생성
-        byte[] zipBytes = createDomjudgeZip(
-                request.getTitle(),
-                fullDescription,
-                request.getTimeLimit(),
-                request.getMemoryLimit(),
-                request.getTestcaseFiles(),
-                externalId
-        );
+        byte[] zipBytes = ProblemFileToDomjudgeConverter.toDomjudgeZip(parseResult);
 
         // MultipartFile로 변환
-        MultipartFile generatedZipFile = createMultipartFile(zipBytes, request.getTitle() + ".zip");
+        String safeName = sanitizeFilename(request.getTitle());
+        if (safeName == null || safeName.isEmpty()) safeName = "problem";
+        MultipartFile generatedZipFile = createMultipartFile(zipBytes, safeName + ".zip");
 
         // DOMjudge에 업로드
         String domjudgeProblemId = domjudgeService.uploadProblemToDomjudge(generatedZipFile);
@@ -157,18 +160,54 @@ public class ProblemService {
                 .description(fullDescription)
                 .difficulty(difficulty)
                 .domjudgeProblemId(domjudgeProblemId)
-                .timeLimit(Double.parseDouble(request.getTimeLimit()))
-                .memoryLimit(Integer.parseInt(request.getMemoryLimit()))
+                .timeLimit(parseResult.getTimeLimit())
+                .memoryLimit(parseResult.getMemoryLimit())
                 .createdAt(LocalDateTime.now())
                 .createdBy(instructor)
-                .zipFilePath(null) // 더 이상 사용하지 않음
-                .zipFileData(zipFileData) // DB에 저장
+                .zipFilePath(null)
+                .zipFileData(zipFileData)
                 .build();
 
         problemRepository.save(problem);
         log.info("문제 생성 완료: ID={}, Title={}", problem.getId(), request.getTitle());
 
         return problem.getId();
+    }
+
+    private List<String> parseJsonList(String json) {
+        if (json == null || json.trim().isEmpty()) return java.util.Collections.emptyList();
+        try {
+            return new ObjectMapper().readValue(json, new TypeReference<List<String>>(){});
+        } catch (Exception e) {
+            return java.util.Collections.emptyList();
+        }
+    }
+
+    private List<Map<String, String>> parseJsonSampleInputs(String json) {
+        if (json == null || json.trim().isEmpty()) return java.util.Collections.emptyList();
+        try {
+            return new ObjectMapper().readValue(json, new TypeReference<List<Map<String, String>>>(){});
+        } catch (Exception e) {
+            return java.util.Collections.emptyList();
+        }
+    }
+
+    private Double parseDoubleOrNull(String s, double defaultValue) {
+        if (s == null || s.trim().isEmpty()) return defaultValue;
+        try {
+            return Double.parseDouble(s.trim());
+        } catch (NumberFormatException e) {
+            return defaultValue;
+        }
+    }
+
+    private Integer parseIntOrNull(String s, int defaultValue) {
+        if (s == null || s.trim().isEmpty()) return defaultValue;
+        try {
+            return Integer.parseInt(s.trim());
+        } catch (NumberFormatException e) {
+            return defaultValue;
+        }
     }
 
     /**
@@ -729,6 +768,260 @@ public class ProblemService {
         
         return response;
     }
+
+    /**
+     * HandongJudge 포맷 bulk ZIP 파싱 (여러 문제 폴더 포함)
+     */
+    public List<BulkParseItemResult> parseBulkZip(MultipartFile zipFile) throws IOException {
+        if (zipFile == null || zipFile.isEmpty()) {
+            throw new IllegalArgumentException("ZIP 파일이 필요합니다.");
+        }
+        return ProblemFileParser.parseBulkZip(zipFile);
+    }
+
+    /**
+     * HandongJudge 포맷 단일 폴더 ZIP 파싱 (description.md, problem.ini, testcases/ 포함)
+     * ZIP 안에 정확히 한 개의 문제 폴더만 있어야 함.
+     */
+    public ProblemParseResponse parseFolderFormatZip(MultipartFile zipFile) throws IOException {
+        if (zipFile == null || zipFile.isEmpty()) {
+            throw new IllegalArgumentException("ZIP 파일이 필요합니다.");
+        }
+        List<BulkParseItemResult> results = ProblemFileParser.parseBulkZip(zipFile);
+        if (results.isEmpty()) {
+            throw new IllegalArgumentException("ZIP 파일에 유효한 문제 폴더가 없습니다. description.md, problem.ini, testcases/ 구조를 확인하세요.");
+        }
+        if (results.size() > 1) {
+            throw new IllegalArgumentException("단일 문제 등록용입니다. 여러 문제 폴더가 포함된 ZIP은 bulk 등록을 사용하세요.");
+        }
+        BulkParseItemResult first = results.get(0);
+        if (!first.isSuccess() || first.getParseResult() == null) {
+            String msg = first.getValidationErrors() != null && !first.getValidationErrors().isEmpty()
+                    ? String.join("; ", first.getValidationErrors())
+                    : "폴더 형식 파싱에 실패했습니다.";
+            throw new IllegalArgumentException(msg);
+        }
+        ProblemFileParseResult pr = first.getParseResult();
+        List<TestCaseDto> dtos = pr.getTestcases() != null ? pr.getTestcases() : new ArrayList<>();
+        List<TestCaseInfo> testCases = dtos.stream()
+                .map((TestCaseDto tc) -> TestCaseInfo.builder()
+                        .name(tc.getName())
+                        .input(tc.getInput())
+                        .output(tc.getOutput())
+                        .type(tc.getType() != null ? tc.getType() : "secret")
+                        .build())
+                .collect(Collectors.toList());
+        return ProblemParseResponse.builder()
+                .title(pr.getTitle())
+                .description(pr.getDescription() != null ? pr.getDescription() : "")
+                .inputFormat(pr.getInputFormat())
+                .outputFormat(pr.getOutputFormat())
+                .sampleInputs(pr.getSampleInputs())
+                .timeLimit(pr.getTimeLimit())
+                .memoryLimit(pr.getMemoryLimit())
+                .author(null)
+                .source(null)
+                .difficulty(null)
+                .testCases(testCases)
+                .build();
+    }
+
+    /**
+     * HandongJudge 포맷 폴더 업로드 파싱 (description.md, problem.ini, testcases/)
+     * 브라우저 폴더 선택(webkitdirectory)으로 업로드된 파일 목록
+     */
+    public ProblemParseResponse parseFolderFormatFiles(List<MultipartFile> files) throws IOException {
+        if (files == null || files.isEmpty()) {
+            throw new IllegalArgumentException("폴더에서 파일을 선택해주세요.");
+        }
+        BulkParseItemResult result = ProblemFileParser.parseFolderFromFiles(files);
+        if (!result.isSuccess() || result.getParseResult() == null) {
+            String msg = result.getValidationErrors() != null && !result.getValidationErrors().isEmpty()
+                    ? String.join("; ", result.getValidationErrors())
+                    : "폴더 형식 파싱에 실패했습니다.";
+            throw new IllegalArgumentException(msg);
+        }
+        ProblemFileParseResult pr = result.getParseResult();
+        List<TestCaseDto> dtos = pr.getTestcases() != null ? pr.getTestcases() : new ArrayList<>();
+        List<TestCaseInfo> testCases = dtos.stream()
+                .map((TestCaseDto tc) -> TestCaseInfo.builder()
+                        .name(tc.getName())
+                        .input(tc.getInput())
+                        .output(tc.getOutput())
+                        .type(tc.getType() != null ? tc.getType() : "secret")
+                        .build())
+                .collect(Collectors.toList());
+        return ProblemParseResponse.builder()
+                .title(pr.getTitle())
+                .description(pr.getDescription() != null ? pr.getDescription() : "")
+                .inputFormat(pr.getInputFormat())
+                .outputFormat(pr.getOutputFormat())
+                .sampleInputs(pr.getSampleInputs())
+                .timeLimit(pr.getTimeLimit())
+                .memoryLimit(pr.getMemoryLimit())
+                .author(null)
+                .source(null)
+                .difficulty(null)
+                .testCases(testCases)
+                .build();
+    }
+
+    /**
+     * bulk 문제 생성 (승인된 ProblemCreateRequest 목록)
+     */
+    @Transactional
+    public BulkCreateResponse bulkCreateProblems(List<ProblemCreateRequest> problems, Long instructorId) {
+        List<Long> createdIds = new ArrayList<>();
+        List<BulkCreateFailure> failures = new ArrayList<>();
+        for (int i = 0; i < problems.size(); i++) {
+            try {
+                Long id = createProblem(problems.get(i), instructorId);
+                createdIds.add(id);
+            } catch (Exception e) {
+                log.warn("문제 생성 실패 index={}: {}", i, e.getMessage());
+                failures.add(BulkCreateFailure.builder()
+                        .index(i)
+                        .reason(e.getMessage())
+                        .build());
+            }
+        }
+        return BulkCreateResponse.builder()
+                .successCount(createdIds.size())
+                .failureCount(failures.size())
+                .createdIds(createdIds)
+                .failures(failures)
+                .build();
+    }
+
+    /**
+     * 문제를 HandongJudge 포맷 ZIP으로 Export
+     */
+    public byte[] exportProblem(Long problemId, Long instructorId) throws IOException {
+        Problem problem = problemRepository.findById(problemId)
+                .orElseThrow(() -> new IllegalArgumentException("문제를 찾을 수 없습니다: " + problemId));
+
+        User user = userRepository.findById(instructorId)
+                .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다: " + instructorId));
+
+        boolean authorized = (problem.getCreatedBy() != null && problem.getCreatedBy().getId().equals(instructorId))
+                || user.getRole() == User.Role.SUPER_ADMIN;
+        if (!authorized) {
+            throw new IllegalArgumentException("이 문제를 Export할 권한이 없습니다.");
+        }
+
+        byte[] zipData = problem.getZipFileData();
+        if (zipData == null || zipData.length == 0) {
+            throw new IllegalArgumentException("문제 ZIP 데이터가 없습니다.");
+        }
+
+        // DOMjudge ZIP 파싱 → HandongJudge 포맷으로 변환
+        MultipartFile domjudgeZip = new ByteArrayMultipartFile(zipData, "problem.zip");
+        ProblemParseResponse parsed = parseZipFile(domjudgeZip);
+
+        // ProblemFileParseResult 형태로 변환
+        List<TestCaseDto> testcases = new ArrayList<>();
+        if (parsed.getTestCases() != null) {
+            for (TestCaseInfo tc : parsed.getTestCases()) {
+                testcases.add(TestCaseDto.builder()
+                        .name(tc.getName())
+                        .input(tc.getInput())
+                        .output(tc.getOutput())
+                        .type(tc.getType() != null ? tc.getType() : "secret")
+                        .build());
+            }
+        }
+
+        ProblemFileParseResult pfpr = ProblemFileParseResult.builder()
+                .title(parsed.getTitle())
+                .description(parsed.getDescription())
+                .timeLimit(parsed.getTimeLimit())
+                .memoryLimit(parsed.getMemoryLimit())
+                .testcases(testcases)
+                .build();
+
+        // HandongJudge 포맷 ZIP 생성
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        try (ZipOutputStream zos = new ZipOutputStream(baos)) {
+            String folder = sanitizeFilename(parsed.getTitle());
+            if (folder == null || folder.isEmpty()) folder = "problem";
+
+            zos.putNextEntry(new ZipEntry(folder + "/description.md"));
+            zos.write((parsed.getDescription() != null ? parsed.getDescription() : "").getBytes(StandardCharsets.UTF_8));
+            zos.closeEntry();
+
+            StringBuilder ini = new StringBuilder();
+            if (parsed.getTimeLimit() != null) ini.append("timelimit=").append(parsed.getTimeLimit().intValue()).append("\n");
+            if (parsed.getMemoryLimit() != null) ini.append("memorylimit=").append(parsed.getMemoryLimit()).append("\n");
+            zos.putNextEntry(new ZipEntry(folder + "/problem.ini"));
+            zos.write(ini.toString().getBytes(StandardCharsets.UTF_8));
+            zos.closeEntry();
+
+            if (testcases != null && !testcases.isEmpty()) {
+                for (TestCaseDto tc : testcases) {
+                    String base = tc.getName() != null ? tc.getName() : "1";
+                    if (tc.getInput() != null) {
+                        zos.putNextEntry(new ZipEntry(folder + "/testcases/" + base + ".in"));
+                        zos.write(tc.getInput().getBytes(StandardCharsets.UTF_8));
+                        zos.closeEntry();
+                    }
+                    if (tc.getOutput() != null) {
+                        zos.putNextEntry(new ZipEntry(folder + "/testcases/" + base + ".out"));
+                        zos.write(tc.getOutput().getBytes(StandardCharsets.UTF_8));
+                        zos.closeEntry();
+                    }
+                }
+            }
+        }
+        return baos.toByteArray();
+    }
+
+    /**
+     * 여러 문제를 HandongJudge 포맷 ZIP 하나로 Export
+     */
+    public byte[] exportProblemsBulk(List<Long> problemIds, Long instructorId) throws IOException {
+        if (problemIds == null || problemIds.isEmpty()) {
+            throw new IllegalArgumentException("문제 ID 목록이 비어있습니다.");
+        }
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        try (ZipOutputStream zos = new ZipOutputStream(baos)) {
+            for (Long problemId : problemIds) {
+                try {
+                    byte[] singleZip = exportProblem(problemId, instructorId);
+                    mergeZipInto(zos, singleZip, problemId);
+                } catch (Exception e) {
+                    log.warn("문제 {} export 실패: {}", problemId, e.getMessage());
+                    throw new IOException("문제 " + problemId + " 내보내기 실패: " + e.getMessage(), e);
+                }
+            }
+        }
+        return baos.toByteArray();
+    }
+
+    /**
+     * 단일 문제 ZIP을 출력 스트림에 병합 (폴더명에 problemId 접두사로 충돌 방지)
+     */
+    private void mergeZipInto(ZipOutputStream zos, byte[] singleZip, long problemId) throws IOException {
+        try (ZipInputStream zis = new ZipInputStream(new ByteArrayInputStream(singleZip))) {
+            java.util.zip.ZipEntry entry;
+            byte[] buffer = new byte[8192];
+            while ((entry = zis.getNextEntry()) != null) {
+                if (entry.isDirectory()) continue;
+                String name = entry.getName();
+                int slash = name.indexOf('/');
+                String newName = slash >= 0
+                        ? problemId + "-" + name.substring(0, slash) + name.substring(slash)
+                        : problemId + "-" + name;
+                ZipEntry newEntry = new ZipEntry(newName);
+                zos.putNextEntry(newEntry);
+                int len;
+                while ((len = zis.read(buffer)) > 0) {
+                    zos.write(buffer, 0, len);
+                }
+                zos.closeEntry();
+            }
+        }
+    }
+
     /**
      * 문제 수정
      * 안전한 순서: 업로드 → DB 갱신 → 기존 문제 삭제

@@ -1,9 +1,8 @@
-// Handongjudge_BE/src/main/java/com/project/handongjudge/problem/dto/ProblemCreateRequest.java
 package com.project.handongjudge.problem.dto;
 
 import lombok.Getter;
 import lombok.Setter;
-import org.springframework.web.multipart.MultipartFile;
+
 import java.util.List;
 
 @Getter
@@ -18,6 +17,5 @@ public class ProblemCreateRequest {
     private String timeLimit;
     private String memoryLimit;
     private String sampleInputs;  // JSON string
-    private MultipartFile zipFile;  // 선택적
-    private List<MultipartFile> testcaseFiles;  // 테스트케이스 파일들
+    private List<TestCaseDto> testcases;  // 테스트케이스 (name, input, output, type)
 }
