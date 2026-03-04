@@ -220,11 +220,9 @@ public class AssignmentService {
         // 3. 분반 전체 학생 수
         Integer totalStudents = submissionRepository.countStudentsBySection(sectionId);
 
-        // 4. 과제 제출한 학생 수
-        Integer submittedStudents = submissionRepository.countAllProblemsSubmittedStudents(assignmentId, sectionId);
-        if (submittedStudents == null) {
-            submittedStudents = 0; // null인 경우 0으로 설정
-        }
+        // 4. 과제의 모든 문제를 제출한 학생 수
+        List<Long> submittedUserIds = submissionRepository.findUserIdsWhoSubmittedAllProblems(assignmentId, sectionId);
+        int submittedStudents = (submittedUserIds != null) ? submittedUserIds.size() : 0;
         // 5. 과제 제출률 계산
         Double submissionRate = totalStudents > 0 ?
                 (double) submittedStudents / totalStudents * 100 : 0.0;

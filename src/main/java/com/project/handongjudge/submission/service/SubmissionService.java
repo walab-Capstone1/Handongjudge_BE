@@ -437,12 +437,7 @@ public class SubmissionService {
                 if (!isManager && !targetAssignment.getActive()) {
                     throw new IllegalArgumentException("해당 과제는 비활성화되어 있어 제출할 수 없습니다");
                 }
-                
-                // 마감일 체크 (관리자/튜터도 과제 마감일이 지나면 제출 불가)
-                if (targetAssignment.getEndDate() != null && now.isAfter(targetAssignment.getEndDate())) {
-                    throw new IllegalArgumentException("과제 마감일이 지났습니다");
-                }
-                
+                // 마감일 지나도 제출 허용 → 지각 제출로 처리 (isOnTime=false, 성적 화면에서 △ 표시)
                 assignmentValid = true;
             }
         }
