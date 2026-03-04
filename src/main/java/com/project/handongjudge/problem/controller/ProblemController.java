@@ -248,7 +248,7 @@ public class ProblemController {
     @PostMapping(value = "/bulk", consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<BulkCreateResponse> bulkCreateProblems(
             @RequestBody BulkCreateRequest request,
-            Authentication authentication) {
+            Authentication authentication) throws IOException {
         Long instructorId = Long.parseLong(authentication.getName());
         List<ProblemCreateRequest> problems = request.getProblems();
         if (problems == null || problems.isEmpty()) {
