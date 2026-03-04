@@ -868,28 +868,20 @@ public class ProblemService {
 
     /**
      * bulk 문제 생성 (승인된 ProblemCreateRequest 목록)
+     * 하나라도 실패하면 트랜잭션 롤백으로 전체 취소
      */
-    @Transactional
-    public BulkCreateResponse bulkCreateProblems(List<ProblemCreateRequest> problems, Long instructorId) {
+    @Transactional(rollbackFor = Exception.class)
+    public BulkCreateResponse bulkCreateProblems(List<ProblemCreateRequest> problems, Long instructorId) throws IOException {
         List<Long> createdIds = new ArrayList<>();
-        List<BulkCreateFailure> failures = new ArrayList<>();
         for (int i = 0; i < problems.size(); i++) {
-            try {
-                Long id = createProblem(problems.get(i), instructorId);
-                createdIds.add(id);
-            } catch (Exception e) {
-                log.warn("문제 생성 실패 index={}: {}", i, e.getMessage());
-                failures.add(BulkCreateFailure.builder()
-                        .index(i)
-                        .reason(e.getMessage())
-                        .build());
-            }
+            Long id = createProblem(problems.get(i), instructorId);
+            createdIds.add(id);
         }
         return BulkCreateResponse.builder()
                 .successCount(createdIds.size())
-                .failureCount(failures.size())
+                .failureCount(0)
                 .createdIds(createdIds)
-                .failures(failures)
+                .failures(List.of())
                 .build();
     }
 
@@ -939,10 +931,13 @@ public class ProblemService {
                 .testcases(testcases)
                 .build();
 
-        // HandongJudge 포맷 ZIP 생성
+        // HandongJudge 포맷 ZIP 생성 (폴더명: 문제 제목 우선, 없으면 parsed 제목)
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
         try (ZipOutputStream zos = new ZipOutputStream(baos)) {
-            String folder = sanitizeFilename(parsed.getTitle());
+            String folder = sanitizeFilename(problem.getTitle());
+            if (folder == null || folder.isEmpty()) {
+                folder = sanitizeFilename(parsed.getTitle());
+            }
             if (folder == null || folder.isEmpty()) folder = "problem";
 
             zos.putNextEntry(new ZipEntry(folder + "/description.md"));
