@@ -522,37 +522,43 @@ public class UserService {
 
     // UserService의 getStudentAssignmentProblemsStatus 메서드:
     public List<StudentProblemStatusDto> getStudentAssignmentProblemsStatus(Long userId, Long sectionId, Long assignmentId) {
-        // 1. 해당 과제의 모든 문제 가져오기
-        List<Long> problemIds = assignmentProblemRepository.findProblemIdsByAssignmentId(assignmentId);
+        Assignment assignment = assignmentRepository.findById(assignmentId).orElse(null);
+        LocalDateTime endDate = assignment != null ? assignment.getEndDate() : null;
 
+        List<Long> problemIds = assignmentProblemRepository.findProblemIdsByAssignmentId(assignmentId);
         List<StudentProblemStatusDto> problemStatusList = new ArrayList<>();
 
         for (Long problemId : problemIds) {
-            // 2. 문제 정보 가져오기
-            Problem problem = problemRepository.findById(problemId)
-                    .orElse(null);
-
+            Problem problem = problemRepository.findById(problemId).orElse(null);
             if (problem == null) continue;
 
-            // 3. 해당 문제에 대한 학생의 제출 상태 확인
             String status = "NOT_SUBMITTED";
             int submissionCount = submissionRepository.countByUserIdAndProblemId(userId, problemId);
+            Boolean isOnTime = null;
 
             if (submissionCount > 0) {
-                // ACCEPTED("AC")가 있는지 확인
                 int acceptedCount = submissionRepository.countAcceptedByUserIdAndProblemId(userId, problemId);
-
                 status = acceptedCount > 0 ? "ACCEPTED" : "SUBMITTED";
+
+                if (endDate != null) {
+                    Optional<LocalDateTime> refTime = acceptedCount > 0
+                            ? submissionRepository.findFirstAcceptedSubmissionTime(userId, problemId, sectionId)
+                            : submissionRepository.findLatestSubmissionTime(userId, problemId, sectionId);
+                    isOnTime = refTime
+                            .map(t -> !t.isAfter(endDate))
+                            .orElse(false);
+                } else {
+                    isOnTime = true;
+                }
             }
 
-            StudentProblemStatusDto statusDto = StudentProblemStatusDto.builder()
+            problemStatusList.add(StudentProblemStatusDto.builder()
                     .problemId(problemId)
                     .problemTitle(problem.getTitle())
                     .status(status)
                     .submissionCount(submissionCount)
-                    .build();
-
-            problemStatusList.add(statusDto);
+                    .isOnTime(isOnTime)
+                    .build());
         }
 
         return problemStatusList;

@@ -32,14 +32,15 @@ public interface SubmissionRepository extends JpaRepository<Submission, Long> {
     // 분반별 학생 수 (수강생 수)
     @Query("SELECT COUNT(DISTINCT e.user.id) FROM Enrollment e WHERE e.section.id = :sectionId")
     Integer countStudentsBySection(@Param("sectionId") Long sectionId);
-    @Query("SELECT COUNT(DISTINCT s.user.id) FROM Submission s " +
+    /** 과제의 모든 문제를 1번 이상 제출한 사용자 ID 목록 (제출 현황 인원 수 계산용) */
+    @Query("SELECT s.user.id FROM Submission s " +
             "WHERE s.section.id = :sectionId " +
             "AND s.problem.id IN " +
             "(SELECT ap.problem.id FROM AssignmentProblem ap WHERE ap.assignment.id = :assignmentId) " +
             "GROUP BY s.user.id " +
             "HAVING COUNT(DISTINCT s.problem.id) = " +
             "(SELECT COUNT(ap) FROM AssignmentProblem ap WHERE ap.assignment.id = :assignmentId)")
-    Integer countAllProblemsSubmittedStudents(@Param("assignmentId") Long assignmentId, @Param("sectionId") Long sectionId);
+    List<Long> findUserIdsWhoSubmittedAllProblems(@Param("assignmentId") Long assignmentId, @Param("sectionId") Long sectionId);
 
     // 사용자가 특정 문제를 제출했는지 확인
     @Query("SELECT COUNT(s) > 0 FROM Submission s " +
@@ -107,6 +108,14 @@ public interface SubmissionRepository extends JpaRepository<Submission, Long> {
     Optional<LocalDateTime> findFirstAcceptedSubmissionTime(@Param("userId") Long userId,
                                                             @Param("problemId") Long problemId,
                                                             @Param("sectionId") Long sectionId);
+
+    // 특정 학생의 특정 문제에 대한 가장 최근 제출 시간 (지각 여부 판단용)
+    @Query("SELECT MAX(s.submittedAt) FROM Submission s " +
+            "WHERE s.user.id = :userId AND s.problem.id = :problemId " +
+            "AND s.section.id = :sectionId")
+    Optional<LocalDateTime> findLatestSubmissionTime(@Param("userId") Long userId,
+                                                     @Param("problemId") Long problemId,
+                                                     @Param("sectionId") Long sectionId);
 
     // 특정 학생의 특정 문제에 대한 첫 번째 accept된 제출 조회
     @Query("SELECT s FROM Submission s " +
