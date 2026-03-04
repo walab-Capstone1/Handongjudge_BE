@@ -931,12 +931,12 @@ public class ProblemService {
                 .testcases(testcases)
                 .build();
 
-        // HandongJudge 포맷 ZIP 생성 (폴더명: 문제 제목 우선, 없으면 parsed 제목)
+        // ProblemFile 포맷 ZIP 생성 (폴더명: 문제 제목 우선, 한글 유지)
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
-        try (ZipOutputStream zos = new ZipOutputStream(baos)) {
-            String folder = sanitizeFilename(problem.getTitle());
+        try (ZipOutputStream zos = new ZipOutputStream(baos, StandardCharsets.UTF_8)) {
+            String folder = sanitizeFolderName(problem.getTitle());
             if (folder == null || folder.isEmpty()) {
-                folder = sanitizeFilename(parsed.getTitle());
+                folder = sanitizeFolderName(parsed.getTitle());
             }
             if (folder == null || folder.isEmpty()) folder = "problem";
 
@@ -971,7 +971,7 @@ public class ProblemService {
     }
 
     /**
-     * 여러 문제를 HandongJudge 포맷 ZIP 하나로 Export
+     * 여러 문제를 ProblemFile 포맷 ZIP 하나로 Export
      */
     public byte[] exportProblemsBulk(List<Long> problemIds, Long instructorId) throws IOException {
         if (problemIds == null || problemIds.isEmpty()) {
@@ -1599,6 +1599,18 @@ public class ProblemService {
         }
         
         return result.toString();
+    }
+
+    /**
+     * ZIP 내부 폴더명용: 한글 등 유니코드 유지, 경로 불가 문자만 제거
+     */
+    private String sanitizeFolderName(String name) {
+        if (name == null || name.trim().isEmpty()) return null;
+        String s = name.trim()
+                .replaceAll("[\\\\/:*?\"<>|]", "_")
+                .replaceAll("_{2,}", "_")
+                .replaceAll("^_|_$", "");
+        return s.isEmpty() ? null : s;
     }
 
     /**
