@@ -12,6 +12,7 @@ public class NoticeResponseDto {
     private Long id;
     private Long sectionId;
     private String sectionName; // 분반 정보 (예: "컴퓨터과학개론 - 16분반")
+    private String instructorName; // 작성자(해당 수업 담당 교수)
     private String title;
     private String content;
     private String difficulty;

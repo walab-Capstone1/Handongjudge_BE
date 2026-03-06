@@ -14,6 +14,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.client.HttpServerErrorException;
+import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.multipart.MultipartFile;
 import lombok.extern.slf4j.Slf4j;
@@ -189,20 +191,38 @@ public class DomjudgeService {
 
         HttpEntity<MultiValueMap<String, Object>> requestEntity = new HttpEntity<>(body, headers);
 
-        ResponseEntity<JsonNode> response = restTemplate.postForEntity(
-                DOMJUDGE_API_URL + "/api/v4/problems",
-                requestEntity,
-                JsonNode.class
-        );
+        try {
+            ResponseEntity<JsonNode> response = restTemplate.postForEntity(
+                    DOMJUDGE_API_URL + "/api/v4/problems",
+                    requestEntity,
+                    JsonNode.class
+            );
 
-        JsonNode responseBody = response.getBody();
-        if (responseBody == null || !responseBody.has("messages")) {
-            throw new RuntimeException("DOMjudge 응답에서 메시지를 찾을 수 없습니다.");
+            JsonNode responseBody = response.getBody();
+            if (responseBody == null || !responseBody.has("messages")) {
+                throw new RuntimeException("DOMjudge 응답에서 메시지를 찾을 수 없습니다.");
+            }
+
+            String domjudgeProblemId = responseBody.path("problem_id").asText();
+
+            return domjudgeProblemId;
+        } catch (HttpServerErrorException e) {
+            int status = e.getStatusCode().value();
+            log.error("DOMjudge 문제 업로드 실패: status={}, response={}", status, e.getResponseBodyAsString());
+            if (status == 502 || status == 503 || status == 504) {
+                throw new RuntimeException(
+                    "채점 서버(DOMjudge)에 일시적인 문제가 있습니다. 잠시 후 다시 시도해 주세요. (오류 코드: " + status + ")",
+                    e
+                );
+            }
+            throw new RuntimeException("DOMjudge 문제 업로드 실패: " + e.getStatusCode() + " - " + e.getResponseBodyAsString(), e);
+        } catch (ResourceAccessException e) {
+            log.error("DOMjudge 연결 실패 (타임아웃 또는 연결 거부): {}", e.getMessage());
+            throw new RuntimeException(
+                "채점 서버(DOMjudge)에 연결할 수 없습니다. 서버 상태를 확인한 후 잠시 후 다시 시도해 주세요.",
+                e
+            );
         }
-
-        String domjudgeProblemId = responseBody.path("problem_id").asText();
-
-        return domjudgeProblemId;
     }
 
     /**

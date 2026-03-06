@@ -5,6 +5,8 @@ import com.project.handongjudge.assignment.entity.Assignment;
 import com.project.handongjudge.assignment.entity.AssignmentProblem;
 import com.project.handongjudge.assignment.repository.AssignmentRepository;
 import com.project.handongjudge.assignment.repository.AssignmentProblemRepository;
+import com.project.handongjudge.community.repository.NotificationRepository;
+import com.project.handongjudge.community.repository.QuestionRepository;
 import com.project.handongjudge.community.service.NotificationService;
 import com.project.handongjudge.problem.entity.Problem;
 import com.project.handongjudge.problem.repository.ProblemRepository;
@@ -42,6 +44,8 @@ public class AssignmentService {
     private final SubmissionRepository submissionRepository;
     private final EnrollmentRepository enrollmentRepository;
     private final NotificationService notificationService;
+    private final NotificationRepository notificationRepository;
+    private final QuestionRepository questionRepository;
     private final UserRepository userRepository;
 
     public AssignmentResponse createAssignment(Long sectionId, AssignmentRequest request, Long userId) {
@@ -216,11 +220,9 @@ public class AssignmentService {
         // 3. 분반 전체 학생 수
         Integer totalStudents = submissionRepository.countStudentsBySection(sectionId);
 
-        // 4. 과제 제출한 학생 수
-        Integer submittedStudents = submissionRepository.countAllProblemsSubmittedStudents(assignmentId, sectionId);
-        if (submittedStudents == null) {
-            submittedStudents = 0; // null인 경우 0으로 설정
-        }
+        // 4. 과제의 모든 문제를 제출한 학생 수
+        List<Long> submittedUserIds = submissionRepository.findUserIdsWhoSubmittedAllProblems(assignmentId, sectionId);
+        int submittedStudents = (submittedUserIds != null) ? submittedUserIds.size() : 0;
         // 5. 과제 제출률 계산
         Double submissionRate = totalStudents > 0 ?
                 (double) submittedStudents / totalStudents * 100 : 0.0;
@@ -471,6 +473,12 @@ public class AssignmentService {
         if (!sectionRoleService.isManager(userId, assignment.getSection().getId())) {
             throw new IllegalArgumentException("과제 삭제는 수업 관리자(교수/조교)만 가능합니다");
         }
+
+        // notifications.assignment_id FK 제약 회피: 이 과제를 참조하는 알림 먼저 삭제
+        notificationRepository.deleteByAssignment_IdIn(Collections.singletonList(assignmentId));
+
+        // questions.assignment_id FK 제약 회피: 해당 과제를 참조하는 질문의 연관만 해제 (질문은 수업에 남김)
+        questionRepository.setAssignmentNullByAssignmentId(assignmentId);
 
         // 과제에 연결된 문제 관계 삭제
         assignmentProblemRepository.deleteByAssignmentId(assignmentId);

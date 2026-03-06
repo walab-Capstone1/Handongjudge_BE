@@ -137,11 +137,13 @@ public class NoticeService {
         // 분반 정보 생성 (예: "컴퓨터과학개론 - 16분반")
         Section section = notice.getSection();
         String sectionName = section.getCourse().getTitle() + " - " + section.getSectionNumber() + "분반";
-        
+        String instructorName = section.getInstructor() != null ? section.getInstructor().getName() : null;
+
         return NoticeResponseDto.builder()
                 .id(notice.getId())
                 .sectionId(notice.getSection().getId())
                 .sectionName(sectionName)
+                .instructorName(instructorName)
                 .title(notice.getTitle())
                 .content(notice.getContent())
                 .difficulty(notice.getDifficulty())

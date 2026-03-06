@@ -23,36 +23,13 @@ public class ProblemController {
     private final ProblemService problemService;
 
 
-    @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    /**
+     * 단일 문제 생성 (JSON DTO, testcases 포함)
+     */
+    @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<Long> createProblem(
-            @ModelAttribute ProblemCreateRequest request,
-            @RequestParam(value = "testcase_0", required = false) MultipartFile testcase0,
-            @RequestParam(value = "testcase_1", required = false) MultipartFile testcase1,
-            @RequestParam(value = "testcase_2", required = false) MultipartFile testcase2,
-            @RequestParam(value = "testcase_3", required = false) MultipartFile testcase3,
-            @RequestParam(value = "testcase_4", required = false) MultipartFile testcase4,
-            @RequestParam(value = "testcase_5", required = false) MultipartFile testcase5,
-            @RequestParam(value = "testcase_6", required = false) MultipartFile testcase6,
-            @RequestParam(value = "testcase_7", required = false) MultipartFile testcase7,
-            @RequestParam(value = "testcase_8", required = false) MultipartFile testcase8,
-            @RequestParam(value = "testcase_9", required = false) MultipartFile testcase9,
+            @RequestBody ProblemCreateRequest request,
             Authentication authentication) throws IOException {
-
-        // 테스트케이스 파일들 수집
-        List<MultipartFile> testcaseFiles = new ArrayList<>();
-        if (testcase0 != null && !testcase0.isEmpty()) testcaseFiles.add(testcase0);
-        if (testcase1 != null && !testcase1.isEmpty()) testcaseFiles.add(testcase1);
-        if (testcase2 != null && !testcase2.isEmpty()) testcaseFiles.add(testcase2);
-        if (testcase3 != null && !testcase3.isEmpty()) testcaseFiles.add(testcase3);
-        if (testcase4 != null && !testcase4.isEmpty()) testcaseFiles.add(testcase4);
-        if (testcase5 != null && !testcase5.isEmpty()) testcaseFiles.add(testcase5);
-        if (testcase6 != null && !testcase6.isEmpty()) testcaseFiles.add(testcase6);
-        if (testcase7 != null && !testcase7.isEmpty()) testcaseFiles.add(testcase7);
-        if (testcase8 != null && !testcase8.isEmpty()) testcaseFiles.add(testcase8);
-        if (testcase9 != null && !testcase9.isEmpty()) testcaseFiles.add(testcase9);
-
-        request.setTestcaseFiles(testcaseFiles);
-
         Long instructorId = Long.parseLong(authentication.getName());
         Long problemId = problemService.createProblem(request, instructorId);
         return ResponseEntity.ok(problemId);
@@ -233,5 +210,88 @@ public class ProblemController {
         Long instructorId = Long.parseLong(authentication.getName());
         ProblemUsageDto usage = problemService.getProblemUsage(problemId, instructorId);
         return ResponseEntity.ok(usage);
+    }
+
+    /**
+     * HandongJudge 포맷 단일 폴더 ZIP 파싱 (description.md, problem.ini, testcases/)
+     */
+    @PostMapping(value = "/parse-folder-zip", consumes = MediaType.MULTIPART_FORM_DATA_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<ProblemParseResponse> parseFolderFormatZip(
+            @RequestParam("zipFile") MultipartFile zipFile) throws IOException {
+        ProblemParseResponse response = problemService.parseFolderFormatZip(zipFile);
+        return ResponseEntity.ok(response);
+    }
+
+    /**
+     * HandongJudge 포맷 폴더 선택 파싱 (description.md, problem.ini, testcases/)
+     */
+    @PostMapping(value = "/parse-folder", consumes = MediaType.MULTIPART_FORM_DATA_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<ProblemParseResponse> parseFolderFormatFiles(
+            @RequestParam("files") List<MultipartFile> files) throws IOException {
+        ProblemParseResponse response = problemService.parseFolderFormatFiles(files);
+        return ResponseEntity.ok(response);
+    }
+
+    /**
+     * HandongJudge 포맷 bulk ZIP 파싱
+     */
+    @PostMapping(value = "/bulk/parse", consumes = MediaType.MULTIPART_FORM_DATA_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<java.util.List<BulkParseItemResult>> parseBulkZip(
+            @RequestParam("zipFile") MultipartFile zipFile,
+            Authentication authentication) throws IOException {
+        return ResponseEntity.ok(problemService.parseBulkZip(zipFile));
+    }
+
+    /**
+     * bulk 문제 생성
+     */
+    @PostMapping(value = "/bulk", consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<BulkCreateResponse> bulkCreateProblems(
+            @RequestBody BulkCreateRequest request,
+            Authentication authentication) throws IOException {
+        Long instructorId = Long.parseLong(authentication.getName());
+        List<ProblemCreateRequest> problems = request.getProblems();
+        if (problems == null || problems.isEmpty()) {
+            return ResponseEntity.badRequest().build();
+        }
+        BulkCreateResponse response = problemService.bulkCreateProblems(problems, instructorId);
+        return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Bulk Export (여러 문제를 HandongJudge 포맷 ZIP 하나로)
+     * GET /api/problems/export?ids=1&ids=2&ids=3
+     * (literal /export 먼저 선언하여 /{problemId}와 충돌 방지)
+     */
+    @GetMapping(value = "/export", produces = MediaType.APPLICATION_OCTET_STREAM_VALUE)
+    public ResponseEntity<byte[]> exportProblemsBulk(
+            @RequestParam("ids") List<Long> problemIds,
+            Authentication authentication) throws IOException {
+        if (problemIds == null || problemIds.isEmpty()) {
+            return ResponseEntity.badRequest().build();
+        }
+        Long instructorId = Long.parseLong(authentication.getName());
+        byte[] zipBytes = problemService.exportProblemsBulk(problemIds, instructorId);
+        return ResponseEntity.ok()
+                .header(org.springframework.http.HttpHeaders.CONTENT_DISPOSITION,
+                        "attachment; filename=\"problems-export.zip\"")
+                .contentType(MediaType.APPLICATION_OCTET_STREAM)
+                .body(zipBytes);
+    }
+
+    /**
+     * 단일 문제 Export (HandongJudge 포맷 ZIP)
+     */
+    @GetMapping("/{problemId}/export")
+    public ResponseEntity<byte[]> exportProblem(
+            @PathVariable Long problemId,
+            Authentication authentication) throws IOException {
+        Long instructorId = Long.parseLong(authentication.getName());
+        byte[] zipBytes = problemService.exportProblem(problemId, instructorId);
+        return ResponseEntity.ok()
+                .header(org.springframework.http.HttpHeaders.CONTENT_DISPOSITION,
+                        "attachment; filename=\"problem-" + problemId + ".zip\"")
+                .contentType(MediaType.APPLICATION_OCTET_STREAM)
+                .body(zipBytes);
     }
 }
