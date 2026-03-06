@@ -520,12 +520,74 @@ public class DomjudgeService {
         }
     }
 
-    // Result with Outputs
-    public SubmissionOutputResponseDTO getResultOutput(String cid, String submissionId) throws JsonProcessingException {
+    /**
+     * submission_id로 judgement 한 번만 조회하여 result(judgement_type_id)와 judgement id를 함께 반환.
+     * 제출하기(getResult)와 동일한 API를 사용하며, 테스트하기에서는 여기서 result + judgementId를 한 번에 사용.
+     */
+    private JudgementInfo getJudgementInfo(String cid, String submissionId) {
         try {
             HttpHeaders headers = createAuthHeaders();
+            String url = DOMJUDGE_API_URL + "/api/v4/contests/" + cid + "/judgements?submission_id=" + submissionId;
+            HttpEntity<Object> requestEntity = new HttpEntity<>(headers);
+            ResponseEntity<JsonNode> response = restTemplate.exchange(
+                    url,
+                    HttpMethod.GET,
+                    requestEntity,
+                    JsonNode.class
+            );
+            JsonNode responseBody = response.getBody();
+            if (responseBody == null || !responseBody.isArray() || responseBody.size() == 0) {
+                return null;
+            }
+            JsonNode judgement = responseBody.get(0);
+            if (!judgement.has("judgement_type_id") || judgement.get("judgement_type_id").isNull()) {
+                return null;
+            }
+            String result = judgement.get("judgement_type_id").asText();
+            if (!judgement.has("id") || judgement.get("id").isNull()) {
+                return null;
+            }
+            String judgementId = judgement.get("id").asText();
+            return new JudgementInfo(result, judgementId);
+        } catch (Exception e) {
+            log.debug("Could not get judgement info for submission {}: {}", submissionId, e.getMessage());
+            return null;
+        }
+    }
 
-            String url = DOMJUDGE_API_URL + "/api/v4/contests/" + cid + "/judgements/" + submissionId + "/output";
+    private static class JudgementInfo {
+        final String result;
+        final String judgementId;
+
+        JudgementInfo(String result, String judgementId) {
+            this.result = result;
+            this.judgementId = judgementId;
+        }
+    }
+
+    /**
+     * 테스트하기용: judgement 한 번 조회 후 CE면 output 호출 없이 result만 반환, 그 외는 output 조회.
+     */
+    public SubmissionOutputResponseDTO getResultOutput(String cid, String submissionId) throws JsonProcessingException {
+        JudgementInfo info = getJudgementInfo(cid, submissionId);
+        if (info == null) {
+            log.debug("Judgement not ready yet for submission: {}", submissionId);
+            return null;
+        }
+
+        // CE(컴파일 에러)는 run이 없으므로 output 호출 없이 result만 반환
+        if ("CE".equals(info.result)) {
+            log.info("CE for submission {}, returning without output call: {}", submissionId, info.result);
+            return SubmissionOutputResponseDTO.builder()
+                    .result(info.result)
+                    .outputList(Collections.emptyList())
+                    .build();
+        }
+
+        // AC, WA, TLE 등: judgement id로 output 조회
+        try {
+            HttpHeaders headers = createAuthHeaders();
+            String url = DOMJUDGE_API_URL + "/api/v4/contests/" + cid + "/judgements/" + info.judgementId + "/output";
 
             log.debug("Request URL: " + url);
 
@@ -537,47 +599,39 @@ public class DomjudgeService {
                     JsonNode.class
             );
 
-            log.debug("Response Status: " + response.getStatusCode());
-            log.debug("Response Body: " + response.getBody());
-
             JsonNode responseBody = response.getBody();
             if (responseBody == null) {
                 log.warn("Response body is null for submission: {}", submissionId);
-                return null;
+                return SubmissionOutputResponseDTO.builder()
+                        .result(info.result)
+                        .outputList(Collections.emptyList())
+                        .build();
             }
 
-            // judgement_type_id가 null이거나 없는 경우 처리
-            if (!responseBody.has("result") || responseBody.get("result").isNull()) {
-                log.debug("Judgement not ready yet for submission: {}", submissionId);
-                return null;
-            }
-
-            String result = responseBody.get("result").asText();
-            log.info("Result received for submission {}: {}", submissionId, result);
-
-
-            // Output parsing
             JsonNode runsResponse = responseBody.get("runs");
             List<Output> outputList = new ArrayList<>();
             ObjectMapper mapper = new ObjectMapper();
 
-            if(runsResponse != null && runsResponse.isArray()){
-                for(JsonNode runNode : runsResponse){
+            if (runsResponse != null && runsResponse.isArray()) {
+                for (JsonNode runNode : runsResponse) {
                     Output output = mapper.treeToValue(runNode, Output.class);
                     outputList.add(output);
                 }
             }
 
-
             return SubmissionOutputResponseDTO.builder()
-                    .result(result)
+                    .result(info.result)
                     .outputList(outputList)
                     .build();
 
         } catch (HttpClientErrorException e) {
             if (e.getStatusCode().value() == 404) {
-                log.debug("Judgement not found for submission: {}", submissionId);
-                return null;
+                // output이 없으면 이미 가진 result로 반환
+                log.info("Output 404 for submission {}, returning result only: {}", submissionId, info.result);
+                return SubmissionOutputResponseDTO.builder()
+                        .result(info.result)
+                        .outputList(Collections.emptyList())
+                        .build();
             }
             log.error("HTTP error while getting result for submission {}: {}", submissionId, e.getMessage());
             throw e;
