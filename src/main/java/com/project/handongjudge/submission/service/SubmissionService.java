@@ -356,8 +356,13 @@ public class SubmissionService {
                             return result;
                         }
                     } else {
-                        // outputList가 없으면 전체 result만 확인
-                        return result;
+                        // outputList가 비어있는 경우
+                        // CE(컴파일 에러)인 경우는 런이 없으므로 정상적으로 빈 배열이므로 즉시 반환
+                        // 그 외의 경우는 아직 준비되지 않은 것이므로 계속 폴링
+                        if ("CE".equals(result.getResult())) {
+                            return result;
+                        }
+                        // CE가 아니면 계속 폴링 (즉시 return하지 않음)
                     }
                 }
             } catch (Exception e) {
@@ -366,7 +371,7 @@ public class SubmissionService {
             }
 
             try {
-                Thread.sleep(100); // 0.1초 대기
+                Thread.sleep(500); // 0.5초 대기 (maxAttempts * 0.5s = maxWaitSeconds초 대기)
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 throw new RuntimeException("Polling interrupted", e);
