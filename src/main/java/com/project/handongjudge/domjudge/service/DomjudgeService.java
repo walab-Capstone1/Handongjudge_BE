@@ -607,7 +607,7 @@ public class DomjudgeService {
         // AC, WA, TLE 등: judgement id로 output 조회
         try {
             HttpHeaders headers = createAuthHeaders();
-            String url = DOMJUDGE_API_URL + "/api/v4/contests/" + cid + "/judgements/" + submissionId + "/output";
+            String url = DOMJUDGE_API_URL + "/api/v4/contests/" + cid + "/judgements/" + info.judgementId + "/output";
 
             log.debug("Request URL: " + url);
 
