@@ -31,6 +31,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.project.handongjudge.domjudge.service.DomjudgeService;
 import java.util.ArrayList;
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -535,20 +536,29 @@ public class UserService {
             String status = "NOT_SUBMITTED";
             int submissionCount = submissionRepository.countByUserIdAndProblemId(userId, problemId);
             Boolean isOnTime = null;
+            LocalDateTime submittedAt = null;
+            Integer minutesLate = null;
 
             if (submissionCount > 0) {
                 int acceptedCount = submissionRepository.countAcceptedByUserIdAndProblemId(userId, problemId);
                 status = acceptedCount > 0 ? "ACCEPTED" : "SUBMITTED";
 
-                if (endDate != null) {
-                    Optional<LocalDateTime> refTime = acceptedCount > 0
-                            ? submissionRepository.findFirstAcceptedSubmissionTime(userId, problemId, sectionId)
-                            : submissionRepository.findLatestSubmissionTime(userId, problemId, sectionId);
-                    isOnTime = refTime
-                            .map(t -> !t.isAfter(endDate))
-                            .orElse(false);
+                Optional<LocalDateTime> refTime = acceptedCount > 0
+                        ? submissionRepository.findFirstAcceptedSubmissionTime(userId, problemId, sectionId)
+                        : submissionRepository.findLatestSubmissionTime(userId, problemId, sectionId);
+
+                if (refTime.isPresent()) {
+                    submittedAt = refTime.get();
+                    if (endDate != null) {
+                        isOnTime = !submittedAt.isAfter(endDate);
+                        if (submittedAt.isAfter(endDate)) {
+                            minutesLate = (int) ChronoUnit.MINUTES.between(endDate, submittedAt);
+                        }
+                    } else {
+                        isOnTime = true;
+                    }
                 } else {
-                    isOnTime = true;
+                    if (endDate != null) isOnTime = false;
                 }
             }
 
@@ -558,6 +568,8 @@ public class UserService {
                     .status(status)
                     .submissionCount(submissionCount)
                     .isOnTime(isOnTime)
+                    .submittedAt(submittedAt)
+                    .minutesLate(minutesLate)
                     .build());
         }
 

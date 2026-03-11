@@ -91,8 +91,10 @@ public class ProblemService {
         User instructor = userRepository.findById(instructorId)
                 .orElseThrow(() -> new IllegalArgumentException("Instructor not found: " + instructorId));
 
+        String originalTitle = ensureOriginalTitle(request.getTitle());
+
         Problem problem = Problem.builder()
-                .title(request.getTitle())
+                .title(originalTitle)
                 .description(description)
                 .domjudgeProblemId(domjudgeProblemId)
                 .timeLimit((Double) limits.get("timeLimit"))
@@ -155,8 +157,10 @@ public class ProblemService {
                 ? request.getDifficulty().trim()
                 : "1";
 
+        String originalTitle = ensureOriginalTitle(request.getTitle());
+
         Problem problem = Problem.builder()
-                .title(request.getTitle())
+                .title(originalTitle)
                 .description(fullDescription)
                 .difficulty(difficulty)
                 .domjudgeProblemId(domjudgeProblemId)
@@ -169,7 +173,7 @@ public class ProblemService {
                 .build();
 
         problemRepository.save(problem);
-        log.info("문제 생성 완료: ID={}, Title={}", problem.getId(), request.getTitle());
+        log.info("문제 생성 완료: ID={}, Title={}", problem.getId(), originalTitle);
 
         return problem.getId();
     }
@@ -467,10 +471,16 @@ public class ProblemService {
         // byte[]를 MultipartFile로 변환
         MultipartFile originalZipFile = new ByteArrayMultipartFile(originalZipData, "problem.zip");
 
-        // 새 문제 제목
-        String problemTitle = (newTitle != null && !newTitle.trim().isEmpty())
-                ? newTitle
-                : sourceProblem.getTitle() + " (복사본)";
+        // 새 문제 제목: 지정값이 없으면 원본에서 "_오리지널"만 제거 (복사본 접미사 사용 안 함)
+        String problemTitle;
+        if (newTitle != null && !newTitle.trim().isEmpty()) {
+            problemTitle = newTitle.trim();
+        } else {
+            problemTitle = stripOriginalSuffix(sourceProblem.getTitle());
+            if (problemTitle.isEmpty()) {
+                problemTitle = sourceProblem.getTitle();
+            }
+        }
 
         // 고유한 externalid 생성 (문제 복사 시에는 타임스탬프만 사용)
         String externalId = "problem-" + System.currentTimeMillis();
@@ -506,6 +516,25 @@ public class ProblemService {
                 sourceProblemId, savedProblem.getId(), problemTitle);
 
         return savedProblem.getId();
+    }
+
+    /** 문제 생성 시 저장 제목: "_오리지널" 접미사가 없으면 붙인다 */
+    private static String ensureOriginalTitle(String title) {
+        if (title == null) return "_오리지널";
+        String t = title.trim();
+        if (t.isEmpty()) return "_오리지널";
+        if (t.endsWith("_오리지널")) return t;
+        return t + "_오리지널";
+    }
+
+    /** 복사 시 사용할 제목: "_오리지널" 접미사를 제거한다 */
+    private static String stripOriginalSuffix(String title) {
+        if (title == null) return "";
+        String t = title.trim();
+        if (t.endsWith("_오리지널")) {
+            return t.substring(0, t.length() - "_오리지널".length()).trim();
+        }
+        return t;
     }
 
     /**
