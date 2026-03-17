@@ -16,3 +16,11 @@ logging:
       total-size-cap: 1GB
   file:
     name: /var/log/handongjudge/application.log
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
