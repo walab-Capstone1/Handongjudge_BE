@@ -102,26 +102,6 @@ public interface SubmissionRepository extends JpaRepository<Submission, Long> {
     List<Long> findSolvedProblemIdsByUserAndAssignment(@Param("userId") Long userId,
                                                        @Param("assignmentId") Long assignmentId,
                                                        @Param("sectionId") Long sectionId);
-    // 특정 학생의 특정 문제에 대한 첫 정답 제출 시간 조회 - "AC"로 수정
-    @Query("SELECT MIN(s.submittedAt) FROM Submission s " +
-            "WHERE s.user.id = :userId AND s.problem.id = :problemId " +
-            "AND s.section.id = :sectionId AND s.result = 'AC'")
-    Optional<LocalDateTime> findFirstAcceptedSubmissionTime(@Param("userId") Long userId,
-                                                            @Param("problemId") Long problemId,
-                                                            @Param("sectionId") Long sectionId);
-
-    // 특정 학생의 특정 문제에 대한 가장 최근 제출 시간 (지각 여부 판단용)
-    @Query("SELECT MAX(s.submittedAt) FROM Submission s " +
-            "WHERE s.user.id = :userId AND s.problem.id = :problemId " +
-            "AND s.section.id = :sectionId")
-    Optional<LocalDateTime> findLatestSubmissionTime(@Param("userId") Long userId,
-                                                     @Param("problemId") Long problemId,
-                                                     @Param("sectionId") Long sectionId);
-
-    /** 분반·문제별 submitted_at 기준 가장 늦은 제출 1건 (성적·표시용) */
-    Optional<Submission> findTopByUser_IdAndProblem_IdAndSection_IdOrderBySubmittedAtDesc(
-            Long user_id, Long problem_id, Long section_id);
-
     // 특정 학생의 특정 문제에 대한 첫 번째 accept된 제출 조회
     @Query("SELECT s FROM Submission s " +
             "WHERE s.user.id = :userId AND s.problem.id = :problemId " +
