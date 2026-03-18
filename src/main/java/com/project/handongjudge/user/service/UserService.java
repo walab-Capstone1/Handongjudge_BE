@@ -25,6 +25,7 @@ import com.project.handongjudge.submission.repository.SubmissionRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -538,11 +539,10 @@ public class UserService {
             LocalDateTime submittedAt = null;
             Integer minutesLate = null;
 
-            Optional<Submission> latestOpt = submissionRepository
-                    .findTopByUser_IdAndProblem_IdAndSection_IdOrderBySubmittedAtDesc(userId, problemId, sectionId);
-
-            if (latestOpt.isPresent()) {
-                Submission latest = latestOpt.get();
+            List<Submission> latestList = submissionRepository.findLatestSubmissionsByUserAndProblem(
+                    userId, problemId, sectionId, PageRequest.of(0, 1));
+            if (!latestList.isEmpty()) {
+                Submission latest = latestList.get(0);
                 submittedAt = latest.getSubmittedAt();
                 status = "AC".equals(latest.getResult()) ? "ACCEPTED" : "SUBMITTED";
                 if (endDate != null) {
