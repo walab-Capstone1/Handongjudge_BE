@@ -57,6 +57,7 @@ public class ProblemSetService {
                         .title(psp.getProblem().getTitle())
                         .difficulty(psp.getProblem().getDifficulty())
                         .order(psp.getProblemOrder())
+                        .createdAt(psp.getProblem().getCreatedAt())
                         .build())
                 .collect(Collectors.toList());
 
