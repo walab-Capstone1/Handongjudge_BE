@@ -401,16 +401,15 @@ public class AssignmentService {
             List<Long> solvedProblemIds = submissionRepository
                     .findSolvedProblemIdsByUserAndAssignment(student.getId(), assignmentId, sectionId);
 
-            // 각 문제별 첫 정답 제출 시간 조회
+            // 각 문제별 마지막 제출 시간 조회 (성적·표시 기준과 동일)
             Map<Long, LocalDateTime> problemSubmissionTimes = new HashMap<>();
             LocalDateTime assignmentCompletedAt = null;
 
             for (Long problemId : solvedProblemIds) {
-                Optional<LocalDateTime> firstSubmissionTime = submissionRepository
-                        .findFirstAcceptedSubmissionTime(student.getId(), problemId, sectionId);
-
-                if (firstSubmissionTime.isPresent()) {
-                    problemSubmissionTimes.put(problemId, firstSubmissionTime.get());
+                List<Submission> latestList = submissionRepository.findLatestSubmissionsByUserAndProblem(
+                        student.getId(), problemId, sectionId, PageRequest.of(0, 1));
+                if (!latestList.isEmpty()) {
+                    problemSubmissionTimes.put(problemId, latestList.get(0).getSubmittedAt());
                 }
             }
 
