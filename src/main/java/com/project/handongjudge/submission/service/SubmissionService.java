@@ -202,7 +202,7 @@ public class SubmissionService {
                       userId, section.getId(), contestId, teamId, domjudgeProblemId);
 
             if (teamId == null || teamId.isEmpty()) {
-                throw new RuntimeException("팀 ID를 찾을 수 없습니다. 수강신청이 되어있는지 확인하세요.");
+                throw new RuntimeException("현재 수업에 수강신청되어 있지 않습니다. 수강 신청 후 제출해 주세요.");
             }
 
             File codeFile = CodeExtenstion.StringToFile(
@@ -302,12 +302,12 @@ public class SubmissionService {
                 Thread.sleep(100);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
-                throw new RuntimeException("Polling interrupted", e);
+                throw new RuntimeException("채점이 중단되었습니다. 잠시 후 다시 시도해 주세요.", e);
             }
             attempts++;
         }
 
-        throw new RuntimeException("Result not available after " + maxWaitSeconds + " seconds");
+        throw new RuntimeException("채점 결과를 가져오는 데 시간이 초과되었습니다. 제출은 완료되었을 수 있으니 제출 목록에서 확인해 주세요.");
     }
 
 
@@ -445,12 +445,12 @@ public class SubmissionService {
                 Thread.sleep(500);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
-                throw new RuntimeException("Polling interrupted", e);
+                throw new RuntimeException("채점이 중단되었습니다. 잠시 후 다시 시도해 주세요.", e);
             }
             attempts++;
         }
 
-        throw new RuntimeException("Result not available after " + maxWaitSeconds + " seconds");
+        throw new RuntimeException("채점 결과를 가져오는 데 시간이 초과되었습니다. 제출은 완료되었을 수 있으니 제출 목록에서 확인해 주세요.");
     }
 
     public String getUserLatestSubmission(Authentication authentication, Long problemId,Long sectionId, String language ) {
