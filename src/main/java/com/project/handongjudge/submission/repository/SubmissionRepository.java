@@ -1,5 +1,6 @@
 package com.project.handongjudge.submission.repository;
 
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import com.project.handongjudge.submission.entity.Submission;
 import org.springframework.data.jpa.repository.Query;
@@ -129,6 +130,16 @@ public interface SubmissionRepository extends JpaRepository<Submission, Long> {
     List<Submission> findAcceptedSubmissionsByUserAndProblem(@Param("userId") Long userId,
                                                               @Param("problemId") Long problemId,
                                                               @Param("sectionId") Long sectionId);
+
+    /** 성적·표시용: 해당 분반·문제의 가장 최근 제출 1건 (결과 무관) */
+    @Query("SELECT s FROM Submission s " +
+            "WHERE s.user.id = :userId AND s.problem.id = :problemId AND s.section.id = :sectionId " +
+            "ORDER BY s.submittedAt DESC")
+    List<Submission> findLatestSubmissionsByUserAndProblem(
+            @Param("userId") Long userId,
+            @Param("problemId") Long problemId,
+            @Param("sectionId") Long sectionId,
+            Pageable pageable);
 
     // 시스템 관리자용: 모든 제출 조회 (관계 엔티티 포함)
     @Query("SELECT s FROM Submission s " +
