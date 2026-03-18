@@ -20,7 +20,7 @@ public class GlobalExceptionHandler {
         log.error("Authentication failed: ", e);
         Map<String, Object> response = new HashMap<>();
         response.put("success", false);
-        response.put("message", "인증에 실패했습니다.");
+        response.put("message", "세션이 만료되었습니다. 새로고침 후 다시 로그인해 주세요. 작성 중인 코드는 그대로 유지됩니다.");
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(response);
     }
 
