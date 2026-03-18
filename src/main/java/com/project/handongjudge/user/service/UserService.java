@@ -521,7 +521,7 @@ public class UserService {
     }
     // SubmissionRepository에서 메서드 제거하고 UserService에서 직접 처리
 
-    // UserService의 getStudentAssignmentProblemsStatus 메서드:
+    /** 분반·문제별 submitted_at 가장 늦은 제출 1건 기준으로 정답/제출/미제출 및 제출 시각 표시 (성적과 동일) */
     public List<StudentProblemStatusDto> getStudentAssignmentProblemsStatus(Long userId, Long sectionId, Long assignmentId) {
         Assignment assignment = assignmentRepository.findById(assignmentId).orElse(null);
         LocalDateTime endDate = assignment != null ? assignment.getEndDate() : null;
@@ -534,34 +534,28 @@ public class UserService {
             if (problem == null) continue;
 
             String status = "NOT_SUBMITTED";
-            int submissionCount = submissionRepository.countByUserIdAndProblemId(userId, problemId);
             Boolean isOnTime = null;
             LocalDateTime submittedAt = null;
             Integer minutesLate = null;
 
-            if (submissionCount > 0) {
-                int acceptedCount = submissionRepository.countAcceptedByUserIdAndProblemId(userId, problemId);
-                status = acceptedCount > 0 ? "ACCEPTED" : "SUBMITTED";
+            Optional<Submission> latestOpt = submissionRepository
+                    .findTopByUser_IdAndProblem_IdAndSection_IdOrderBySubmittedAtDesc(userId, problemId, sectionId);
 
-                Optional<LocalDateTime> refTime = acceptedCount > 0
-                        ? submissionRepository.findFirstAcceptedSubmissionTime(userId, problemId, sectionId)
-                        : submissionRepository.findLatestSubmissionTime(userId, problemId, sectionId);
-
-                if (refTime.isPresent()) {
-                    submittedAt = refTime.get();
-                    if (endDate != null) {
-                        isOnTime = !submittedAt.isAfter(endDate);
-                        if (submittedAt.isAfter(endDate)) {
-                            minutesLate = (int) ChronoUnit.MINUTES.between(endDate, submittedAt);
-                        }
-                    } else {
-                        isOnTime = true;
+            if (latestOpt.isPresent()) {
+                Submission latest = latestOpt.get();
+                submittedAt = latest.getSubmittedAt();
+                status = "AC".equals(latest.getResult()) ? "ACCEPTED" : "SUBMITTED";
+                if (endDate != null) {
+                    isOnTime = !submittedAt.isAfter(endDate);
+                    if (submittedAt.isAfter(endDate)) {
+                        minutesLate = (int) ChronoUnit.MINUTES.between(endDate, submittedAt);
                     }
                 } else {
-                    if (endDate != null) isOnTime = false;
+                    isOnTime = true;
                 }
             }
 
+            int submissionCount = submissionRepository.countByUserIdAndProblemId(userId, problemId);
             problemStatusList.add(StudentProblemStatusDto.builder()
                     .problemId(problemId)
                     .problemTitle(problem.getTitle())

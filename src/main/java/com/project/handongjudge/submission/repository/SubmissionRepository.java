@@ -117,6 +117,10 @@ public interface SubmissionRepository extends JpaRepository<Submission, Long> {
                                                      @Param("problemId") Long problemId,
                                                      @Param("sectionId") Long sectionId);
 
+    /** 분반·문제별 submitted_at 기준 가장 늦은 제출 1건 (성적·표시용) */
+    Optional<Submission> findTopByUser_IdAndProblem_IdAndSection_IdOrderBySubmittedAtDesc(
+            Long user_id, Long problem_id, Long section_id);
+
     // 특정 학생의 특정 문제에 대한 첫 번째 accept된 제출 조회
     @Query("SELECT s FROM Submission s " +
             "WHERE s.user.id = :userId AND s.problem.id = :problemId " +
