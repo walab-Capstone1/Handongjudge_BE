@@ -22,6 +22,8 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.util.*;
 
+import org.springframework.data.domain.PageRequest;
+
 @Transactional
 @Service
 @RequiredArgsConstructor
@@ -86,14 +88,8 @@ public class GradeServiceImpl implements GradeService {
         Grade savedGrade = gradeRepository.save(grade);
 
         // 7. 제출 정보 조회
-        Optional<Submission> latestSubmission = submissionRepository
-                .findAcceptedSubmissionsByUserAndProblem(
-                        request.getUserId(),
-                        request.getProblemId(),
-                        section.getId()
-                )
-                .stream()
-                .findFirst();
+        Optional<Submission> latestSubmission = findLatestSubmission(
+                request.getUserId(), request.getProblemId(), section.getId());
 
         // 8. DTO 변환 및 반환
         return convertToResponseDTO(savedGrade, latestSubmission.orElse(null), assignment);
@@ -159,28 +155,23 @@ public class GradeServiceImpl implements GradeService {
                 pg.setPoints(1); // 과제/퀴즈: 통과 시 1점
                 totalPoints += 1;
 
-                // 제출 정보 조회 (AC = 테스트 케이스 전부 통과)
-                Optional<Submission> submission = submissionRepository
-                        .findAcceptedSubmissionsByUserAndProblem(
-                                student.getId(), problem.getId(), sectionId
-                        )
-                        .stream()
-                        .findFirst();
+                Optional<Submission> submission = findLatestSubmission(
+                        student.getId(), problem.getId(), sectionId);
 
                 if (submission.isPresent()) {
+                    Submission sub = submission.get();
                     pg.setSubmitted(true);
-                    pg.setSubmittedAt(submission.get().getSubmittedAt());
+                    pg.setSubmittedAt(sub.getSubmittedAt());
                     if (assignment.getEndDate() != null) {
                         pg.setIsOnTime(
-                                submission.get().getSubmittedAt().isBefore(assignment.getEndDate()) ||
-                                submission.get().getSubmittedAt().isEqual(assignment.getEndDate())
+                                sub.getSubmittedAt().isBefore(assignment.getEndDate()) ||
+                                sub.getSubmittedAt().isEqual(assignment.getEndDate())
                         );
                     } else {
                         pg.setIsOnTime(true);
                     }
-                    pg.setResult(submission.get().getResult());
-                    // 테스트 케이스 전부 통과(AC)면 자동 1점
-                    if ("AC".equals(submission.get().getResult())) {
+                    pg.setResult(sub.getResult());
+                    if ("AC".equals(sub.getResult())) {
                         pg.setScore(1);
                         totalScore += 1;
                     } else {
@@ -234,26 +225,23 @@ public class GradeServiceImpl implements GradeService {
             pg.setPoints(1);
             totalPoints += 1;
 
-            Optional<Submission> submission = submissionRepository
-                    .findAcceptedSubmissionsByUserAndProblem(
-                            userId, problem.getId(), assignment.getSection().getId()
-                    )
-                    .stream()
-                    .findFirst();
+            Optional<Submission> submission = findLatestSubmission(
+                    userId, problem.getId(), assignment.getSection().getId());
 
             if (submission.isPresent()) {
+                Submission sub = submission.get();
                 pg.setSubmitted(true);
-                pg.setSubmittedAt(submission.get().getSubmittedAt());
+                pg.setSubmittedAt(sub.getSubmittedAt());
                 if (assignment.getEndDate() != null) {
                     pg.setIsOnTime(
-                            submission.get().getSubmittedAt().isBefore(assignment.getEndDate()) ||
-                            submission.get().getSubmittedAt().isEqual(assignment.getEndDate())
+                            sub.getSubmittedAt().isBefore(assignment.getEndDate()) ||
+                            sub.getSubmittedAt().isEqual(assignment.getEndDate())
                     );
                 } else {
                     pg.setIsOnTime(true);
                 }
-                pg.setResult(submission.get().getResult());
-                if ("AC".equals(submission.get().getResult())) {
+                pg.setResult(sub.getResult());
+                if ("AC".equals(sub.getResult())) {
                     pg.setScore(1);
                     totalScore += 1;
                 } else {
@@ -288,12 +276,8 @@ public class GradeServiceImpl implements GradeService {
             throw new IllegalArgumentException("성적을 찾을 수 없습니다");
         }
 
-        Optional<Submission> submission = submissionRepository
-                .findAcceptedSubmissionsByUserAndProblem(
-                        userId, problemId, assignment.getSection().getId()
-                )
-                .stream()
-                .findFirst();
+        Optional<Submission> submission = findLatestSubmission(
+                userId, problemId, assignment.getSection().getId());
 
         return convertToResponseDTO(grade.get(), submission.orElse(null), assignment);
     }
@@ -367,6 +351,12 @@ public class GradeServiceImpl implements GradeService {
         }
 
         return builder.build();
+    }
+
+    private Optional<Submission> findLatestSubmission(Long userId, Long problemId, Long sectionId) {
+        List<Submission> list = submissionRepository.findLatestSubmissionsByUserAndProblem(
+                userId, problemId, sectionId, PageRequest.of(0, 1));
+        return list.isEmpty() ? Optional.empty() : Optional.of(list.get(0));
     }
 }
 
