@@ -21,6 +21,7 @@ import com.project.handongjudge.submission.entity.Submission;
 import com.project.handongjudge.submission.repository.SubmissionRepository;
 import com.project.handongjudge.section.service.SectionRoleService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -343,12 +344,11 @@ public class QuizService {
                 pg.setPoints(1); // 퀴즈: 통과 시 1점
                 totalPoints += 1;
 
-                Optional<Submission> submission = submissionRepository
-                        .findAcceptedSubmissionsByUserAndProblem(
-                                student.getId(), problem.getId(), sectionId
-                        )
-                        .stream()
-                        .findFirst();
+                List<Submission> latestList = submissionRepository.findLatestSubmissionsByUserAndProblem(
+                        student.getId(), problem.getId(), sectionId, PageRequest.of(0, 1));
+                Optional<Submission> submission = latestList.isEmpty()
+                        ? Optional.empty()
+                        : Optional.of(latestList.get(0));
 
                 if (submission.isPresent()) {
                     Submission sub = submission.get();
@@ -363,7 +363,6 @@ public class QuizService {
                     } else {
                         pg.setIsOnTime(true);
                     }
-                    // 테스트 케이스 전부 통과(AC)면 자동 1점
                     if ("AC".equals(sub.getResult())) {
                         pg.setScore(1);
                         totalScore += 1;
@@ -429,14 +428,11 @@ public class QuizService {
 
         QuizGrade saved = quizGradeRepository.save(grade);
 
-        Optional<Submission> sub = submissionRepository
-                .findAcceptedSubmissionsByUserAndProblem(
-                        request.getUserId(), request.getProblemId(), section.getId()
-                )
-                .stream()
-                .findFirst();
+        List<Submission> latestList = submissionRepository.findLatestSubmissionsByUserAndProblem(
+                request.getUserId(), request.getProblemId(), section.getId(), PageRequest.of(0, 1));
+        Submission sub = latestList.isEmpty() ? null : latestList.get(0);
 
-        return toQuizGradeResponseDTO(saved, quiz, sub.orElse(null));
+        return toQuizGradeResponseDTO(saved, quiz, sub);
     }
 
     /**
@@ -499,23 +495,23 @@ public class QuizService {
         }
         QuizProblem qp = quizProblemRepository.findByQuizIdAndProblemId(quizId, problemId)
                 .orElseThrow(() -> new IllegalArgumentException("해당 문제는 이 퀴즈에 포함되어 있지 않습니다"));
-        List<Submission> acceptedSubmissions = submissionRepository
-                .findAcceptedSubmissionsByUserAndProblem(userId, problemId, sectionId);
-        if (acceptedSubmissions.isEmpty()) {
-            throw new IllegalArgumentException("해당 학생은 이 문제를 아직 정답으로 제출하지 않았습니다");
+        List<Submission> latestList = submissionRepository.findLatestSubmissionsByUserAndProblem(
+                userId, problemId, sectionId, PageRequest.of(0, 1));
+        if (latestList.isEmpty()) {
+            throw new IllegalArgumentException("해당 학생의 제출 기록이 없습니다");
         }
-        Submission first = acceptedSubmissions.get(0);
+        Submission last = latestList.get(0);
         return StudentAcceptedCodeResponse.builder()
-                .submissionId(first.getId())
+                .submissionId(last.getId())
                 .userId(student.getId())
                 .studentId(student.getStudentId() != null ? student.getStudentId() : student.getEmail())
                 .studentName(student.getName())
                 .problemId(problem.getId())
                 .problemTitle(problem.getTitle())
-                .code(first.getCode())
-                .language(first.getLanguage())
-                .submittedAt(first.getSubmittedAt())
-                .result(first.getResult())
+                .code(last.getCode())
+                .language(last.getLanguage())
+                .submittedAt(last.getSubmittedAt())
+                .result(last.getResult())
                 .build();
     }
 
