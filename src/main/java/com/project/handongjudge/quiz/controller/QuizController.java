@@ -1,7 +1,9 @@
 package com.project.handongjudge.quiz.controller;
 
 import com.project.handongjudge.assignment.dto.StudentAcceptedCodeResponse;
+import com.project.handongjudge.assignment.dto.StudentProgressResponse;
 import com.project.handongjudge.quiz.dto.*;
+import com.project.handongjudge.quiz.entity.Quiz;
 import com.project.handongjudge.quiz.service.QuizService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -102,6 +104,49 @@ public class QuizController {
     }
 
     /**
+     * 퀴즈 학생 진행 현황 일괄 조회
+     */
+    @GetMapping("/{quizId}/student-progress")
+    public ResponseEntity<List<StudentProgressResponse>> getQuizStudentProgress(
+            @PathVariable Long sectionId,
+            @PathVariable Long quizId,
+            Authentication authentication
+    ) {
+        Long userId = Long.parseLong(authentication.getName());
+        List<StudentProgressResponse> progress = quizService.getQuizStudentProgress(quizId, sectionId, userId);
+        return ResponseEntity.ok(progress);
+    }
+
+    /**
+     * 퀴즈 문제별 제출 통계 조회
+     */
+    @GetMapping("/{quizId}/submission-stats")
+    public ResponseEntity<QuizSubmissionStatsResponse> getQuizSubmissionStats(
+            @PathVariable Long sectionId,
+            @PathVariable Long quizId,
+            Authentication authentication
+    ) {
+        Long userId = Long.parseLong(authentication.getName());
+        QuizSubmissionStatsResponse stats = quizService.getQuizSubmissionStats(quizId, sectionId, userId);
+        return ResponseEntity.ok(stats);
+    }
+
+    /**
+     * 퀴즈에서 문제 제거
+     */
+    @DeleteMapping("/{quizId}/problems/{problemId}")
+    public ResponseEntity<Void> removeProblemFromQuiz(
+            @PathVariable Long sectionId,
+            @PathVariable Long quizId,
+            @PathVariable Long problemId,
+            Authentication authentication
+    ) {
+        Long instructorId = Long.parseLong(authentication.getName());
+        quizService.removeProblemFromQuiz(quizId, problemId, instructorId);
+        return ResponseEntity.noContent().build();
+    }
+
+    /**
      * 퀴즈 성적 조회
      */
     @GetMapping("/{quizId}/grades")
@@ -197,6 +242,31 @@ public class QuizController {
         Long instructorId = Long.parseLong(authentication.getName());
         StudentAcceptedCodeResponse response = quizService.getStudentAcceptedCode(
                 sectionId, quizId, userId, problemId, instructorId);
+        return ResponseEntity.ok(response);
+    }
+
+    /**
+     * 퀴즈 상태 수동 변경 (시작/정지/종료)
+     */
+    @PatchMapping("/{quizId}/status")
+    public ResponseEntity<QuizResponse> updateQuizStatus(
+            @PathVariable Long sectionId,
+            @PathVariable Long quizId,
+            @RequestBody Map<String, String> request,
+            Authentication authentication
+    ) {
+        Long instructorId = Long.parseLong(authentication.getName());
+        String statusStr = request.get("status");
+        if (statusStr == null || statusStr.isBlank()) {
+            return ResponseEntity.badRequest().build();
+        }
+        Quiz.QuizStatus status;
+        try {
+            status = Quiz.QuizStatus.valueOf(statusStr);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().build();
+        }
+        QuizResponse response = quizService.updateQuizStatus(quizId, status, instructorId);
         return ResponseEntity.ok(response);
     }
 

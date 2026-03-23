@@ -102,6 +102,16 @@ public interface SubmissionRepository extends JpaRepository<Submission, Long> {
     List<Long> findSolvedProblemIdsByUserAndAssignment(@Param("userId") Long userId,
                                                        @Param("assignmentId") Long assignmentId,
                                                        @Param("sectionId") Long sectionId);
+
+    // 학생별 특정 퀴즈에서 푼 문제 조회 (정답 처리된 문제만)
+    @Query("SELECT DISTINCT s.problem.id FROM Submission s " +
+            "WHERE s.user.id = :userId " +
+            "AND s.problem.id IN (SELECT qp.problem.id FROM QuizProblem qp WHERE qp.quiz.id = :quizId) " +
+            "AND s.section.id = :sectionId " +
+            "AND s.result = 'AC'")
+    List<Long> findSolvedProblemIdsByUserAndQuiz(@Param("userId") Long userId,
+                                                @Param("quizId") Long quizId,
+                                                @Param("sectionId") Long sectionId);
     // 특정 학생의 특정 문제에 대한 첫 번째 accept된 제출 조회
     @Query("SELECT s FROM Submission s " +
             "WHERE s.user.id = :userId AND s.problem.id = :problemId " +

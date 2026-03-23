@@ -15,7 +15,9 @@ import com.project.handongjudge.user.entity.User;
 import com.project.handongjudge.user.repository.UserRepository;
 import com.project.handongjudge.user.repository.EnrollmentRepository;
 import com.project.handongjudge.domjudge.service.DomjudgeService;
+import com.project.handongjudge.assignment.dto.ProblemSubmissionStats;
 import com.project.handongjudge.assignment.dto.StudentAcceptedCodeResponse;
+import com.project.handongjudge.assignment.dto.StudentProgressResponse;
 import com.project.handongjudge.grade.dto.StudentGradeSummaryDTO;
 import com.project.handongjudge.submission.entity.Submission;
 import com.project.handongjudge.submission.repository.SubmissionRepository;
@@ -27,6 +29,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -221,9 +224,10 @@ public class QuizService {
         quiz.setStartTime(request.getStartTime());
         quiz.setEndTime(request.getEndTime());
 
-        // 상태 업데이트
+        // 상태 업데이트 (수정 시에는 시간 기반 자동 결정)
         Quiz.QuizStatus newStatus = determineStatus(request.getStartTime(), request.getEndTime());
         quiz.setStatus(newStatus);
+        quiz.setManualStatusOverride(false);
 
         Quiz savedQuiz = quizRepository.save(quiz);
 
@@ -281,6 +285,149 @@ public class QuizService {
         }
 
         quizRepository.delete(quiz);
+    }
+
+    /**
+     * 퀴즈 학생 진행 현황 일괄 조회
+     */
+    @Transactional(readOnly = true)
+    public List<StudentProgressResponse> getQuizStudentProgress(Long quizId, Long sectionId, Long userId) {
+        Quiz quiz = quizRepository.findById(quizId)
+                .orElseThrow(() -> new IllegalArgumentException("Quiz not found"));
+
+        if (!sectionRoleService.isManager(userId, quiz.getSection().getId())) {
+            throw new IllegalArgumentException("해당 퀴즈의 진행 현황을 조회할 권한이 없습니다");
+        }
+
+        if (!quiz.getSection().getId().equals(sectionId)) {
+            throw new IllegalArgumentException("해당 퀴즈는 이 분반에 속하지 않습니다");
+        }
+
+        List<Long> quizProblemIds = quizProblemRepository.findProblemIdsByQuizId(quizId);
+        List<User> students = enrollmentRepository.findUsersBySectionId(sectionId);
+        List<StudentProgressResponse> progressList = new ArrayList<>();
+
+        for (User student : students) {
+            List<Long> solvedProblemIds = submissionRepository.findSolvedProblemIdsByUserAndQuiz(
+                    student.getId(), quizId, sectionId);
+
+            Map<Long, LocalDateTime> problemSubmissionTimes = new HashMap<>();
+            LocalDateTime quizCompletedAt = null;
+
+            for (Long problemId : solvedProblemIds) {
+                List<Submission> latestList = submissionRepository.findLatestSubmissionsByUserAndProblem(
+                        student.getId(), problemId, sectionId, PageRequest.of(0, 1));
+                if (!latestList.isEmpty()) {
+                    problemSubmissionTimes.put(problemId, latestList.get(0).getSubmittedAt());
+                }
+            }
+
+            if (solvedProblemIds.size() == quizProblemIds.size() && solvedProblemIds.containsAll(quizProblemIds)) {
+                quizCompletedAt = problemSubmissionTimes.values().stream()
+                        .max(LocalDateTime::compareTo)
+                        .orElse(null);
+            }
+
+            String sid = student.getStudentId();
+            if (sid == null || sid.isBlank()) {
+                sid = student.getEmail() != null ? student.getEmail() : "-";
+            }
+
+            progressList.add(StudentProgressResponse.builder()
+                    .userId(student.getId())
+                    .studentId(sid)
+                    .studentName(student.getName())
+                    .solvedProblems(solvedProblemIds)
+                    .problemSubmissionTimes(problemSubmissionTimes)
+                    .assignmentCompletedAt(quizCompletedAt)
+                    .build());
+        }
+
+        progressList.sort((a, b) -> String.CASE_INSENSITIVE_ORDER.compare(a.getStudentId(), b.getStudentId()));
+        return progressList;
+    }
+
+    /**
+     * 퀴즈 문제별 제출 통계 조회
+     */
+    @Transactional(readOnly = true)
+    public QuizSubmissionStatsResponse getQuizSubmissionStats(Long quizId, Long sectionId, Long userId) {
+        Quiz quiz = quizRepository.findById(quizId)
+                .orElseThrow(() -> new IllegalArgumentException("Quiz not found"));
+
+        if (!sectionRoleService.isManager(userId, quiz.getSection().getId())) {
+            throw new IllegalArgumentException("해당 퀴즈의 제출 통계를 조회할 권한이 없습니다");
+        }
+
+        if (!quiz.getSection().getId().equals(sectionId)) {
+            throw new IllegalArgumentException("해당 퀴즈는 이 분반에 속하지 않습니다");
+        }
+
+        Section section = quiz.getSection();
+        Integer totalStudents = submissionRepository.countStudentsBySection(sectionId);
+        List<QuizProblem> quizProblems = quizProblemRepository.findByQuizIdOrderByProblemOrderAsc(quizId);
+        List<ProblemSubmissionStats> problemStats = new ArrayList<>();
+
+        for (QuizProblem qp : quizProblems) {
+            Problem problem = qp.getProblem();
+            Integer submittedStudents = submissionRepository.countSubmittedStudentsByProblem(problem.getId(), sectionId);
+            Integer correctSubmissions = submissionRepository.countCorrectSubmissionsByProblem(problem.getId(), sectionId);
+
+            Double submissionRate = totalStudents > 0 ? (double) submittedStudents / totalStudents * 100 : 0.0;
+            Double correctRate = submittedStudents > 0 ? (double) correctSubmissions / submittedStudents * 100 : 0.0;
+
+            problemStats.add(ProblemSubmissionStats.builder()
+                    .problemId(problem.getId())
+                    .problemTitle(problem.getTitle())
+                    .problemOrder(qp.getProblemOrder())
+                    .totalStudents(totalStudents)
+                    .submittedStudents(submittedStudents)
+                    .correctSubmissions(correctSubmissions)
+                    .submissionRate(submissionRate)
+                    .correctRate(correctRate)
+                    .build());
+        }
+
+        String sectionName = section.getCourse() != null
+                ? section.getCourse().getTitle() + " - " + (section.getSectionNumber() != null ? section.getSectionNumber() + "분반" : "")
+                : "";
+
+        return QuizSubmissionStatsResponse.builder()
+                .quizId(quizId)
+                .quizTitle(quiz.getTitle())
+                .sectionId(sectionId)
+                .sectionName(sectionName)
+                .totalStudents(totalStudents)
+                .problemStats(problemStats)
+                .build();
+    }
+
+    /**
+     * 퀴즈에서 문제 제거
+     */
+    public void removeProblemFromQuiz(Long quizId, Long problemId, Long instructorId) {
+        Quiz quiz = quizRepository.findById(quizId)
+                .orElseThrow(() -> new IllegalArgumentException("Quiz not found"));
+
+        if (!sectionRoleService.isManager(instructorId, quiz.getSection().getId())) {
+            throw new IllegalArgumentException("해당 코딩 테스트를 수정할 권한이 없습니다");
+        }
+
+        quizProblemRepository.findByQuizIdAndProblemId(quizId, problemId)
+                .orElseThrow(() -> new IllegalArgumentException("해당 문제는 이 퀴즈에 포함되어 있지 않습니다"));
+
+        quizProblemRepository.deleteByQuizIdAndProblemId(quizId, problemId);
+
+        // 남은 문제들 problemOrder 재정렬
+        List<QuizProblem> remaining = quizProblemRepository.findByQuizIdOrderByProblemOrderAsc(quizId);
+        int order = 1;
+        for (QuizProblem remainingQp : remaining) {
+            if (remainingQp.getProblemOrder() != order) {
+                remainingQp.setProblemOrder(order);
+                quizProblemRepository.save(remainingQp);
+            }
+            order++;
+        }
     }
 
     /**
@@ -553,15 +700,82 @@ public class QuizService {
 
     /**
      * Quiz 상태 자동 업데이트
+     * - 종료 시각 경과 시 항상 ENDED
+     * - manualStatusOverride면 수동 상태 유지 (종료 시각 제외)
+     * - 그 외에는 시간 기반 자동 결정
      */
     private void updateQuizStatus(Quiz quiz) {
-        Quiz.QuizStatus currentStatus = quiz.getStatus();
-        Quiz.QuizStatus newStatus = determineStatus(quiz.getStartTime(), quiz.getEndTime());
+        LocalDateTime now = LocalDateTime.now();
 
-        if (currentStatus != newStatus) {
+        // 종료 시각 경과 시 항상 ENDED (안전)
+        if (quiz.getEndTime() != null && now.isAfter(quiz.getEndTime())) {
+            if (quiz.getStatus() != Quiz.QuizStatus.ENDED) {
+                quiz.setStatus(Quiz.QuizStatus.ENDED);
+                quiz.setManualStatusOverride(false);
+                quizRepository.save(quiz);
+            }
+            return;
+        }
+
+        // 수동 제어 중이면 자동 전환하지 않음
+        if (Boolean.TRUE.equals(quiz.getManualStatusOverride())) {
+            return;
+        }
+
+        Quiz.QuizStatus newStatus = determineStatus(quiz.getStartTime(), quiz.getEndTime());
+        if (quiz.getStatus() != newStatus) {
             quiz.setStatus(newStatus);
             quizRepository.save(quiz);
         }
+    }
+
+    /**
+     * 퀴즈 상태 수동 변경 (시작/정지/종료)
+     */
+    public QuizResponse updateQuizStatus(Long quizId, Quiz.QuizStatus newStatus, Long instructorId) {
+        Quiz quiz = quizRepository.findById(quizId)
+                .orElseThrow(() -> new IllegalArgumentException("Quiz not found"));
+
+        if (!sectionRoleService.isManager(instructorId, quiz.getSection().getId())) {
+            throw new IllegalArgumentException("해당 코딩 테스트의 상태를 변경할 권한이 없습니다");
+        }
+
+        // 종료 시각 경과 시 ENDED만 허용
+        LocalDateTime now = LocalDateTime.now();
+        if (quiz.getEndTime() != null && now.isAfter(quiz.getEndTime())) {
+            if (newStatus != Quiz.QuizStatus.ENDED) {
+                throw new IllegalArgumentException("종료 시각이 지난 코딩 테스트는 ENDED 상태만 가능합니다");
+            }
+        }
+
+        // 유효한 상태 전이 검증
+        Quiz.QuizStatus current = quiz.getStatus();
+        boolean valid;
+        switch (current) {
+            case WAITING:
+                valid = newStatus == Quiz.QuizStatus.ACTIVE;
+                break;
+            case ACTIVE:
+                valid = newStatus == Quiz.QuizStatus.PAUSED || newStatus == Quiz.QuizStatus.ENDED;
+                break;
+            case PAUSED:
+                valid = newStatus == Quiz.QuizStatus.ACTIVE || newStatus == Quiz.QuizStatus.ENDED;
+                break;
+            case ENDED:
+                valid = false;
+                break;
+            default:
+                valid = false;
+        }
+        if (!valid) {
+            throw new IllegalArgumentException("허용되지 않은 상태 전이입니다. 현재: " + current + ", 요청: " + newStatus);
+        }
+
+        quiz.setStatus(newStatus);
+        quiz.setManualStatusOverride(true);
+        Quiz updated = quizRepository.save(quiz);
+
+        return toResponse(updated);
     }
 
     /**

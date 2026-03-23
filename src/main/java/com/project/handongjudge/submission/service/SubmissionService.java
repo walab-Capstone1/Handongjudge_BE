@@ -603,6 +603,11 @@ public class SubmissionService {
                 if (!isManager && !targetQuiz.getActive()) {
                     throw new IllegalArgumentException("해당 코딩 테스트는 비활성화되어 있어 제출할 수 없습니다");
                 }
+
+                // 학생이고 퀴즈가 PAUSED(일시정지) 상태면 제출 불가
+                if (!isManager && targetQuiz.getStatus() == Quiz.QuizStatus.PAUSED) {
+                    throw new IllegalArgumentException("코딩 테스트가 일시정지 상태입니다. 진행이 재개될 때까지 제출할 수 없습니다");
+                }
                 
                 // 퀴즈 종료 시간 체크
                 if (targetQuiz.getEndTime() != null && now.isAfter(targetQuiz.getEndTime())) {
