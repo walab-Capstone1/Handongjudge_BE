@@ -47,9 +47,15 @@ public class Quiz {
     @Builder.Default
     private Boolean active = true;
 
+    /** 튜터가 수동으로 상태를 변경한 경우 true, 시간 기반 자동 전환 무시 */
+    @Column(name = "manual_status_override", nullable = false)
+    @Builder.Default
+    private Boolean manualStatusOverride = false;
+
     public enum QuizStatus {
         WAITING,  // 대기중
         ACTIVE,   // 진행중
+        PAUSED,   // 일시정지 (튜터 수동)
         ENDED     // 종료됨
     }
 

@@ -1,5 +1,6 @@
 package com.project.handongjudge.submission.repository;
 
+import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import com.project.handongjudge.submission.entity.Submission;
@@ -102,6 +103,16 @@ public interface SubmissionRepository extends JpaRepository<Submission, Long> {
     List<Long> findSolvedProblemIdsByUserAndAssignment(@Param("userId") Long userId,
                                                        @Param("assignmentId") Long assignmentId,
                                                        @Param("sectionId") Long sectionId);
+
+    // 학생별 특정 퀴즈에서 푼 문제 조회 (정답 처리된 문제만)
+    @Query("SELECT DISTINCT s.problem.id FROM Submission s " +
+            "WHERE s.user.id = :userId " +
+            "AND s.problem.id IN (SELECT qp.problem.id FROM QuizProblem qp WHERE qp.quiz.id = :quizId) " +
+            "AND s.section.id = :sectionId " +
+            "AND s.result = 'AC'")
+    List<Long> findSolvedProblemIdsByUserAndQuiz(@Param("userId") Long userId,
+                                                @Param("quizId") Long quizId,
+                                                @Param("sectionId") Long sectionId);
     // 특정 학생의 특정 문제에 대한 첫 번째 accept된 제출 조회
     @Query("SELECT s FROM Submission s " +
             "WHERE s.user.id = :userId AND s.problem.id = :problemId " +
@@ -143,5 +154,30 @@ public interface SubmissionRepository extends JpaRepository<Submission, Long> {
     // 특정 문제에 대한 모든 제출 조회
     @Query("SELECT s FROM Submission s WHERE s.problem.id = :problemId")
     List<Submission> findByProblemId(@Param("problemId") Long problemId);
-    
+
+    /** 퀴즈 제출 기록 목록 (튜터용, 필터/페이지네이션 지원) */
+    @Query(
+            value = "SELECT s FROM Submission s " +
+                    "JOIN FETCH s.user " +
+                    "JOIN FETCH s.problem " +
+                    "WHERE s.section.id = :sectionId " +
+                    "AND s.problem.id IN (SELECT qp.problem.id FROM QuizProblem qp WHERE qp.quiz.id = :quizId) " +
+                    "AND (:problemId IS NULL OR s.problem.id = :problemId) " +
+                    "AND (:userId IS NULL OR s.user.id = :userId) " +
+                    "AND (:result IS NULL OR :result = '' OR s.result = :result) " +
+                    "ORDER BY s.submittedAt DESC",
+            countQuery = "SELECT COUNT(s) FROM Submission s " +
+                    "WHERE s.section.id = :sectionId " +
+                    "AND s.problem.id IN (SELECT qp.problem.id FROM QuizProblem qp WHERE qp.quiz.id = :quizId) " +
+                    "AND (:problemId IS NULL OR s.problem.id = :problemId) " +
+                    "AND (:userId IS NULL OR s.user.id = :userId) " +
+                    "AND (:result IS NULL OR :result = '' OR s.result = :result)"
+    )
+    Page<Submission> findQuizSubmissions(
+            @Param("sectionId") Long sectionId,
+            @Param("quizId") Long quizId,
+            @Param("problemId") Long problemId,
+            @Param("userId") Long userId,
+            @Param("result") String result,
+            Pageable pageable);
 }
