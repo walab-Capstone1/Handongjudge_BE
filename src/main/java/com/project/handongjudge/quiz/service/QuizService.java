@@ -83,7 +83,8 @@ public class QuizService {
                 .startTime(request.getStartTime())
                 .endTime(request.getEndTime())
                 .status(status)
-                .active(true)
+                // 생성 직후는 비공개. 메인 탭에서 공개 토글 후 학생에게 노출
+                .active(false)
                 .build();
 
         Quiz savedQuiz = quizRepository.save(quiz);
