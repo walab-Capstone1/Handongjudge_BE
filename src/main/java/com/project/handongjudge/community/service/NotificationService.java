@@ -21,7 +21,10 @@ import com.project.handongjudge.user.entity.Enrollment;
 import com.project.handongjudge.user.entity.User;
 import com.project.handongjudge.user.repository.EnrollmentRepository;
 import com.project.handongjudge.user.repository.UserRepository;
+import com.project.handongjudge.user.service.UserService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
@@ -29,9 +32,12 @@ import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
@@ -47,6 +53,27 @@ public class NotificationService {
     private final NoticeRepository noticeRepository;
     private final AssignmentRepository assignmentRepository;
     private final SectionRoleService sectionRoleService;
+    /** 순환 참조 방지 — 알림 읽음 시 대시보드 뱃지용 UserReadStatus와 동기화 */
+    private final ObjectProvider<UserService> userServiceProvider;
+
+    /**
+     * 공지/과제 알림을 읽으면 내 강의실(/courses) 새 공지·새 과제 카운트에도 반영되도록 UserReadStatus를 맞춤.
+     */
+    private void syncDashboardReadStatusFromNotification(Notification notification, Long userId) {
+        try {
+            UserService userService = userServiceProvider.getObject();
+            if (notification.getType() == Notification.NotificationType.NOTICE_CREATED
+                    && notification.getNotice() != null) {
+                userService.markNoticeAsRead(userId, notification.getNotice().getId());
+            } else if (notification.getType() == Notification.NotificationType.ASSIGNMENT_CREATED
+                    && notification.getAssignment() != null) {
+                userService.markAssignmentAsRead(userId, notification.getAssignment().getId());
+            }
+        } catch (Exception e) {
+            log.warn("알림 읽음과 대시보드 읽음 동기화 실패 notificationId={}: {}",
+                    notification.getId(), e.getMessage());
+        }
+    }
 
     /**
      * 학생에게 비활성 과제 알림을 숨길지 여부. (관리자는 그대로 노출)
@@ -68,6 +95,7 @@ public class NotificationService {
      * @param sectionId 섹션 ID (선택적, null이면 모든 알림 조회)
      * @param pageable 페이징 정보
      */
+    @Transactional(readOnly = false)
     public Page<NotificationResponseDto> getNotifications(Long userId, Long sectionId, Pageable pageable) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new CustomException("사용자를 찾을 수 없습니다"));
@@ -78,6 +106,12 @@ public class NotificationService {
             // 섹션별 필터링
             Section section = sectionRepository.findById(sectionId)
                     .orElseThrow(() -> new CustomException("섹션을 찾을 수 없습니다"));
+            // 수강생·수업 관리자만: 기존 활성 공지/과제 알림이 없으면 채움 (학생 알림 페이지·대시보드에서 자동 반영)
+            boolean canAccess = enrollmentRepository.existsByUserIdAndSectionId(userId, sectionId)
+                    || sectionRoleService.isManager(userId, sectionId);
+            if (canAccess) {
+                runCatchUpForStudentCore(userId, sectionId);
+            }
             notifications = notificationRepository.findByRecipientAndSectionOrderByCreatedAtDesc(
                     user, section, pageable);
         } else {
@@ -133,7 +167,7 @@ public class NotificationService {
      */
     @Transactional
     public void markAsRead(Long notificationId, Long userId) {
-        Notification notification = notificationRepository.findById(notificationId)
+        Notification notification = notificationRepository.findByIdWithNoticeAndAssignment(notificationId)
                 .orElseThrow(() -> new CustomException("알림을 찾을 수 없습니다"));
 
         // 권한 검증: 본인의 알림만 읽음 처리 가능
@@ -143,6 +177,7 @@ public class NotificationService {
 
         notification.markAsRead();
         notificationRepository.save(notification);
+        syncDashboardReadStatusFromNotification(notification, userId);
     }
 
     /**
@@ -153,7 +188,18 @@ public class NotificationService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new CustomException("사용자를 찾을 수 없습니다"));
 
-        notificationRepository.markAllAsReadByRecipient(user);
+        List<Notification> unread = notificationRepository
+                .findByRecipientAndIsReadFalseOrderByCreatedAtDesc(user);
+        List<Notification> toSave = new ArrayList<>();
+        for (Notification stub : unread) {
+            Notification notification = notificationRepository
+                    .findByIdWithNoticeAndAssignment(stub.getId())
+                    .orElse(stub);
+            notification.markAsRead();
+            syncDashboardReadStatusFromNotification(notification, userId);
+            toSave.add(notification);
+        }
+        notificationRepository.saveAll(toSave);
     }
 
     // ========== 알림 생성 메서드 ==========
@@ -504,6 +550,107 @@ public class NotificationService {
             System.err.println("학생 추가 알림 발송 실패: " + e.getMessage());
             e.printStackTrace();
         }
+    }
+
+    /**
+     * 한 수강생에 대해, 분반의 활성 공지·활성 과제에 대한 NOTICE/ASSIGNMENT 알림을 없을 때만 생성합니다.
+     *
+     * @return 새로 저장한 알림 개수
+     */
+    private int runCatchUpForStudentCore(Long userId, Long sectionId) {
+        User student = userRepository.findById(userId).orElse(null);
+        Section section = sectionRepository.findById(sectionId).orElse(null);
+        if (student == null || section == null) {
+            return 0;
+        }
+
+        User actor = section.getInstructor();
+        if (actor == null) {
+            actor = student;
+        }
+
+        int created = 0;
+
+        for (Notice notice : noticeRepository.findActiveNoticesBySectionId(sectionId)) {
+            Notice loaded = noticeRepository.findById(notice.getId()).orElse(null);
+            if (loaded == null) {
+                continue;
+            }
+            if (notificationRepository.existsByRecipient_IdAndNotice_IdAndType(
+                    userId, loaded.getId(), Notification.NotificationType.NOTICE_CREATED)) {
+                continue;
+            }
+            notificationRepository.save(Notification.builder()
+                    .recipient(student)
+                    .actor(actor)
+                    .notice(loaded)
+                    .type(Notification.NotificationType.NOTICE_CREATED)
+                    .message(String.format("새 공지사항: %s", loaded.getTitle()))
+                    .build());
+            created++;
+        }
+
+        for (Assignment assignment : assignmentRepository.findBySectionId(sectionId)) {
+            if (!Boolean.TRUE.equals(assignment.getActive())) {
+                continue;
+            }
+            Assignment loaded = assignmentRepository.findById(assignment.getId()).orElse(null);
+            if (loaded == null) {
+                continue;
+            }
+            if (notificationRepository.existsByRecipient_IdAndAssignment_IdAndType(
+                    userId, loaded.getId(), Notification.NotificationType.ASSIGNMENT_CREATED)) {
+                continue;
+            }
+            String duePart = loaded.getEndDate() != null
+                    ? loaded.getEndDate().toLocalDate().toString()
+                    : "미정";
+            notificationRepository.save(Notification.builder()
+                    .recipient(student)
+                    .actor(actor)
+                    .assignment(loaded)
+                    .type(Notification.NotificationType.ASSIGNMENT_CREATED)
+                    .message(String.format("새 과제: %s (마감: %s)", loaded.getTitle(), duePart))
+                    .build());
+            created++;
+        }
+
+        return created;
+    }
+
+    /**
+     * 수강 신청 직후: 분반에 이미 있던 활성 공지·활성 과제에 대해 신규 수강생에게만 알림을 생성합니다.
+     * 공지/과제 생성 시점에는 미등록 학생에게 알림이 가지 않으므로 보완합니다.
+     */
+    @Async("taskExecutor")
+    @Transactional
+    public void notifyEnrolledStudentCatchUp(Long userId, Long sectionId) {
+        try {
+            runCatchUpForStudentCore(userId, sectionId);
+        } catch (Exception e) {
+            System.err.println("수강 신청 후 기존 공지/과제 알림 생성 실패: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
+    /**
+     * 이미 수강 중인 전원에 대해 catch-up 알림을 채웁니다. (수업 관리자 전용, 중복 없음)
+     */
+    @Transactional
+    public Map<String, Object> backfillCatchUpForSection(Long requesterUserId, Long sectionId) {
+        if (!sectionRoleService.isManager(requesterUserId, sectionId)) {
+            throw new CustomException("수업 관리자만 실행할 수 있습니다.");
+        }
+        Section section = sectionRepository.findById(sectionId)
+                .orElseThrow(() -> new IllegalArgumentException("섹션을 찾을 수 없습니다"));
+        List<Enrollment> enrollments = enrollmentRepository.findBySection(section);
+        int created = 0;
+        for (Enrollment enrollment : enrollments) {
+            created += runCatchUpForStudentCore(enrollment.getUser().getId(), sectionId);
+        }
+        return Map.of(
+                "notificationsCreated", created,
+                "studentsProcessed", enrollments.size());
     }
 
     /**
