@@ -13,6 +13,7 @@ import com.project.handongjudge.user.entity.User;
 import com.project.handongjudge.user.repository.EnrollmentRepository;
 import com.project.handongjudge.user.repository.UserRepository;
 import com.project.handongjudge.domjudge.service.DomjudgeService;  // ← 추가
+import com.project.handongjudge.common.exception.CustomException;
 import com.project.handongjudge.community.service.NotificationService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -96,6 +97,7 @@ public class SectionController {
 
             // 교수에게 학생 추가 알림 발송
             notificationService.notifyStudentEnrolled(enrollment, section);
+            notificationService.notifyEnrolledStudentCatchUp(userId, section.getId());
 
             return ResponseEntity.ok(Map.of(
                     "success", true,
@@ -110,6 +112,38 @@ public class SectionController {
             );
         }
     }
+
+    /**
+     * 수업 관리자: 수강 중인 학생 전원에 대해, 기존 활성 공지·활성 과제 알림이 없으면 생성합니다.
+     * (이미 수강 중이던 학생에게 수강 전 콘텐츠 알림을 채울 때 사용)
+     */
+    @PostMapping("/{sectionId}/notifications/catch-up")
+    public ResponseEntity<Map<String, Object>> backfillNotificationCatchUp(
+            @PathVariable Long sectionId,
+            Authentication authentication) {
+        try {
+            Long userId = Long.parseLong(authentication.getName());
+            Map<String, Object> result = notificationService.backfillCatchUpForSection(userId, sectionId);
+            return ResponseEntity.ok(Map.of(
+                    "success", true,
+                    "message", "알림 catch-up이 완료되었습니다.",
+                    "data", result
+            ));
+        } catch (CustomException e) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(
+                    Map.of("success", false, "message", e.getMessage())
+            );
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+                    Map.of("success", false, "message", e.getMessage())
+            );
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(
+                    Map.of("success", false, "message", e.getMessage())
+            );
+        }
+    }
+
     // 수업 활성화/비활성화 엔드포인트 추가 (ADMIN만 가능)
     @PatchMapping("/{sectionId}/active")
     public ResponseEntity<Map<String, Object>> toggleSectionActive(

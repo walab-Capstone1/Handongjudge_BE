@@ -1,6 +1,5 @@
 package com.project.handongjudge.notice.dto;
 
-import com.fasterxml.jackson.annotation.JsonFormat;
 import lombok.Builder;
 import lombok.Data;
 
@@ -19,6 +18,6 @@ public class NoticeResponseDto {
     private boolean isNew;
     private Boolean active;
 
-    @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", timezone = "UTC")
+    /** 알림 API와 동일한 Jackson 기본 ISO 직렬화(UTC+Z 가짜 포맷 제거로 프론트 날짜 어긋남 방지) */
     private LocalDateTime createdAt;
 }
