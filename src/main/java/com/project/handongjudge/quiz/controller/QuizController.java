@@ -1,18 +1,31 @@
 package com.project.handongjudge.quiz.controller;
 
 import com.project.handongjudge.assignment.dto.StudentAcceptedCodeResponse;
+import com.project.handongjudge.grade.dto.StudentGradeSummaryDTO;
+import com.project.handongjudge.quiz.entity.Quiz;
+import com.project.handongjudge.quiz.repository.QuizRepository;
 import com.project.handongjudge.assignment.dto.StudentProgressResponse;
 import com.project.handongjudge.quiz.dto.*;
 import com.project.handongjudge.quiz.entity.Quiz;
 import com.project.handongjudge.quiz.service.QuizService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
+import java.io.ByteArrayOutputStream;
+import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.time.LocalDateTime;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 
 @RestController
 @RequiredArgsConstructor
@@ -20,6 +33,7 @@ import java.util.Map;
 public class QuizController {
 
     private final QuizService quizService;
+    private final QuizRepository quizRepository;
 
     /**
      * 코딩 테스트 생성
@@ -159,6 +173,176 @@ public class QuizController {
         List<com.project.handongjudge.grade.dto.StudentGradeSummaryDTO> grades = 
                 quizService.getQuizGrades(quizId, sectionId, userId);
         return ResponseEntity.ok(grades);
+    }
+
+    /**
+     * 퀴즈 제출 코드 ZIP 다운로드 (메타 CSV + 코드 파일)
+     */
+    @GetMapping("/{quizId}/grades/export-zip")
+    public ResponseEntity<byte[]> exportQuizCodesZip(
+            @PathVariable Long sectionId,
+            @PathVariable Long quizId,
+            Authentication authentication
+    ) {
+        Long tutorId = Long.parseLong(authentication.getName());
+        Quiz quiz = quizRepository.findById(quizId)
+                .orElseThrow(() -> new IllegalArgumentException("Quiz not found"));
+        List<StudentGradeSummaryDTO> grades = quizService.getQuizGrades(quizId, sectionId, tutorId);
+
+        try (ByteArrayOutputStream baos = new ByteArrayOutputStream();
+             ZipOutputStream zos = new ZipOutputStream(baos)) {
+            StringBuilder csv = new StringBuilder();
+            csv.append("studentName,studentId,studentIdWithSubmittedAt,itemType,itemTitle,problemId,problemTitle,problemTitleWithSubmittedAt,result,submittedAt,dueAt,isOnTime,lateDuration,codeFilePath\n");
+            Set<String> usedPaths = new HashSet<>();
+
+            for (StudentGradeSummaryDTO student : grades) {
+                for (StudentGradeSummaryDTO.ProblemGradeDTO pg : student.getProblemGrades()) {
+                    if (!Boolean.TRUE.equals(pg.getSubmitted())) continue;
+
+                    StudentAcceptedCodeResponse codeResponse;
+                    try {
+                        codeResponse = quizService.getStudentAcceptedCode(
+                                sectionId, quizId, student.getUserId(), pg.getProblemId(), tutorId);
+                    } catch (Exception ex) {
+                        continue;
+                    }
+
+                    String safeQuiz = sanitize(quiz.getTitle());
+                    String safeStudent = sanitize(student.getStudentId());
+                    String safeProblem = sanitize(pg.getProblemTitle());
+                    String ext = languageToExt(codeResponse.getLanguage());
+                    String problemFolder = pg.getProblemId() + "_" + safeProblem;
+                    String baseCodePath = safeQuiz + "/" + problemFolder + "/" + safeStudent + "/" + safeProblem + "_" + fileTime(pg.getSubmittedAt());
+                    String codePath = uniquePath(
+                            baseCodePath,
+                            ext,
+                            codeResponse.getSubmissionId(),
+                            usedPaths
+                    );
+
+                    ZipEntry codeEntry = new ZipEntry(codePath);
+                    zos.putNextEntry(codeEntry);
+                    String code = codeResponse.getCode() == null ? "" : codeResponse.getCode();
+                    zos.write(code.getBytes(StandardCharsets.UTF_8));
+                    zos.closeEntry();
+
+                    csv.append(csvEsc(student.getStudentName())).append(',')
+                            .append(csvEsc(student.getStudentId())).append(',')
+                            .append(csvEsc(withSubmittedAt(student.getStudentId(), pg.getSubmittedAt()))).append(',')
+                            .append("quiz").append(',')
+                            .append(csvEsc(quiz.getTitle())).append(',')
+                            .append(pg.getProblemId()).append(',')
+                            .append(csvEsc(pg.getProblemTitle())).append(',')
+                            .append(csvEsc(withSubmittedAt(pg.getProblemTitle(), pg.getSubmittedAt()))).append(',')
+                            .append(csvEsc(pg.getResult())).append(',')
+                            .append(csvEsc(toStr(pg.getSubmittedAt()))).append(',')
+                            .append(csvEsc(toStr(quiz.getEndTime()))).append(',')
+                            .append(Boolean.TRUE.equals(pg.getIsOnTime()) ? "true" : "false").append(',')
+                            .append(csvEsc(toLateText(pg.getSubmittedAt(), quiz.getEndTime()))).append(',')
+                            .append(csvEsc(codePath))
+                            .append('\n');
+                }
+            }
+
+            zos.putNextEntry(new ZipEntry("submissions.csv"));
+            zos.write(csv.toString().getBytes(StandardCharsets.UTF_8));
+            zos.closeEntry();
+            zos.finish();
+
+            String fileName = "quiz_" + quizId + "_submission_codes.zip";
+            return ResponseEntity.ok()
+                    .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + fileName + "\"")
+                    .contentType(MediaType.APPLICATION_OCTET_STREAM)
+                    .body(baos.toByteArray());
+        } catch (Exception e) {
+            throw new RuntimeException("ZIP 생성 실패: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * 섹션의 전체 코딩테스트 제출 코드 ZIP 다운로드
+     * 구조: 전체코딩테스트/{코딩테스트명}/{문제}/{학번}/코드파일
+     */
+    @GetMapping("/grades/export-zip-all")
+    public ResponseEntity<byte[]> exportAllQuizCodesZip(
+            @PathVariable Long sectionId,
+            Authentication authentication
+    ) {
+        Long tutorId = Long.parseLong(authentication.getName());
+        List<Quiz> quizzes = quizRepository.findBySectionIdOrderByStartTimeDesc(sectionId);
+
+        try (ByteArrayOutputStream baos = new ByteArrayOutputStream();
+             ZipOutputStream zos = new ZipOutputStream(baos)) {
+            StringBuilder csv = new StringBuilder();
+            csv.append("submissionId,studentName,studentId,studentIdWithSubmittedAt,itemType,itemTitle,problemId,problemTitle,problemTitleWithSubmittedAt,result,submittedAt,dueAt,isOnTime,lateDuration,codeFilePath\n");
+            Set<String> usedPaths = new HashSet<>();
+
+            for (Quiz quiz : quizzes) {
+                List<StudentGradeSummaryDTO> grades = quizService.getQuizGrades(quiz.getId(), sectionId, tutorId);
+                for (StudentGradeSummaryDTO student : grades) {
+                    for (StudentGradeSummaryDTO.ProblemGradeDTO pg : student.getProblemGrades()) {
+                        if (!Boolean.TRUE.equals(pg.getSubmitted())) continue;
+
+                        StudentAcceptedCodeResponse codeResponse;
+                        try {
+                            codeResponse = quizService.getStudentAcceptedCode(
+                                    sectionId, quiz.getId(), student.getUserId(), pg.getProblemId(), tutorId);
+                        } catch (Exception ex) {
+                            continue;
+                        }
+
+                        String safeQuiz = sanitize(quiz.getTitle());
+                        String safeStudent = sanitize(student.getStudentId());
+                        String safeProblem = sanitize(pg.getProblemTitle());
+                        String ext = languageToExt(codeResponse.getLanguage());
+                        String problemFolder = pg.getProblemId() + "_" + safeProblem;
+                        String baseCodePath = "전체코딩테스트/" + safeQuiz + "/" + problemFolder + "/" + safeStudent + "/" + safeProblem + "_" + fileTime(pg.getSubmittedAt());
+                        String codePath = uniquePath(
+                                baseCodePath,
+                                ext,
+                                codeResponse.getSubmissionId(),
+                                usedPaths
+                        );
+
+                        ZipEntry codeEntry = new ZipEntry(codePath);
+                        zos.putNextEntry(codeEntry);
+                        String code = codeResponse.getCode() == null ? "" : codeResponse.getCode();
+                        zos.write(code.getBytes(StandardCharsets.UTF_8));
+                        zos.closeEntry();
+
+                        csv.append(codeResponse.getSubmissionId() == null ? "" : codeResponse.getSubmissionId()).append(',')
+                                .append(csvEsc(student.getStudentName())).append(',')
+                                .append(csvEsc(student.getStudentId())).append(',')
+                                .append(csvEsc(withSubmittedAt(student.getStudentId(), pg.getSubmittedAt()))).append(',')
+                                .append("quiz").append(',')
+                                .append(csvEsc(quiz.getTitle())).append(',')
+                                .append(pg.getProblemId()).append(',')
+                                .append(csvEsc(pg.getProblemTitle())).append(',')
+                                .append(csvEsc(withSubmittedAt(pg.getProblemTitle(), pg.getSubmittedAt()))).append(',')
+                                .append(csvEsc(pg.getResult())).append(',')
+                                .append(csvEsc(toStr(pg.getSubmittedAt()))).append(',')
+                                .append(csvEsc(toStr(quiz.getEndTime()))).append(',')
+                                .append(Boolean.TRUE.equals(pg.getIsOnTime()) ? "true" : "false").append(',')
+                                .append(csvEsc(toLateText(pg.getSubmittedAt(), quiz.getEndTime()))).append(',')
+                                .append(csvEsc(codePath))
+                                .append('\n');
+                    }
+                }
+            }
+
+            zos.putNextEntry(new ZipEntry("submissions.csv"));
+            zos.write(csv.toString().getBytes(StandardCharsets.UTF_8));
+            zos.closeEntry();
+            zos.finish();
+
+            String fileName = "section_" + sectionId + "_all_quizzes_submission_codes.zip";
+            return ResponseEntity.ok()
+                    .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + fileName + "\"")
+                    .contentType(MediaType.APPLICATION_OCTET_STREAM)
+                    .body(baos.toByteArray());
+        } catch (Exception e) {
+            throw new RuntimeException("ZIP 생성 실패: " + e.getMessage(), e);
+        }
     }
 
     /**
@@ -320,6 +504,75 @@ public class QuizController {
         Boolean active = request.get("active");
         QuizResponse response = quizService.toggleQuizActive(quizId, active, instructorId);
         return ResponseEntity.ok(response);
+    }
+
+    private static String csvEsc(String s) {
+        String value = s == null ? "" : s;
+        return "\"" + value.replace("\"", "\"\"") + "\"";
+    }
+
+    private static String sanitize(String s) {
+        String value = s == null ? "unknown" : s.trim();
+        if (value.isEmpty()) return "unknown";
+        return value.replaceAll("[^a-zA-Z0-9가-힣._-]", "_");
+    }
+
+    private static String toStr(LocalDateTime dt) {
+        return dt == null ? "" : dt.toString();
+    }
+
+    private static String toLateText(LocalDateTime submittedAt, LocalDateTime dueAt) {
+        if (submittedAt == null || dueAt == null) return "";
+        Duration d = Duration.between(dueAt, submittedAt);
+        if (d.isNegative() || d.isZero()) return "";
+        long minutes = d.toMinutes();
+        long days = minutes / (60 * 24);
+        long hours = (minutes % (60 * 24)) / 60;
+        long mins = minutes % 60;
+        StringBuilder sb = new StringBuilder();
+        if (days > 0) sb.append(days).append("일 ");
+        if (hours > 0) sb.append(hours).append("시간 ");
+        if (mins > 0 || sb.length() == 0) sb.append(mins).append("분");
+        return sb.toString().trim();
+    }
+
+    private static String withSubmittedAt(String base, LocalDateTime submittedAt) {
+        String value = base == null ? "" : base;
+        String submitted = toStr(submittedAt);
+        if (submitted.isEmpty()) return value;
+        return value + " (" + submitted + ")";
+    }
+
+    private static String fileTime(LocalDateTime dt) {
+        if (dt == null) return "unknown_time";
+        return dt.toString().replace(":", "-").replace(".", "-");
+    }
+
+    private static String languageToExt(String language) {
+        if (language == null) return ".txt";
+        String l = language.toLowerCase();
+        if (l.contains("java")) return ".java";
+        if (l.contains("python") || l.contains("py")) return ".py";
+        if (l.contains("cpp") || l.contains("c++")) return ".cpp";
+        if (l.equals("c")) return ".c";
+        if (l.contains("javascript") || l.contains("node") || l.equals("js")) return ".js";
+        if (l.contains("typescript") || l.equals("ts")) return ".ts";
+        return ".txt";
+    }
+
+    private static String uniquePath(String basePath, String ext, Long submissionId, Set<String> usedPaths) {
+        String candidate = basePath + ext;
+        if (usedPaths.add(candidate)) {
+            return candidate;
+        }
+        int index = 1;
+        while (true) {
+            String next = basePath + "_dup" + index + ext;
+            if (usedPaths.add(next)) {
+                return next;
+            }
+            index++;
+        }
     }
 }
 
