@@ -334,8 +334,14 @@ public class AssignmentService {
                             .assignment(savedAssignment)
                             .problem(problem)
                             .problemOrder(order++)
+                            .points(1)
                             .build();
                     assignmentProblems.add(ap);
+
+                    // DOMjudge 등록
+                    Long contestId = section.getId(); // sectionId == contestId
+                    String domjudgeProblemId = problem.getDomjudgeProblemId();
+                    domjudgeService.addProblemToContest(contestId, domjudgeProblemId);
                 }
 
                 assignmentProblemRepository.saveAll(assignmentProblems);
