@@ -3,6 +3,7 @@ package com.project.handongjudge.quiz.controller;
 import com.project.handongjudge.assignment.dto.StudentAcceptedCodeResponse;
 import com.project.handongjudge.quiz.dto.*;
 import com.project.handongjudge.quiz.service.QuizService;
+import com.project.handongjudge.quiz.service.QuizSessionService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -18,6 +19,7 @@ import java.util.Map;
 public class QuizController {
 
     private final QuizService quizService;
+    private final QuizSessionService quizSessionService;
 
     /**
      * 코딩 테스트 생성
@@ -198,6 +200,74 @@ public class QuizController {
         StudentAcceptedCodeResponse response = quizService.getStudentAcceptedCode(
                 sectionId, quizId, userId, problemId, instructorId);
         return ResponseEntity.ok(response);
+    }
+
+    // ===== 시험 세션 관리 (중복 접속 방지) =====
+
+    /**
+     * 시험 페이지 진입 시도
+     * 응답: { status: "OK" } or { status: "CONFLICT" }
+     */
+    @PostMapping("/{quizId}/session/enter")
+    public ResponseEntity<Map<String, String>> enterQuizSession(
+            @PathVariable Long sectionId,
+            @PathVariable Long quizId,
+            @RequestBody Map<String, String> body,
+            Authentication authentication
+    ) {
+        Long userId = Long.parseLong(authentication.getName());
+        String clientSessionId = body.get("sessionId");
+        QuizSessionService.EnterResult result = quizSessionService.enter(quizId, userId, clientSessionId);
+        return ResponseEntity.ok(Map.of("status", result.name()));
+    }
+
+    /**
+     * 기존 세션 강제 인계 (사용자가 "여기서 계속하기" 선택 시)
+     */
+    @PostMapping("/{quizId}/session/takeover")
+    public ResponseEntity<Map<String, String>> takeoverQuizSession(
+            @PathVariable Long sectionId,
+            @PathVariable Long quizId,
+            @RequestBody Map<String, String> body,
+            Authentication authentication
+    ) {
+        Long userId = Long.parseLong(authentication.getName());
+        String clientSessionId = body.get("sessionId");
+        quizSessionService.takeover(quizId, userId, clientSessionId);
+        return ResponseEntity.ok(Map.of("status", "OK"));
+    }
+
+    /**
+     * Heartbeat - 세션 TTL 연장 및 유효성 확인
+     * 응답: { valid: true } or { valid: false } (다른 곳에서 탈취됨)
+     */
+    @PostMapping("/{quizId}/session/heartbeat")
+    public ResponseEntity<Map<String, Boolean>> heartbeatQuizSession(
+            @PathVariable Long sectionId,
+            @PathVariable Long quizId,
+            @RequestBody Map<String, String> body,
+            Authentication authentication
+    ) {
+        Long userId = Long.parseLong(authentication.getName());
+        String clientSessionId = body.get("sessionId");
+        boolean valid = quizSessionService.heartbeat(quizId, userId, clientSessionId);
+        return ResponseEntity.ok(Map.of("valid", valid));
+    }
+
+    /**
+     * 시험 페이지 이탈 시 세션 해제
+     */
+    @PostMapping("/{quizId}/session/exit")
+    public ResponseEntity<Void> exitQuizSession(
+            @PathVariable Long sectionId,
+            @PathVariable Long quizId,
+            @RequestBody Map<String, String> body,
+            Authentication authentication
+    ) {
+        Long userId = Long.parseLong(authentication.getName());
+        String clientSessionId = body.get("sessionId");
+        quizSessionService.exit(quizId, userId, clientSessionId);
+        return ResponseEntity.ok().build();
     }
 
     /**
