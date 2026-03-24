@@ -229,6 +229,42 @@ public class QuizController {
     }
 
     /**
+     * 퀴즈 제출 기록 목록 조회 (튜터용)
+     */
+    @GetMapping("/{quizId}/submissions")
+    public ResponseEntity<QuizSubmissionListResponse> getQuizSubmissions(
+            @PathVariable Long sectionId,
+            @PathVariable Long quizId,
+            @RequestParam(required = false) Long problemId,
+            @RequestParam(required = false) Long userId,
+            @RequestParam(required = false) String result,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size,
+            Authentication authentication
+    ) {
+        Long tutorId = Long.parseLong(authentication.getName());
+        QuizSubmissionListResponse response = quizService.getQuizSubmissions(
+                sectionId, quizId, problemId, userId, result, page, size, tutorId);
+        return ResponseEntity.ok(response);
+    }
+
+    /**
+     * 퀴즈 제출 코드 조회 (튜터용 - 학생 제출 코드 상세 조회)
+     */
+    @GetMapping("/{quizId}/submissions/{submissionId}/code")
+    public ResponseEntity<com.project.handongjudge.mypage.dto.SubmissionCodeDto> getQuizSubmissionCode(
+            @PathVariable Long sectionId,
+            @PathVariable Long quizId,
+            @PathVariable Long submissionId,
+            Authentication authentication
+    ) {
+        Long tutorId = Long.parseLong(authentication.getName());
+        com.project.handongjudge.mypage.dto.SubmissionCodeDto response =
+                quizService.getQuizSubmissionCodeForTutor(sectionId, quizId, submissionId, tutorId);
+        return ResponseEntity.ok(response);
+    }
+
+    /**
      * 퀴즈 제출 코드 조회 (학생의 accept된 코드)
      */
     @GetMapping("/{quizId}/students/{userId}/problems/{problemId}/accepted-code")
