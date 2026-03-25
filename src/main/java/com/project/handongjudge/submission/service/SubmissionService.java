@@ -3,6 +3,7 @@ package com.project.handongjudge.submission.service;
 import com.project.handongjudge.section.entity.Contest;
 import com.project.handongjudge.section.repository.ContestRepository;
 import com.project.handongjudge.submission.dto.SubmissionOutputResponseDTO;
+import com.project.handongjudge.submission.dto.SubmissionQuizResponseDTO;
 import com.project.handongjudge.submission.dto.SubmissionRequestDTO;
 import com.project.handongjudge.submission.dto.SubmissionResponseDTO;           
 import com.project.handongjudge.submission.dto.SubmissionAuthDTO;
@@ -41,6 +42,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 
 import com.project.handongjudge.domjudge.service.DomjudgeService;
 import lombok.AllArgsConstructor;
@@ -408,6 +410,73 @@ public class SubmissionService {
         }
     }
 
+    /**
+     * 퀴즈 전용 제출 - submitAndGetResultOutput 재사용 + Submission 저장 + scoring 계산
+     */
+    public SubmissionQuizResponseDTO submitQuizCode(Authentication authentication, SubmissionAuthDTO submissionRequestDTO) {
+        SubmissionOutputResponseDTO outputDTO = submitAndGetResultOutput(authentication, submissionRequestDTO);
+
+        Long userId = Long.parseLong(authentication.getName());
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+        Problem problem = problemRepository.findById(submissionRequestDTO.getProblemId())
+                .orElseThrow(() -> new RuntimeException("Problem not found"));
+        Section section = sectionRepository.findById(submissionRequestDTO.getSectionId())
+                .orElseThrow(() -> new RuntimeException("Section not found"));
+
+        // Submission 저장 (submitAndGetResultOutput은 저장하지 않음)
+        Submission submission = Submission.builder()
+                .problem(problem)
+                .user(user)
+                .language(submissionRequestDTO.getLanguage())
+                .code(submissionRequestDTO.getCodeString())
+                .submittedAt(LocalDateTime.now())
+                .result(outputDTO.getResult())
+                .build();
+        submission.setSection(section);
+        submission.setSubmissionId(outputDTO.getSubmissionId());
+        submissionRepository.save(submission);
+
+        // Scoring 계산
+        int passedCount = 0;
+        int totalCount = 0;
+        int points = 1;
+        double score = 0.0;
+
+        if (outputDTO.getOutputList() != null && !outputDTO.getOutputList().isEmpty()) {
+            totalCount = outputDTO.getOutputList().size();
+            passedCount = (int) outputDTO.getOutputList().stream()
+                    .filter(o -> "correct".equals(o.getResult()))
+                    .count();
+        }
+
+        // QuizProblem.points 조회 (sectionId + problemId)
+        Optional<QuizProblem> quizProblemOpt = quizProblemRepository.findByProblemId(problem.getId())
+                .stream()
+                .filter(qp -> qp.getQuiz().getSection().getId().equals(section.getId()))
+                .findFirst();
+        if (quizProblemOpt.isPresent() && quizProblemOpt.get().getPoints() != null && quizProblemOpt.get().getPoints() > 0) {
+            points = quizProblemOpt.get().getPoints();
+        }
+
+        if (totalCount > 0) {
+            score = (passedCount * 1.0 / totalCount) * points;
+        }
+
+        return SubmissionQuizResponseDTO.builder()
+                .problemId(outputDTO.getProblemId())
+                .sectionId(outputDTO.getSectionId())
+                .language(outputDTO.getLanguage())
+                .submissionId(outputDTO.getSubmissionId())
+                .result(outputDTO.getResult())
+                .outputList(outputDTO.getOutputList())
+                .submittedAt(outputDTO.getSubmittedAt())
+                .passedCount(passedCount)
+                .totalCount(totalCount)
+                .points(points)
+                .score(score)
+                .build();
+    }
 
     private PollingResult<SubmissionOutputResponseDTO> pollForResultOutput(String cid, String submissionId, int maxWaitSeconds) {
         int maxAttempts = maxWaitSeconds * 2;
@@ -533,6 +602,11 @@ public class SubmissionService {
                 // 학생이고 퀴즈가 비활성화되어 있으면 제출 불가
                 if (!isManager && !targetQuiz.getActive()) {
                     throw new IllegalArgumentException("해당 코딩 테스트는 비활성화되어 있어 제출할 수 없습니다");
+                }
+
+                // 학생이고 퀴즈가 PAUSED(일시정지) 상태면 제출 불가
+                if (!isManager && targetQuiz.getStatus() == Quiz.QuizStatus.PAUSED) {
+                    throw new IllegalArgumentException("코딩 테스트가 일시정지 상태입니다. 진행이 재개될 때까지 제출할 수 없습니다");
                 }
                 
                 // 퀴즈 종료 시간 체크
