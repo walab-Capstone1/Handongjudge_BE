@@ -77,18 +77,24 @@ public class SecurityConfig extends WebSecurityConfigurerAdapter {
                     .authorizationEndpoint()
                         .baseUri("/api/oauth2/authorization")
                     .and()
-                    .redirectionEndpoint()
-                        .baseUri("/api/login/oauth2/code/*")
-                    .and()
-                    .userInfoEndpoint()
-                        .userService(customOAuth2UserService)
-                    .and()
-                    .successHandler((request, response, authentication) ->
-                            handleOAuth2Success(request, response, authentication))
-                    .failureHandler((request, response, exception) -> {
-                        log.error("OAuth2 login failed", exception);
-                        response.sendRedirect("https://hcl.walab.info/login?error=oauth_failed");
-                    })
+                // added
+                .redirectionEndpoint()
+                .baseUri("/api/login/oauth2/code/*")
+                .and()
+                // added
+
+                .userInfoEndpoint()
+                .userService(customOAuth2UserService)
+                .and()
+                // OAuth2 로그인 성공 핸들러
+                .successHandler((request, response, authentication) -> {
+                    handleOAuth2Success(request, response, authentication);
+                })
+                // OAuth2 로그인 실패 핸들러
+                .failureHandler((request, response, exception) -> {
+                    log.error("OAuth2 login failed", exception);
+                    response.sendRedirect("https://hj.walab.info/login?error=oauth_failed");
+                })
                 .and()
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
@@ -151,9 +157,9 @@ public class SecurityConfig extends WebSecurityConfigurerAdapter {
             // Refresh Token을 HttpOnly 쿠키로 설정
             authCookieUtil.setRefreshTokenCookie(response, refreshToken);
 
-            String redirectUrl = String.format(
-                    "https://hcl.walab.info/auth/callback?accessToken=%s", accessToken);
-            log.info("OAuth2 success - redirecting to callback");
+            // 프론트엔드 콜백 페이지로 리다이렉트 (Access Token만 포함)
+            String redirectUrl = String.format("https://hj.walab.info/auth/callback?accessToken=%s", accessToken);
+            log.info("OAuth2 success - redirecting to: {}", redirectUrl);
             response.sendRedirect(redirectUrl);
 
         } catch (Exception e) {

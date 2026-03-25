@@ -3,10 +3,9 @@ server:
   forward-headers-strategy: framework
 
 spring:
-  profiles:
-    active: local   # 기본값: 로컬 개발. 배포 시 환경변수 SPRING_PROFILES_ACTIVE=deploy 로 덮어씀
-  config:
-    import: optional:file:.env[.properties]
+  # .env import
+  #config:
+  #  import: optional:file:.env[.properties]
 
   jackson:
     serialization:
@@ -73,7 +72,8 @@ app:
   oauth2:
     authorized-redirect-uris:
       #- http://localhost:3000/auth/callback  # 프론트엔드 콜백 페이지
-      - https://hcl.walab.info/handongjudge/auth/callback
+       - https://hj.walab.info/auth/callback #개발용
+      #- https://hcl.walab.info/auth/callback
 logging:
   level:
     com.project.handongjudge: DEBUG
