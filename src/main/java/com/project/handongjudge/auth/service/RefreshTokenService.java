@@ -16,7 +16,8 @@ import java.util.Optional;
 
 /**
  * Refresh Token 서버 저장/검증/삭제.
- * - 신규 로그인 시 토큰 추가 저장 → 다중 기기/브라우저 허용
+ * - 신규 로그인 시 기존 토큰 삭제 후 새 토큰 저장 → 사용자당 항상 1개만 유지
+ * - 같은 크롬 프로필 내에서는 쿠키 공유로 자동 로그인 복구 가능
  * - Rotation: 검증 성공 시 기존 삭제 + 새 토큰 저장
  */
 @Slf4j
@@ -29,9 +30,10 @@ public class RefreshTokenService {
     @Value("${jwt.refresh-token.expiration}")
     private Long refreshTokenExpirationMs;
 
-    /** 신규 로그인: 토큰 추가 저장 (다중 기기/브라우저 허용) */
+    /** 신규 로그인: 기존 토큰 삭제 후 새 토큰 저장 (사용자당 1개만 유지) */
     @Transactional
     public void saveToken(Long userId, String rawToken) {
+        refreshTokenRepository.deleteByUserId(userId);
         refreshTokenRepository.save(RefreshToken.builder()
                 .userId(userId)
                 .tokenHash(hash(rawToken))
