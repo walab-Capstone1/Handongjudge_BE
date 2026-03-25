@@ -1,10 +1,8 @@
 package com.project.handongjudge.quiz.controller;
 
 import com.project.handongjudge.assignment.dto.StudentAcceptedCodeResponse;
-import com.project.handongjudge.grade.dto.StudentGradeSummaryDTO;
-import com.project.handongjudge.quiz.entity.Quiz;
-import com.project.handongjudge.quiz.repository.QuizRepository;
 import com.project.handongjudge.assignment.dto.StudentProgressResponse;
+import com.project.handongjudge.grade.dto.StudentGradeSummaryDTO;
 import com.project.handongjudge.quiz.dto.*;
 import com.project.handongjudge.quiz.entity.Quiz;
 import com.project.handongjudge.quiz.service.QuizService;
@@ -187,8 +185,7 @@ public class QuizController {
             Authentication authentication
     ) {
         Long tutorId = Long.parseLong(authentication.getName());
-        Quiz quiz = quizRepository.findById(quizId)
-                .orElseThrow(() -> new IllegalArgumentException("Quiz not found"));
+        Quiz quiz = quizService.findById(quizId);
         List<StudentGradeSummaryDTO> grades = quizService.getQuizGrades(quizId, sectionId, tutorId, false);
 
         try (ByteArrayOutputStream baos = new ByteArrayOutputStream();
@@ -271,7 +268,7 @@ public class QuizController {
             Authentication authentication
     ) {
         Long tutorId = Long.parseLong(authentication.getName());
-        List<Quiz> quizzes = quizRepository.findBySectionIdOrderByStartTimeDesc(sectionId);
+        List<Quiz> quizzes = quizService.findBySectionId(sectionId);
 
         try (ByteArrayOutputStream baos = new ByteArrayOutputStream();
              ZipOutputStream zos = new ZipOutputStream(baos)) {
