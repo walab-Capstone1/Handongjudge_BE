@@ -167,11 +167,12 @@ public class QuizController {
     public ResponseEntity<List<com.project.handongjudge.grade.dto.StudentGradeSummaryDTO>> getQuizGrades(
             @PathVariable Long sectionId,
             @PathVariable Long quizId,
+            @RequestParam(value = "includeTestCaseResults", defaultValue = "false") boolean includeTestCaseResults,
             Authentication authentication
     ) {
         Long userId = Long.parseLong(authentication.getName());
-        List<com.project.handongjudge.grade.dto.StudentGradeSummaryDTO> grades = 
-                quizService.getQuizGrades(quizId, sectionId, userId);
+        List<com.project.handongjudge.grade.dto.StudentGradeSummaryDTO> grades =
+                quizService.getQuizGrades(quizId, sectionId, userId, includeTestCaseResults);
         return ResponseEntity.ok(grades);
     }
 
@@ -187,7 +188,7 @@ public class QuizController {
         Long tutorId = Long.parseLong(authentication.getName());
         Quiz quiz = quizRepository.findById(quizId)
                 .orElseThrow(() -> new IllegalArgumentException("Quiz not found"));
-        List<StudentGradeSummaryDTO> grades = quizService.getQuizGrades(quizId, sectionId, tutorId);
+        List<StudentGradeSummaryDTO> grades = quizService.getQuizGrades(quizId, sectionId, tutorId, false);
 
         try (ByteArrayOutputStream baos = new ByteArrayOutputStream();
              ZipOutputStream zos = new ZipOutputStream(baos)) {
@@ -278,7 +279,7 @@ public class QuizController {
             Set<String> usedPaths = new HashSet<>();
 
             for (Quiz quiz : quizzes) {
-                List<StudentGradeSummaryDTO> grades = quizService.getQuizGrades(quiz.getId(), sectionId, tutorId);
+                List<StudentGradeSummaryDTO> grades = quizService.getQuizGrades(quiz.getId(), sectionId, tutorId, false);
                 for (StudentGradeSummaryDTO student : grades) {
                     for (StudentGradeSummaryDTO.ProblemGradeDTO pg : student.getProblemGrades()) {
                         if (!Boolean.TRUE.equals(pg.getSubmitted())) continue;

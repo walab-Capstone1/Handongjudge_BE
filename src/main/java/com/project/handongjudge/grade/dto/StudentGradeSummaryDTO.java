@@ -1,5 +1,6 @@
 package com.project.handongjudge.grade.dto;
 
+import com.project.handongjudge.submission.entity.Output;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -34,6 +35,13 @@ public class StudentGradeSummaryDTO {
         private LocalDateTime submittedAt;
         private Boolean isOnTime;
         private String result;
+        /** Domjudge 제출 ID (테스트케이스 상세 조회 시 사용) */
+        private String submissionDomjudgeId;
+        /** includeTestCaseResults=true 일 때만 채움 */
+        private List<Output> testCaseResults;
+        private Integer passedTestCaseCount;
+        private Integer totalTestCaseCount;
+        private Boolean allTestCasesPassed;
     }
 }
 
