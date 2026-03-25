@@ -3,7 +3,8 @@ server:
   forward-headers-strategy: framework
 
 spring:
-  # .env import
+  profiles:
+    active: local   # 기본값: 로컬 개발. 배포 시 환경변수 SPRING_PROFILES_ACTIVE=deploy 로 덮어씀
   config:
     import: optional:file:.env[.properties]
 
@@ -24,6 +25,11 @@ spring:
     username: ${DB_USERNAME}
     password: ${DB_PASSWORD}
     driver-class-name: org.mariadb.jdbc.Driver
+  redis:
+    host: ${REDIS_HOST:localhost}
+    port: ${REDIS_PORT:6379}
+    password: ${REDIS_PASSWORD:}
+
   thymeleaf:
     cache: false
     prefix: classpath:/templates/
@@ -67,7 +73,7 @@ app:
   oauth2:
     authorized-redirect-uris:
       #- http://localhost:3000/auth/callback  # 프론트엔드 콜백 페이지
-      - https://hj.walab.info/handongjudge/auth/callback
+      - https://hcl.walab.info/handongjudge/auth/callback
 logging:
   level:
     com.project.handongjudge: DEBUG

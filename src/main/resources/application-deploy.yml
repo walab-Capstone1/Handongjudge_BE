@@ -1,0 +1,27 @@
+# ===== 배포 환경 (SPRING_PROFILES_ACTIVE=deploy) =====
+
+spring:
+  jpa:
+    show-sql: false
+  redis:
+    host: ${REDIS_HOST}
+    port: ${REDIS_PORT:6379}
+    password: ${REDIS_PASSWORD:}
+
+jwt:
+  access-token:
+    expiration: 7200000    # 2시간
+  refresh-token:
+    expiration: 604800000  # 7일
+
+auth:
+  cookie:
+    name: refreshToken
+    secure: true
+    same-site: None        # 프론트/백 도메인 분리 시 필요
+    domain: hcl.walab.info
+    max-age: 604800        # 7일 (초)
+    path: /
+  cors:
+    allowed-origins:
+      - https://hcl.walab.info
