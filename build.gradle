@@ -75,6 +75,12 @@ dependencies {
 
 	// Apache HttpClient for RestTemplate SSL configuration
 	implementation 'org.apache.httpcomponents:httpclient:4.5.14'
+	
+	// Actuator
+	implementation 'org.springframework.boot:spring-boot-starter-actuator'
+
+	// Redis
+	implementation 'org.springframework.boot:spring-boot-starter-data-redis'
 
 }
 

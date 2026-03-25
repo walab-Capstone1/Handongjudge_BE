@@ -26,6 +26,10 @@ public interface QuizProblemRepository extends JpaRepository<QuizProblem, Long> 
     @Query("DELETE FROM QuizProblem qp WHERE qp.quiz.id = :quizId")
     void deleteByQuizId(@Param("quizId") Long quizId);
 
+    @Modifying
+    @Query("DELETE FROM QuizProblem qp WHERE qp.quiz.id = :quizId AND qp.problem.id = :problemId")
+    void deleteByQuizIdAndProblemId(@Param("quizId") Long quizId, @Param("problemId") Long problemId);
+
     /** 해당 퀴즈들에 대한 QuizProblem 일괄 삭제 (분반 삭제 시 quiz_id FK 제약 회피용) */
     @Modifying
     @Query("DELETE FROM QuizProblem qp WHERE qp.quiz.id IN :quizIds")

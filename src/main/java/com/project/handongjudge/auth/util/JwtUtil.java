@@ -8,6 +8,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Component;
 import java.security.Key;
 import java.util.Date;
+import java.nio.charset.StandardCharsets;
 
 /**
  * JWT 토큰 생성 및 검증 유틸리티
@@ -151,6 +152,27 @@ public class JwtUtil {
             return true;
         } catch (JwtException | IllegalArgumentException e) {
             log.error("JWT token validation failed: ", e);
+            return false;
+        }
+    }
+
+    /**
+     * 서명은 유효하지만 만료된 토큰인지 여부만 판별.
+     * JwtAuthenticationFilter에서 만료 토큰을 401로 분기할 때 사용.
+     *
+     * @param authToken JWT 토큰
+     * @return true = 만료됨 (서명 유효), false = 유효하거나 서명 자체가 잘못됨
+     */
+    public boolean isTokenExpired(String authToken) {
+        try {
+            Jwts.parserBuilder()
+                    .setSigningKey(getSigningKey())
+                    .build()
+                    .parseClaimsJws(authToken);
+            return false;
+        } catch (ExpiredJwtException e) {
+            return true;
+        } catch (JwtException | IllegalArgumentException e) {
             return false;
         }
     }

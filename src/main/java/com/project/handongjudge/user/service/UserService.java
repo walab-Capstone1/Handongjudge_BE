@@ -25,9 +25,11 @@ import com.project.handongjudge.submission.repository.SubmissionRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.project.handongjudge.community.service.NotificationService;
 import com.project.handongjudge.domjudge.service.DomjudgeService;
 import java.util.ArrayList;
 import java.time.LocalDateTime;
@@ -58,6 +60,7 @@ public class UserService {
     private final SubmissionRepository submissionRepository;
     private final ProblemRepository problemRepository;
     private final QuizProblemRepository quizProblemRepository;
+    private final NotificationService notificationService;
 
     @Autowired
     public UserService(UserRepository userRepository,
@@ -73,6 +76,7 @@ public class UserService {
                        SubmissionRepository submissionRepository,
                        ProblemRepository problemRepository,
                        QuizProblemRepository quizProblemRepository,
+                       @Lazy NotificationService notificationService,
                        @Lazy PasswordEncoder passwordEncoder) {
         this.userRepository = userRepository;
         this.enrollmentRepository = enrollmentRepository;
@@ -88,6 +92,7 @@ public class UserService {
         this.submissionRepository = submissionRepository;
         this.problemRepository = problemRepository;
         this.quizProblemRepository = quizProblemRepository;
+        this.notificationService = notificationService;
     }
 
     public Optional<User> findByEmail(String email) {
@@ -218,29 +223,32 @@ public class UserService {
                 .collect(java.util.stream.Collectors.toList());
 
 
-        // 학생인 경우에만 읽지 않은 공지사항 수를 수동으로 계산
-        if (user.getRole() != User.Role.ADMIN && user.getRole() != User.Role.SUPER_ADMIN) {
-            for (DashboardCourseDto dto : result) {
-                // 해당 분반의 새로운 공지사항 중 읽지 않은 것들의 수 계산
-                long unreadNoticeCount = noticeRepository.findNewNoticesBySectionId(dto.getSectionId())
-                        .stream()
-                        .filter(notice -> !userReadStatusRepository.existsByUserIdAndNoticeId(userId, notice.getId()))
-                        .count();
-
-
-                // 수동 계산된 값으로 업데이트 (리플렉션 사용)
-                try {
-                    java.lang.reflect.Field field = dto.getClass().getDeclaredField("newNoticeCount");
-                    field.setAccessible(true);
-                    field.set(dto, unreadNoticeCount);
-                } catch (Exception e) {
-                    log.error(" newNoticeCount 업데이트 실패", e);
-                }
+        // 이 분반에 수강(Enrollment)으로 들어온 카드만: 뱃지는 SQL이 아니라 본인 읽음(UserReadStatus) 기준
+        // (SUPER_ADMIN/ADMIN 계정으로 수강 중일 때도 동일하게 적용 — 역할만으로는 학생용 집계가 스킵되던 문제 방지)
+        for (DashboardCourseDto dto : result) {
+            if (!enrollmentRepository.existsByUserIdAndSectionId(userId, dto.getSectionId())) {
+                continue;
             }
-        } else {
-            // 교수인 경우 로그만 출력
-            for (DashboardCourseDto dto : result) {
-                log.info(" 교수 분반 정보 - sectionId: {}, courseTitle: {}, newNoticeCount: {}, newAssignmentCount: {}", dto.getSectionId(), dto.getCourseTitle(), dto.getNewNoticeCount(), dto.getNewAssignmentCount());
+            long unreadNoticeCount = noticeRepository.findNewNoticesBySectionId(dto.getSectionId())
+                    .stream()
+                    .filter(notice -> !userReadStatusRepository.existsByUserIdAndNoticeId(userId, notice.getId()))
+                    .count();
+
+            long unreadAssignmentCount = assignmentRepository.findBySectionId(dto.getSectionId())
+                    .stream()
+                    .filter(a -> Boolean.TRUE.equals(a.getActive()) && a.isNew())
+                    .filter(a -> !userReadStatusRepository.existsByUserIdAndAssignmentId(userId, a.getId()))
+                    .count();
+
+            try {
+                java.lang.reflect.Field noticeField = dto.getClass().getDeclaredField("newNoticeCount");
+                noticeField.setAccessible(true);
+                noticeField.set(dto, unreadNoticeCount);
+                java.lang.reflect.Field assignField = dto.getClass().getDeclaredField("newAssignmentCount");
+                assignField.setAccessible(true);
+                assignField.set(dto, unreadAssignmentCount);
+            } catch (Exception e) {
+                log.error("대시보드 newNoticeCount/newAssignmentCount 업데이트 실패", e);
             }
         }
 
@@ -265,6 +273,9 @@ public class UserService {
 
         // SectionUserRole에 STUDENT 역할 부여
         sectionRoleService.assignStudentRole(enrollment.getSection().getId(), enrollment.getUser().getId());
+
+        notificationService.notifyEnrolledStudentCatchUp(
+                request.getUserId(), request.getSectionId());
 
         EnrollmentResponseDTO response = new EnrollmentResponseDTO();
         response.setId(enrollment.getId());
@@ -521,7 +532,7 @@ public class UserService {
     }
     // SubmissionRepository에서 메서드 제거하고 UserService에서 직접 처리
 
-    // UserService의 getStudentAssignmentProblemsStatus 메서드:
+    /** 분반·문제별 submitted_at 가장 늦은 제출 1건 기준으로 정답/제출/미제출 및 제출 시각 표시 (성적과 동일) */
     public List<StudentProblemStatusDto> getStudentAssignmentProblemsStatus(Long userId, Long sectionId, Long assignmentId) {
         Assignment assignment = assignmentRepository.findById(assignmentId).orElse(null);
         LocalDateTime endDate = assignment != null ? assignment.getEndDate() : null;
@@ -534,34 +545,27 @@ public class UserService {
             if (problem == null) continue;
 
             String status = "NOT_SUBMITTED";
-            int submissionCount = submissionRepository.countByUserIdAndProblemId(userId, problemId);
             Boolean isOnTime = null;
             LocalDateTime submittedAt = null;
             Integer minutesLate = null;
 
-            if (submissionCount > 0) {
-                int acceptedCount = submissionRepository.countAcceptedByUserIdAndProblemId(userId, problemId);
-                status = acceptedCount > 0 ? "ACCEPTED" : "SUBMITTED";
-
-                Optional<LocalDateTime> refTime = acceptedCount > 0
-                        ? submissionRepository.findFirstAcceptedSubmissionTime(userId, problemId, sectionId)
-                        : submissionRepository.findLatestSubmissionTime(userId, problemId, sectionId);
-
-                if (refTime.isPresent()) {
-                    submittedAt = refTime.get();
-                    if (endDate != null) {
-                        isOnTime = !submittedAt.isAfter(endDate);
-                        if (submittedAt.isAfter(endDate)) {
-                            minutesLate = (int) ChronoUnit.MINUTES.between(endDate, submittedAt);
-                        }
-                    } else {
-                        isOnTime = true;
+            List<Submission> latestList = submissionRepository.findLatestSubmissionsByUserAndProblem(
+                    userId, problemId, sectionId, PageRequest.of(0, 1));
+            if (!latestList.isEmpty()) {
+                Submission latest = latestList.get(0);
+                submittedAt = latest.getSubmittedAt();
+                status = "AC".equals(latest.getResult()) ? "ACCEPTED" : "SUBMITTED";
+                if (endDate != null) {
+                    isOnTime = !submittedAt.isAfter(endDate);
+                    if (submittedAt.isAfter(endDate)) {
+                        minutesLate = (int) ChronoUnit.MINUTES.between(endDate, submittedAt);
                     }
                 } else {
-                    if (endDate != null) isOnTime = false;
+                    isOnTime = true;
                 }
             }
 
+            int submissionCount = submissionRepository.countByUserIdAndProblemId(userId, problemId);
             problemStatusList.add(StudentProblemStatusDto.builder()
                     .problemId(problemId)
                     .problemTitle(problem.getTitle())

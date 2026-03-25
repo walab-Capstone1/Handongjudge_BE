@@ -17,6 +17,7 @@ import com.project.handongjudge.section.service.SectionRoleService;
 import com.project.handongjudge.user.entity.User;
 import com.project.handongjudge.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import com.project.handongjudge.submission.repository.SubmissionRepository;
@@ -333,8 +334,14 @@ public class AssignmentService {
                             .assignment(savedAssignment)
                             .problem(problem)
                             .problemOrder(order++)
+                            .points(1)
                             .build();
                     assignmentProblems.add(ap);
+
+                    // DOMjudge 등록
+                    Long contestId = section.getId(); // sectionId == contestId
+                    String domjudgeProblemId = problem.getDomjudgeProblemId();
+                    domjudgeService.addProblemToContest(contestId, domjudgeProblemId);
                 }
 
                 assignmentProblemRepository.saveAll(assignmentProblems);
@@ -400,16 +407,15 @@ public class AssignmentService {
             List<Long> solvedProblemIds = submissionRepository
                     .findSolvedProblemIdsByUserAndAssignment(student.getId(), assignmentId, sectionId);
 
-            // 각 문제별 첫 정답 제출 시간 조회
+            // 각 문제별 마지막 제출 시간 조회 (성적·표시 기준과 동일)
             Map<Long, LocalDateTime> problemSubmissionTimes = new HashMap<>();
             LocalDateTime assignmentCompletedAt = null;
 
             for (Long problemId : solvedProblemIds) {
-                Optional<LocalDateTime> firstSubmissionTime = submissionRepository
-                        .findFirstAcceptedSubmissionTime(student.getId(), problemId, sectionId);
-
-                if (firstSubmissionTime.isPresent()) {
-                    problemSubmissionTimes.put(problemId, firstSubmissionTime.get());
+                List<Submission> latestList = submissionRepository.findLatestSubmissionsByUserAndProblem(
+                        student.getId(), problemId, sectionId, PageRequest.of(0, 1));
+                if (!latestList.isEmpty()) {
+                    problemSubmissionTimes.put(problemId, latestList.get(0).getSubmittedAt());
                 }
             }
 
@@ -422,9 +428,13 @@ public class AssignmentService {
                         .orElse(null);
             }
 
+            String sid = student.getStudentId();
+            if (sid == null || sid.isBlank()) {
+                sid = "-";
+            }
             StudentProgressResponse progress = StudentProgressResponse.builder()
                     .userId(student.getId())
-                    .studentId(student.getEmail())
+                    .studentId(sid)
                     .studentName(student.getName())
                     .solvedProblems(solvedProblemIds)
                     .problemSubmissionTimes(problemSubmissionTimes)
@@ -434,8 +444,8 @@ public class AssignmentService {
             progressList.add(progress);
         }
 
-        // 이메일 순으로 정렬
-        progressList.sort((a, b) -> a.getStudentId().compareTo(b.getStudentId()));
+        progressList.sort(
+                (a, b) -> String.CASE_INSENSITIVE_ORDER.compare(a.getStudentId(), b.getStudentId()));
 
         return progressList;
     }
@@ -583,28 +593,27 @@ public class AssignmentService {
             throw new IllegalArgumentException("해당 문제는 이 과제에 포함되어 있지 않습니다");
         }
 
-        // 5. 학생의 accept된 제출 조회 (첫 번째 accept된 제출)
-        List<Submission> acceptedSubmissions = submissionRepository
-                .findAcceptedSubmissionsByUserAndProblem(userId, problemId, sectionId);
-
-        if (acceptedSubmissions.isEmpty()) {
-            throw new IllegalArgumentException("해당 학생은 이 문제를 아직 정답으로 제출하지 않았습니다");
+        List<Submission> latestList = submissionRepository.findLatestSubmissionsByUserAndProblem(
+                userId, problemId, sectionId, PageRequest.of(0, 1));
+        if (latestList.isEmpty()) {
+            throw new IllegalArgumentException("해당 학생의 제출 기록이 없습니다");
         }
+        Submission last = latestList.get(0);
+        String sid = student.getStudentId() != null && !student.getStudentId().isBlank()
+                ? student.getStudentId()
+                : (student.getEmail() != null ? student.getEmail() : "");
 
-        Submission firstAcceptedSubmission = acceptedSubmissions.get(0);
-
-        // 6. DTO 생성 및 반환
         return StudentAcceptedCodeResponse.builder()
-                .submissionId(firstAcceptedSubmission.getId())
+                .submissionId(last.getId())
                 .userId(student.getId())
-                .studentId(student.getEmail())
+                .studentId(sid)
                 .studentName(student.getName())
                 .problemId(problem.getId())
                 .problemTitle(problem.getTitle())
-                .code(firstAcceptedSubmission.getCode())
-                .language(firstAcceptedSubmission.getLanguage())
-                .submittedAt(firstAcceptedSubmission.getSubmittedAt())
-                .result(firstAcceptedSubmission.getResult())
+                .code(last.getCode())
+                .language(last.getLanguage())
+                .submittedAt(last.getSubmittedAt())
+                .result(last.getResult())
                 .build();
     }
 }

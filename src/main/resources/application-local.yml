@@ -1,0 +1,29 @@
+# ===== 로컬 개발 환경 (SPRING_PROFILES_ACTIVE=local) =====
+
+spring:
+  jpa:
+    show-sql: true
+  redis:
+    host: localhost
+    port: 6379
+
+jwt:
+  access-token:
+    expiration: 86400000    # 24시간 (개발 편의)
+  refresh-token:
+    expiration: 2592000000  # 30일 (개발 편의)
+
+auth:
+  cookie:
+    name: refreshToken
+    secure: false           # 로컬 HTTP 허용
+    same-site: Lax
+    domain: ""              # localhost는 domain 속성 미지정
+    max-age: 2592000        # 30일 (초)
+    path: /
+  cors:
+    allowed-origins:
+      - http://localhost:3000
+      - http://localhost:3001
+      - https://localhost:3000
+      - https://localhost:3001

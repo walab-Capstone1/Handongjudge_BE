@@ -15,6 +15,7 @@ import javax.servlet.ServletException;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 
 /**
@@ -42,38 +43,45 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response,
                                     FilterChain filterChain) throws ServletException, IOException {
         try {
-            // 요청에서 JWT 토큰 추출
             String jwt = getJwtFromRequest(request);
 
-            // JWT 토큰이 있고 유효한 경우
-            if (StringUtils.hasText(jwt) && jwtUtil.validateToken(jwt)) {
-                // 토큰에서 사용자 ID 추출
-                String userId = jwtUtil.getIDFromToken(jwt);
-
-                // JWT 토큰에서 역할 정보 추출 (토큰에 포함되어 있다고 가정)
-                String role = jwtUtil.getRoleFromToken(jwt);
-                if (role == null) {
-                    role = "USER"; // 기본 역할
+            if (StringUtils.hasText(jwt)) {
+                // 만료된 토큰이면 즉시 401 반환 → 프론트가 /auth/refresh 호출하도록 유도
+                if (jwtUtil.isTokenExpired(jwt)) {
+                    log.debug("Expired JWT token, returning 401 for path: {}", request.getRequestURI());
+                    sendUnauthorized(response, "토큰이 만료되었습니다.");
+                    return;
                 }
 
-                // Spring Security 인증 토큰 생성
-                UsernamePasswordAuthenticationToken authentication =
-                        new UsernamePasswordAuthenticationToken(
-                                userId, // 사용자 ID를 principal로 사용
-                                null,
-                                Collections.singletonList(new SimpleGrantedAuthority("ROLE_" + role))
-                        );
-                authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+                if (jwtUtil.validateToken(jwt)) {
+                    String userId = jwtUtil.getIDFromToken(jwt);
+                    String role = jwtUtil.getRoleFromToken(jwt);
+                    if (role == null) {
+                        role = "USER";
+                    }
 
-                // SecurityContext에 인증 정보 설정
-                SecurityContextHolder.getContext().setAuthentication(authentication);
+                    UsernamePasswordAuthenticationToken authentication =
+                            new UsernamePasswordAuthenticationToken(
+                                    userId,
+                                    null,
+                                    Collections.singletonList(new SimpleGrantedAuthority("ROLE_" + role))
+                            );
+                    authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+                    SecurityContextHolder.getContext().setAuthentication(authentication);
+                }
             }
         } catch (Exception ex) {
             log.error("Could not set user authentication in security context", ex);
         }
 
-        // 다음 필터로 요청 전달
         filterChain.doFilter(request, response);
+    }
+
+    private void sendUnauthorized(HttpServletResponse response, String message) throws IOException {
+        response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+        response.setContentType("application/json");
+        response.setCharacterEncoding(StandardCharsets.UTF_8.name());
+        response.getWriter().write("{\"success\":false,\"message\":\"" + message + "\"}");
     }
 
     /**

@@ -15,6 +15,9 @@ import java.util.List;
 @Repository
 public interface NotificationRepository extends JpaRepository<Notification, Long> {
 
+    @Query("SELECT DISTINCT n FROM Notification n LEFT JOIN FETCH n.notice LEFT JOIN FETCH n.assignment WHERE n.id = :id")
+    java.util.Optional<Notification> findByIdWithNoticeAndAssignment(@Param("id") Long id);
+
     // 사용자별 알림 목록 조회 (최신순)
     Page<Notification> findByRecipientOrderByCreatedAtDesc(User recipient, Pageable pageable);
 
@@ -51,5 +54,9 @@ public interface NotificationRepository extends JpaRepository<Notification, Long
 
     /** 해당 공지들을 참조하는 알림 일괄 삭제 (분반 삭제 시 notice_id FK 제약 회피용) */
     void deleteByNotice_IdIn(List<Long> noticeIds);
+
+    boolean existsByRecipient_IdAndNotice_IdAndType(Long recipientId, Long noticeId, Notification.NotificationType type);
+
+    boolean existsByRecipient_IdAndAssignment_IdAndType(Long recipientId, Long assignmentId, Notification.NotificationType type);
 }
 
