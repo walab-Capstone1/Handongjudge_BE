@@ -73,10 +73,11 @@ public class GradeController {
     @GetMapping
     public ResponseEntity<List<StudentGradeSummaryDTO>> getAssignmentGrades(
             @PathVariable Long sectionId,
-            @PathVariable Long assignmentId) {
-        
-        List<StudentGradeSummaryDTO> grades = 
-                gradeService.getAssignmentGrades(assignmentId, sectionId);
+            @PathVariable Long assignmentId,
+            @RequestParam(value = "includeTestCaseResults", defaultValue = "false") boolean includeTestCaseResults) {
+
+        List<StudentGradeSummaryDTO> grades =
+                gradeService.getAssignmentGrades(assignmentId, sectionId, includeTestCaseResults);
         return ResponseEntity.ok(grades);
     }
 
@@ -170,9 +171,11 @@ public class GradeController {
     public ResponseEntity<StudentGradeSummaryDTO> getStudentGrade(
             @PathVariable Long sectionId,
             @PathVariable Long assignmentId,
-            @PathVariable Long userId) {
-        
-        StudentGradeSummaryDTO grade = gradeService.getStudentGrade(assignmentId, userId);
+            @PathVariable Long userId,
+            @RequestParam(value = "includeTestCaseResults", defaultValue = "false") boolean includeTestCaseResults) {
+
+        StudentGradeSummaryDTO grade = gradeService.getStudentGrade(
+                assignmentId, userId, includeTestCaseResults);
         return ResponseEntity.ok(grade);
     }
 

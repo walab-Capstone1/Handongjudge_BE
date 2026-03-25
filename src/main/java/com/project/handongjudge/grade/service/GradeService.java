@@ -13,10 +13,18 @@ public interface GradeService {
     List<GradeResponseDTO> saveBulkGrades(BulkGradeRequestDTO request, Long tutorId);
     
     // 과제별 모든 학생 성적 조회
-    List<StudentGradeSummaryDTO> getAssignmentGrades(Long assignmentId, Long sectionId);
-    
+    default List<StudentGradeSummaryDTO> getAssignmentGrades(Long assignmentId, Long sectionId) {
+        return getAssignmentGrades(assignmentId, sectionId, false);
+    }
+
+    List<StudentGradeSummaryDTO> getAssignmentGrades(Long assignmentId, Long sectionId, boolean includeTestCaseResults);
+
     // 학생별 과제 성적 조회
-    StudentGradeSummaryDTO getStudentGrade(Long assignmentId, Long userId);
+    default StudentGradeSummaryDTO getStudentGrade(Long assignmentId, Long userId) {
+        return getStudentGrade(assignmentId, userId, false);
+    }
+
+    StudentGradeSummaryDTO getStudentGrade(Long assignmentId, Long userId, boolean includeTestCaseResults);
     
     // 문제별 학생 성적 조회
     GradeResponseDTO getProblemGrade(Long assignmentId, Long problemId, Long userId);

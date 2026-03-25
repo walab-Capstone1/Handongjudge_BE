@@ -19,8 +19,11 @@ import com.project.handongjudge.assignment.dto.ProblemSubmissionStats;
 import com.project.handongjudge.assignment.dto.StudentAcceptedCodeResponse;
 import com.project.handongjudge.assignment.dto.StudentProgressResponse;
 import com.project.handongjudge.grade.dto.StudentGradeSummaryDTO;
+import com.project.handongjudge.submission.dto.SubmissionOutputResponseDTO;
+import com.project.handongjudge.submission.entity.Output;
 import com.project.handongjudge.submission.entity.Submission;
 import com.project.handongjudge.submission.repository.SubmissionRepository;
+import com.project.handongjudge.submission.service.SubmissionService;
 import com.project.handongjudge.section.service.SectionRoleService;
 import com.project.handongjudge.mypage.dto.SubmissionCodeDto;
 import lombok.RequiredArgsConstructor;
@@ -31,6 +34,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -52,6 +56,7 @@ public class QuizService {
     private final SubmissionRepository submissionRepository;
     private final SectionRoleService sectionRoleService;
     private final DomjudgeService domjudgeService;
+    private final SubmissionService submissionService;
 
     /**
      * Quiz 생성
@@ -455,7 +460,8 @@ public class QuizService {
      * 퀴즈 성적 조회 (제출 정보 기반)
      */
     @Transactional(readOnly = true)
-    public List<StudentGradeSummaryDTO> getQuizGrades(Long quizId, Long sectionId, Long userId) {
+    public List<StudentGradeSummaryDTO> getQuizGrades(
+            Long quizId, Long sectionId, Long userId, boolean includeTestCaseResults) {
         // 1. 퀴즈 정보 조회
         Quiz quiz = quizRepository.findById(quizId)
                 .orElseThrow(() -> new IllegalArgumentException("Quiz not found"));
@@ -504,6 +510,7 @@ public class QuizService {
                     Submission sub = submission.get();
                     pg.setSubmitted(true);
                     pg.setSubmittedAt(sub.getSubmittedAt());
+                    pg.setSubmissionDomjudgeId(sub.getSubmissionId());
                     pg.setResult(sub.getResult());
                     if (quiz.getEndTime() != null) {
                         pg.setIsOnTime(
@@ -519,6 +526,7 @@ public class QuizService {
                     } else {
                         pg.setScore(0);
                     }
+                    enrichProblemGradeWithTestCases(pg, sectionId, sub, includeTestCaseResults);
                 } else {
                     pg.setSubmitted(false);
                     pg.setIsOnTime(false);
@@ -536,6 +544,36 @@ public class QuizService {
         }
 
         return gradeSummaries;
+    }
+
+    private void enrichProblemGradeWithTestCases(
+            StudentGradeSummaryDTO.ProblemGradeDTO pg,
+            Long sectionId,
+            Submission sub,
+            boolean includeTestCaseResults) {
+        if (!includeTestCaseResults || sub == null) {
+            return;
+        }
+        String sid = sub.getSubmissionId();
+        if (sid == null || sid.isBlank()) {
+            return;
+        }
+        SubmissionOutputResponseDTO out = submissionService.getResultOutput(sectionId, sid);
+        if (out == null || out.getOutputList() == null || out.getOutputList().isEmpty()) {
+            pg.setTestCaseResults(Collections.emptyList());
+            pg.setTotalTestCaseCount(0);
+            pg.setPassedTestCaseCount(0);
+            pg.setAllTestCasesPassed(false);
+            return;
+        }
+        List<Output> list = out.getOutputList();
+        int passed = (int) list.stream()
+                .filter(o -> o.getResult() != null && "correct".equalsIgnoreCase(o.getResult().trim()))
+                .count();
+        pg.setTestCaseResults(list);
+        pg.setTotalTestCaseCount(list.size());
+        pg.setPassedTestCaseCount(passed);
+        pg.setAllTestCasesPassed(passed == list.size());
     }
 
     /**

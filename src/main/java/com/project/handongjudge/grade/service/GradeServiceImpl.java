@@ -10,8 +10,11 @@ import com.project.handongjudge.grade.repository.GradeRepository;
 import com.project.handongjudge.problem.entity.Problem;
 import com.project.handongjudge.section.entity.Section;
 import com.project.handongjudge.section.service.SectionRoleService;
+import com.project.handongjudge.submission.dto.SubmissionOutputResponseDTO;
+import com.project.handongjudge.submission.entity.Output;
 import com.project.handongjudge.submission.entity.Submission;
 import com.project.handongjudge.submission.repository.SubmissionRepository;
+import com.project.handongjudge.submission.service.SubmissionService;
 import com.project.handongjudge.user.entity.User;
 import com.project.handongjudge.user.repository.EnrollmentRepository;
 import com.project.handongjudge.user.repository.UserRepository;
@@ -36,6 +39,7 @@ public class GradeServiceImpl implements GradeService {
     private final UserRepository userRepository;
     private final EnrollmentRepository enrollmentRepository;
     private final SectionRoleService sectionRoleService;
+    private final SubmissionService submissionService;
 
     @Override
     public GradeResponseDTO saveGrade(GradeRequestDTO request, Long tutorId) {
@@ -121,7 +125,8 @@ public class GradeServiceImpl implements GradeService {
     }
 
     @Override
-    public List<StudentGradeSummaryDTO> getAssignmentGrades(Long assignmentId, Long sectionId) {
+    public List<StudentGradeSummaryDTO> getAssignmentGrades(
+            Long assignmentId, Long sectionId, boolean includeTestCaseResults) {
         // 1. 과제 정보 조회
         Assignment assignment = assignmentRepository.findById(assignmentId)
                 .orElseThrow(() -> new IllegalArgumentException("Assignment not found"));
@@ -162,6 +167,7 @@ public class GradeServiceImpl implements GradeService {
                     Submission sub = submission.get();
                     pg.setSubmitted(true);
                     pg.setSubmittedAt(sub.getSubmittedAt());
+                    pg.setSubmissionDomjudgeId(sub.getSubmissionId());
                     if (assignment.getEndDate() != null) {
                         pg.setIsOnTime(
                                 sub.getSubmittedAt().isBefore(assignment.getEndDate()) ||
@@ -177,6 +183,7 @@ public class GradeServiceImpl implements GradeService {
                     } else {
                         pg.setScore(0);
                     }
+                    enrichProblemGradeWithTestCases(pg, sectionId, sub, includeTestCaseResults);
                 } else {
                     pg.setSubmitted(false);
                     pg.setIsOnTime(false);
@@ -198,7 +205,8 @@ public class GradeServiceImpl implements GradeService {
     }
 
     @Override
-    public StudentGradeSummaryDTO getStudentGrade(Long assignmentId, Long userId) {
+    public StudentGradeSummaryDTO getStudentGrade(
+            Long assignmentId, Long userId, boolean includeTestCaseResults) {
         Assignment assignment = assignmentRepository.findById(assignmentId)
                 .orElseThrow(() -> new IllegalArgumentException("Assignment not found"));
 
@@ -232,6 +240,7 @@ public class GradeServiceImpl implements GradeService {
                 Submission sub = submission.get();
                 pg.setSubmitted(true);
                 pg.setSubmittedAt(sub.getSubmittedAt());
+                pg.setSubmissionDomjudgeId(sub.getSubmissionId());
                 if (assignment.getEndDate() != null) {
                     pg.setIsOnTime(
                             sub.getSubmittedAt().isBefore(assignment.getEndDate()) ||
@@ -247,6 +256,8 @@ public class GradeServiceImpl implements GradeService {
                 } else {
                     pg.setScore(0);
                 }
+                enrichProblemGradeWithTestCases(
+                        pg, assignment.getSection().getId(), sub, includeTestCaseResults);
             } else {
                 pg.setSubmitted(false);
                 pg.setIsOnTime(false);
@@ -357,6 +368,36 @@ public class GradeServiceImpl implements GradeService {
         List<Submission> list = submissionRepository.findLatestSubmissionsByUserAndProblem(
                 userId, problemId, sectionId, PageRequest.of(0, 1));
         return list.isEmpty() ? Optional.empty() : Optional.of(list.get(0));
+    }
+
+    private void enrichProblemGradeWithTestCases(
+            StudentGradeSummaryDTO.ProblemGradeDTO pg,
+            Long sectionId,
+            Submission sub,
+            boolean includeTestCaseResults) {
+        if (!includeTestCaseResults || sub == null) {
+            return;
+        }
+        String sid = sub.getSubmissionId();
+        if (sid == null || sid.isBlank()) {
+            return;
+        }
+        SubmissionOutputResponseDTO out = submissionService.getResultOutput(sectionId, sid);
+        if (out == null || out.getOutputList() == null || out.getOutputList().isEmpty()) {
+            pg.setTestCaseResults(Collections.emptyList());
+            pg.setTotalTestCaseCount(0);
+            pg.setPassedTestCaseCount(0);
+            pg.setAllTestCasesPassed(false);
+            return;
+        }
+        List<Output> list = out.getOutputList();
+        int passed = (int) list.stream()
+                .filter(o -> o.getResult() != null && "correct".equalsIgnoreCase(o.getResult().trim()))
+                .count();
+        pg.setTestCaseResults(list);
+        pg.setTotalTestCaseCount(list.size());
+        pg.setPassedTestCaseCount(passed);
+        pg.setAllTestCasesPassed(passed == list.size());
     }
 }
 
