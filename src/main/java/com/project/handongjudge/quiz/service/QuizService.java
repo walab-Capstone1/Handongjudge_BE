@@ -158,6 +158,17 @@ public class QuizService {
      * Quiz 상세 정보 조회
      */
     @Transactional(readOnly = true)
+    public Quiz findById(Long quizId) {
+        return quizRepository.findById(quizId)
+                .orElseThrow(() -> new IllegalArgumentException("Quiz not found: " + quizId));
+    }
+
+    @Transactional(readOnly = true)
+    public List<Quiz> findBySectionId(Long sectionId) {
+        return quizRepository.findBySectionIdOrderByStartTimeDesc(sectionId);
+    }
+
+    @Transactional(readOnly = true)
     public QuizResponse getQuizInfo(Long quizId, Long userId) {
         Quiz quiz = quizRepository.findById(quizId)
                 .orElseThrow(() -> new IllegalArgumentException("Quiz not found"));
