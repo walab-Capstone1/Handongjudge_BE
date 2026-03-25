@@ -1,4 +1,5 @@
 # ===== 배포 환경 (SPRING_PROFILES_ACTIVE=deploy) =====
+# application-prod.yml 내용 병합: 운영 로깅·헬스체크
 
 spring:
   jpa:
@@ -25,3 +26,27 @@ auth:
   cors:
     allowed-origins:
       - https://hj.walab.info
+
+logging:
+  level:
+    com.project.handongjudge: INFO
+    org.springframework.security: WARN
+    org.hibernate.SQL: WARN
+    org.hibernate.type.descriptor.sql.BasicBinder: OFF
+    org.hibernate.type.descriptor.sql.BasicExtractor: OFF
+  logback:
+    rollingpolicy:
+      max-file-size: 200MB
+      max-history: 7
+      total-size-cap: 1GB
+  file:
+    name: /var/log/handongjudge/application.log
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
