@@ -29,12 +29,19 @@ public class RefreshTokenService {
     @Value("${jwt.refresh-token.expiration}")
     private Long refreshTokenExpirationMs;
 
-    /** 신규 로그인: 토큰 추가 저장 (다중 기기/브라우저 허용) */
+    /** 신규 로그인: 토큰 추가 저장 (다중 기기/브라우저 허용)
+     *  동일한 해시가 이미 존재하면 skip하여 unique constraint violation 방지
+     */
     @Transactional
     public void saveToken(Long userId, String rawToken) {
+        String tokenHash = hash(rawToken);
+        if (refreshTokenRepository.findByTokenHash(tokenHash).isPresent()) {
+            log.debug("Refresh token already exists for userId={}, skipping save", userId);
+            return;
+        }
         refreshTokenRepository.save(RefreshToken.builder()
                 .userId(userId)
-                .tokenHash(hash(rawToken))
+                .tokenHash(tokenHash)
                 .expiresAt(LocalDateTime.now().plusSeconds(refreshTokenExpirationMs / 1000))
                 .createdAt(LocalDateTime.now())
                 .build());
