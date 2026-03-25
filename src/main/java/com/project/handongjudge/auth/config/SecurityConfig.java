@@ -87,7 +87,7 @@ public class SecurityConfig extends WebSecurityConfigurerAdapter {
                             handleOAuth2Success(request, response, authentication))
                     .failureHandler((request, response, exception) -> {
                         log.error("OAuth2 login failed", exception);
-                        response.sendRedirect("https://hj.walab.info/handongjudge/login?error=oauth_failed");
+                        response.sendRedirect("https://hcl.walab.info/login?error=oauth_failed");
                     })
                 .and()
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
@@ -152,7 +152,7 @@ public class SecurityConfig extends WebSecurityConfigurerAdapter {
             authCookieUtil.setRefreshTokenCookie(response, refreshToken);
 
             String redirectUrl = String.format(
-                    "https://hj.walab.info/handongjudge/auth/callback?accessToken=%s", accessToken);
+                    "https://hcl.walab.info/auth/callback?accessToken=%s", accessToken);
             log.info("OAuth2 success - redirecting to callback");
             response.sendRedirect(redirectUrl);
 
