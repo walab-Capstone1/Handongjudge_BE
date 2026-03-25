@@ -35,6 +35,7 @@ public class QuizController {
 
     private final QuizService quizService;
     private final QuizSessionService quizSessionService;
+    private final QuizRepository quizRepository;
 
     /**
      * 코딩 테스트 생성
