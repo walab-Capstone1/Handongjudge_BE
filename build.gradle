@@ -79,8 +79,11 @@ dependencies {
 	// Actuator
 	implementation 'org.springframework.boot:spring-boot-starter-actuator'
 
-	// Redis
+	// Redis (enabled for local/prod via profile-specific config)
 	implementation 'org.springframework.boot:spring-boot-starter-data-redis'
+
+	// SSH tunnel for local Redis (default profile only; not prod/test)
+	implementation 'com.github.mwiede:jsch:0.2.17'
 
 }
 
