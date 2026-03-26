@@ -34,8 +34,6 @@ import com.project.handongjudge.domjudge.service.DomjudgeService;
 import java.util.ArrayList;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
-import java.time.Instant;
-import java.time.ZoneId;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -47,9 +45,6 @@ import java.util.stream.Collectors;
 @Slf4j
 @Transactional(readOnly = true)
 public class UserService {
-    private static final ZoneId SEOUL_ZONE = ZoneId.of("Asia/Seoul");
-    private static final ZoneId UTC_ZONE = ZoneId.of("UTC");
-
 
     private final UserRepository userRepository;
     private final EnrollmentRepository enrollmentRepository;
@@ -561,13 +556,9 @@ public class UserService {
                 submittedAt = latest.getSubmittedAt();
                 status = "AC".equals(latest.getResult()) ? "ACCEPTED" : "SUBMITTED";
                 if (endDate != null) {
-                    // endDate는 프론트 toISOString()을 통해 "UTC 시간값"이 LocalDateTime으로 저장되는 패턴이 있어,
-                    // 비교할 때는 endDate를 UTC로 해석해 instant로 변환한 뒤 submittedAt(서버 로컬 기준)과 비교한다.
-                    Instant submittedInstant = submittedAt.atZone(SEOUL_ZONE).toInstant();
-                    Instant dueInstant = endDate.atZone(UTC_ZONE).toInstant();
-                    isOnTime = !submittedInstant.isAfter(dueInstant);
-                    if (submittedInstant.isAfter(dueInstant)) {
-                        minutesLate = (int) ChronoUnit.MINUTES.between(dueInstant, submittedInstant);
+                    isOnTime = !submittedAt.isAfter(endDate);
+                    if (submittedAt.isAfter(endDate)) {
+                        minutesLate = (int) ChronoUnit.MINUTES.between(endDate, submittedAt);
                     }
                 } else {
                     isOnTime = true;
