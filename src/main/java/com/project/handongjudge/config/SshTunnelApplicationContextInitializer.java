@@ -27,7 +27,7 @@ public class SshTunnelApplicationContextInitializer
 	@Override
 	public void initialize(ConfigurableApplicationContext applicationContext) {
 		ConfigurableEnvironment env = applicationContext.getEnvironment();
-		if (env.acceptsProfiles(Profiles.of("prod", "test"))) {
+		if (env.acceptsProfiles(Profiles.of("deploy", "test"))) {
 			return;
 		}
 		if (!Boolean.parseBoolean(env.getProperty("app.ssh-tunnel.enabled", "true"))) {
