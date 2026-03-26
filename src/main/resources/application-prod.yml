@@ -1,6 +1,10 @@
 spring:
   jpa:
     show-sql: false
+  redis:
+    host: ${REDIS_HOST}
+    port: ${REDIS_PORT:6379}
+    password: ${REDIS_PASSWORD:}
 
 logging:
   level:
@@ -24,3 +28,7 @@ management:
   endpoint:
     health:
       show-details: never
+
+app:
+  ssh-tunnel:
+    enabled: false

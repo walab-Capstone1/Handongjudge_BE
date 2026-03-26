@@ -7,6 +7,11 @@ spring:
   config:
     import: optional:file:.env[.properties]
 
+  redis:
+    host: ${REDIS_HOST:127.0.0.1}
+    port: ${REDIS_PORT:6379}
+    password: ${REDIS_PASSWORD:}
+
   jackson:
     serialization:
       write-dates-as-timestamps: false
@@ -68,6 +73,17 @@ app:
     authorized-redirect-uris:
       #- http://localhost:3000/auth/callback  # 프론트엔드 콜백 페이지
       - https://hj.walab.info/handongjudge/auth/callback
+  # SSH → Redis (default: no profile). Disabled when spring.profiles.active=prod (see application-prod.yml)
+  ssh-tunnel:
+    enabled: ${SSH_TUNNEL_ENABLED:true}
+    host: ${SSH_TUNNEL_HOST:}
+    user: ${SSH_TUNNEL_USER:}
+    password: ${SSH_TUNNEL_PASSWORD:}
+    port: ${SSH_TUNNEL_PORT:22}
+    identity-path: ${SSH_IDENTITY_PATH:}
+    local-port: ${SSH_TUNNEL_LOCAL_PORT:6379}
+    remote-redis-host: ${SSH_REMOTE_REDIS_HOST:}
+    remote-redis-port: ${SSH_REMOTE_REDIS_PORT:6379}
 logging:
   level:
     com.project.handongjudge: DEBUG
