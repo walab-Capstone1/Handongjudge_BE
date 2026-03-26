@@ -30,12 +30,17 @@ import org.springframework.data.domain.PageRequest;
 @Service
 @RequiredArgsConstructor
 public class GradeServiceImpl implements GradeService {
-    private static final ZoneId SEOUL_ZONE = ZoneId.of("Asia/Seoul");
     private static final ZoneId UTC_ZONE = ZoneId.of("UTC");
 
+    /**
+     * 지각 여부 판정 헬퍼.
+     * submittedAt은 서버 JVM 시스템 타임존(LocalDateTime.now()) 기준,
+     * dueAt은 프론트 toISOString()→UTC 문자열이 그대로 저장된 UTC 기준 LocalDateTime이므로
+     * 각각 올바른 ZoneId로 Instant 변환 후 비교한다.
+     */
     private static boolean isSubmittedOnTime(LocalDateTime submittedAt, LocalDateTime dueAt) {
         if (submittedAt == null || dueAt == null) return true;
-        Instant submittedInstant = submittedAt.atZone(SEOUL_ZONE).toInstant();
+        Instant submittedInstant = submittedAt.atZone(ZoneId.systemDefault()).toInstant();
         Instant dueInstant = dueAt.atZone(UTC_ZONE).toInstant();
         return !submittedInstant.isAfter(dueInstant);
     }
