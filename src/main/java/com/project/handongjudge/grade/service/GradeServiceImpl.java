@@ -12,6 +12,7 @@ import com.project.handongjudge.section.entity.Section;
 import com.project.handongjudge.section.service.SectionRoleService;
 import com.project.handongjudge.submission.entity.Submission;
 import com.project.handongjudge.submission.repository.SubmissionRepository;
+import com.project.handongjudge.submission.service.SubmissionService;
 import com.project.handongjudge.user.entity.User;
 import com.project.handongjudge.user.repository.EnrollmentRepository;
 import com.project.handongjudge.user.repository.UserRepository;
@@ -53,6 +54,7 @@ public class GradeServiceImpl implements GradeService {
     private final UserRepository userRepository;
     private final EnrollmentRepository enrollmentRepository;
     private final SectionRoleService sectionRoleService;
+    private final SubmissionService submissionService;
 
     @Override
     public GradeResponseDTO saveGrade(GradeRequestDTO request, Long tutorId) {
@@ -177,6 +179,7 @@ public class GradeServiceImpl implements GradeService {
 
                 if (submission.isPresent()) {
                     Submission sub = submission.get();
+                    submissionService.backfillTestCaseCountsIfMissing(sub);
                     pg.setSubmitted(true);
                     pg.setSubmittedAt(sub.getSubmittedAt());
                     if (assignment.getEndDate() != null) {
@@ -185,6 +188,8 @@ public class GradeServiceImpl implements GradeService {
                         pg.setIsOnTime(true);
                     }
                     pg.setResult(sub.getResult());
+                    pg.setPassedTestCases(sub.getPassedTestCases());
+                    pg.setTotalTestCases(sub.getTotalTestCases());
                     if ("AC".equals(sub.getResult())) {
                         pg.setScore(1);
                         totalScore += 1;
@@ -244,6 +249,7 @@ public class GradeServiceImpl implements GradeService {
 
             if (submission.isPresent()) {
                 Submission sub = submission.get();
+                submissionService.backfillTestCaseCountsIfMissing(sub);
                 pg.setSubmitted(true);
                 pg.setSubmittedAt(sub.getSubmittedAt());
                 if (assignment.getEndDate() != null) {
@@ -252,6 +258,8 @@ public class GradeServiceImpl implements GradeService {
                     pg.setIsOnTime(true);
                 }
                 pg.setResult(sub.getResult());
+                pg.setPassedTestCases(sub.getPassedTestCases());
+                pg.setTotalTestCases(sub.getTotalTestCases());
                 if ("AC".equals(sub.getResult())) {
                     pg.setScore(1);
                     totalScore += 1;
