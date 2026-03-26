@@ -16,6 +16,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
@@ -73,7 +74,15 @@ public class QuizController {
             @PathVariable Long quizId,
             Authentication authentication
     ) {
-        Long userId = Long.parseLong(authentication.getName());
+        if (authentication == null || authentication.getName() == null) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "로그인이 필요합니다.");
+        }
+        final Long userId;
+        try {
+            userId = Long.parseLong(authentication.getName());
+        } catch (NumberFormatException e) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "유효한 로그인 정보가 아닙니다.");
+        }
         QuizResponse response = quizService.getQuizInfo(quizId, userId);
         return ResponseEntity.ok(response);
     }
@@ -88,6 +97,18 @@ public class QuizController {
     ) {
         List<QuizProblemDto> problems = quizService.getQuizProblems(quizId);
         return ResponseEntity.ok(problems);
+    }
+
+    @GetMapping("/{quizId}/my-problem-statuses")
+    public ResponseEntity<List<QuizProblemWorkStatusDto>> getMyProblemStatuses(
+            @PathVariable Long sectionId,
+            @PathVariable Long quizId,
+            Authentication authentication
+    ) {
+        Long userId = Long.parseLong(authentication.getName());
+        List<QuizProblemWorkStatusDto> statuses =
+                quizService.getMyProblemStatuses(quizId, sectionId, userId);
+        return ResponseEntity.ok(statuses);
     }
 
     /**

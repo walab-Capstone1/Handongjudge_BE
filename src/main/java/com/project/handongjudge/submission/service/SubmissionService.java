@@ -44,6 +44,7 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 import com.project.handongjudge.domjudge.service.DomjudgeService;
 import lombok.AllArgsConstructor;
@@ -56,6 +57,7 @@ import lombok.Getter;
 public class SubmissionService {
     private static final Logger log = LoggerFactory.getLogger(SubmissionService.class);
     private static final ZoneId KST_ZONE = ZoneId.of("Asia/Seoul");
+    private static final ZoneId UTC_ZONE = ZoneId.of("UTC");
     private final SubmissionRepository submissionRepository;
     private final UserRepository userRepository;
     private final ProblemRepository problemRepository;
@@ -540,6 +542,7 @@ public class SubmissionService {
      * 퀴즈 전용 제출 — 폴링만 공유하고 DB에는 퀴즈용 Submission 한 번만 저장
      */
     public SubmissionQuizResponseDTO submitQuizCode(Authentication authentication, SubmissionAuthDTO submissionRequestDTO) {
+        validateQuizLanguage(submissionRequestDTO.getLanguage());
         long e2eStart = System.currentTimeMillis();
         SubmissionMetric metric = SubmissionMetric.builder()
                 .measuredAt(LocalDateTime.now())
@@ -628,6 +631,12 @@ public class SubmissionService {
         }
     }
 
+    private void validateQuizLanguage(String language) {
+        if (language == null || !"c".equalsIgnoreCase(language.trim())) {
+            throw new IllegalArgumentException("코딩테스트는 C 언어만 제출할 수 있습니다.");
+        }
+    }
+
     private PollingResult<SubmissionOutputResponseDTO> pollForResultOutput(String cid, String submissionId, int maxWaitSeconds) {
         int maxAttempts = maxWaitSeconds * 2;
         int attempts = 0;
@@ -701,18 +710,18 @@ public class SubmissionService {
         // 관리자인지 확인
         boolean isManager = sectionRoleService.isManager(userId, sectionId);
         
-        // 문제가 속한 과제 목록 조회
-        List<AssignmentProblem> assignmentProblems = assignmentProblemRepository.findByProblemId(problemId);
-        
-        // 문제가 속한 퀴즈 목록 조회
-        List<QuizProblem> quizProblems = quizProblemRepository.findByProblemId(problemId);
+        // 섹션 기준으로 매핑을 조회해 문제-분반 연결 검증을 안정화
+        List<AssignmentProblem> assignmentProblems =
+                assignmentProblemRepository.findByProblemIdAndSectionId(problemId, sectionId);
+        List<QuizProblem> quizProblems =
+                quizProblemRepository.findByProblemIdAndSectionId(problemId, sectionId);
         
         // 과제와 퀴즈 모두에 속하지 않은 경우
         if (assignmentProblems.isEmpty() && quizProblems.isEmpty()) {
             throw new IllegalArgumentException("해당 문제는 과제나 코딩 테스트에 속해있지 않습니다");
         }
         
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(UTC_ZONE);
         boolean assignmentValid = false;
         boolean quizValid = false;
         
@@ -739,40 +748,49 @@ public class SubmissionService {
         
         // 퀴즈 검증
         if (!quizProblems.isEmpty()) {
-            Quiz targetQuiz = null;
-            for (QuizProblem qp : quizProblems) {
-                Quiz quiz = qp.getQuiz();
-                if (quiz.getSection().getId().equals(sectionId)) {
-                    targetQuiz = quiz;
-                    break;
-                }
-            }
-            
-            if (targetQuiz != null) {
-                // 학생이고 퀴즈가 비활성화되어 있으면 제출 불가
-                if (!isManager && !targetQuiz.getActive()) {
-                    throw new IllegalArgumentException("해당 코딩 테스트는 비활성화되어 있어 제출할 수 없습니다");
-                }
+            List<Quiz> quizzesInSection = quizProblems.stream()
+                    .map(QuizProblem::getQuiz)
+                    .filter(q -> q.getSection().getId().equals(sectionId))
+                    .collect(Collectors.toList());
 
-                // 학생이고 퀴즈가 PAUSED(일시정지) 상태면 제출 불가
-                if (!isManager && targetQuiz.getStatus() == Quiz.QuizStatus.PAUSED) {
-                    throw new IllegalArgumentException("코딩 테스트가 일시정지 상태입니다. 진행이 재개될 때까지 제출할 수 없습니다");
-                }
-                
-                // 퀴즈 종료 시간 체크
-                if (targetQuiz.getEndTime() != null && now.isAfter(targetQuiz.getEndTime())) {
-                    // 학생은 퀴즈 종료 후 제출 불가
-                    if (!isManager) {
+            if (!quizzesInSection.isEmpty()) {
+                if (isManager) {
+                    quizValid = true;
+                } else {
+                    boolean hasActiveQuiz = false;
+                    boolean hasRunningOrWaitingQuiz = false;
+
+                    for (Quiz quiz : quizzesInSection) {
+                        if (!Boolean.TRUE.equals(quiz.getActive())) {
+                            continue;
+                        }
+                        hasActiveQuiz = true;
+
+                        if (quiz.getStatus() == Quiz.QuizStatus.PAUSED) {
+                            continue;
+                        }
+
+                        if (quiz.getEndTime() == null || !now.isAfter(quiz.getEndTime())) {
+                            quizValid = true;
+                            hasRunningOrWaitingQuiz = true;
+                            break;
+                        }
+                    }
+
+                    if (!quizValid) {
+                        if (!hasActiveQuiz) {
+                            throw new IllegalArgumentException("해당 코딩 테스트는 비활성화되어 있어 제출할 수 없습니다");
+                        }
+                        if (!hasRunningOrWaitingQuiz && quizzesInSection.stream().anyMatch(q -> q.getStatus() == Quiz.QuizStatus.PAUSED)) {
+                            throw new IllegalArgumentException("코딩 테스트가 일시정지 상태입니다. 진행이 재개될 때까지 제출할 수 없습니다");
+                        }
                         throw new IllegalArgumentException("코딩 테스트 시간이 종료되었습니다");
                     }
-                    // 관리자/튜터는 퀴즈 종료 후에도 제출 가능 (예외 처리 없음)
                 }
-                
-                quizValid = true;
             }
         }
         
-        // 과제와 퀴즈 모두에 속하지 않은 경우 (sectionId가 다른 경우)
+        // 과제와 퀴즈 모두에 속하지 않은 경우
         if (!assignmentValid && !quizValid) {
             throw new IllegalArgumentException("해당 문제는 이 분반의 과제나 코딩 테스트에 속해있지 않습니다");
         }
