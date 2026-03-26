@@ -41,6 +41,7 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
 
@@ -54,6 +55,7 @@ import lombok.Getter;
 @Service
 public class SubmissionService {
     private static final Logger log = LoggerFactory.getLogger(SubmissionService.class);
+    private static final ZoneId KST_ZONE = ZoneId.of("Asia/Seoul");
     private final SubmissionRepository submissionRepository;
     private final UserRepository userRepository;
     private final ProblemRepository problemRepository;
@@ -124,7 +126,7 @@ public class SubmissionService {
                 .problem(problemRepository.findById(submissionRequestDTO.getProblemId()).orElseThrow(() -> new RuntimeException("Problem not found")))
                 .user(userRepository.findById(submissionRequestDTO.getUserId()).orElseThrow(() -> new RuntimeException("User not found")))
                 .language(submissionRequestDTO.getLanguage())
-                .code(submissionRequestDTO.getCode().getOriginalFilename())                .submittedAt(LocalDateTime.now())
+                .code(submissionRequestDTO.getCode().getOriginalFilename())                .submittedAt(LocalDateTime.now(KST_ZONE))
                 .build();
     }
     public SubmissionResponseDTO toSubmissionResponseDTO(Submission submission) {
@@ -236,7 +238,7 @@ public class SubmissionService {
                     .user(user)
                     .language(submissionRequestDTO.getLanguage())
                     .code(submissionRequestDTO.getCodeString())
-                    .submittedAt(LocalDateTime.now())
+                    .submittedAt(LocalDateTime.now(KST_ZONE))
                     .build();
             submission.setSection(section);
             submission.setSubmissionId(domjudgeSubmissionId);
@@ -389,7 +391,7 @@ public class SubmissionService {
                     .problemId(problem.getId())
                     .submissionId(domjudgeSubmissionId)
                     .language(submissionRequestDTO.getLanguage())
-                    .submittedAt(LocalDateTime.now())
+                    .submittedAt(LocalDateTime.now(KST_ZONE))
                     .result(responseDTO.getResult())
                     .outputList(responseDTO.getOutputList())
                     .sectionId(section.getId())
@@ -430,7 +432,7 @@ public class SubmissionService {
                 .user(user)
                 .language(submissionRequestDTO.getLanguage())
                 .code(submissionRequestDTO.getCodeString())
-                .submittedAt(LocalDateTime.now())
+                .submittedAt(LocalDateTime.now(KST_ZONE))
                 .result(outputDTO.getResult())
                 .build();
         submission.setSection(section);

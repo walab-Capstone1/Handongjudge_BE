@@ -567,9 +567,9 @@ public class UserService {
                 submittedAt = latest.getSubmittedAt();
                 status = "AC".equals(latest.getResult()) ? "ACCEPTED" : "SUBMITTED";
                 if (endDate != null) {
-                    // submittedAt: LocalDateTime.now()는 JVM 시스템 타임존(서버 OS) 기준 → systemDefault()로 Instant 변환
-                    // endDate: 프론트 toISOString()→UTC 문자열이 @JsonFormat(timezone="UTC")로 저장 → UTC로 Instant 변환
-                    Instant submittedInstant = submittedAt.atZone(ZoneId.systemDefault()).toInstant();
+                    // submittedAt은 저장 시 Asia/Seoul(LocalDateTime.now(KST)) 기준으로 생성됨
+                    // endDate는 프론트 toISOString()→UTC 문자열이 @JsonFormat(timezone="UTC")로 저장 → UTC로 해석
+                    Instant submittedInstant = submittedAt.atZone(ZoneId.of("Asia/Seoul")).toInstant();
                     Instant dueInstant = endDate.atZone(UTC_ZONE).toInstant();
                     isOnTime = !submittedInstant.isAfter(dueInstant);
                     if (submittedInstant.isAfter(dueInstant)) {
