@@ -4,8 +4,8 @@ server:
 
 spring:
   # .env import
-  config:
-    import: optional:file:.env[.properties]
+  #config:
+  #  import: optional:file:.env[.properties]
 
   jackson:
     serialization:
@@ -24,6 +24,11 @@ spring:
     username: ${DB_USERNAME}
     password: ${DB_PASSWORD}
     driver-class-name: org.mariadb.jdbc.Driver
+  redis:
+    host: ${REDIS_HOST:localhost}
+    port: ${REDIS_PORT:6379}
+    password: ${REDIS_PASSWORD:}
+
   thymeleaf:
     cache: false
     prefix: classpath:/templates/
@@ -66,8 +71,9 @@ domjudge:
 app:
   oauth2:
     authorized-redirect-uris:
-      #- http://localhost:3000/auth/callback  # 프론트엔드 콜백 페이지
-      - https://hj.walab.info/handongjudge/auth/callback
+      - http://localhost:3000/auth/callback  # 프론트엔드 콜백 페이지
+       #- https://hj.walab.info/auth/callback #개발용
+      #- https://hcl.walab.info/auth/callback
 logging:
   level:
     com.project.handongjudge: DEBUG
