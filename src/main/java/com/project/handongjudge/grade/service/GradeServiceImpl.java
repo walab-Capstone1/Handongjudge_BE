@@ -20,6 +20,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.time.Instant;
+import java.time.ZoneId;
 import java.util.*;
 
 import org.springframework.data.domain.PageRequest;
@@ -28,6 +30,15 @@ import org.springframework.data.domain.PageRequest;
 @Service
 @RequiredArgsConstructor
 public class GradeServiceImpl implements GradeService {
+    private static final ZoneId SEOUL_ZONE = ZoneId.of("Asia/Seoul");
+    private static final ZoneId UTC_ZONE = ZoneId.of("UTC");
+
+    private static boolean isSubmittedOnTime(LocalDateTime submittedAt, LocalDateTime dueAt) {
+        if (submittedAt == null || dueAt == null) return true;
+        Instant submittedInstant = submittedAt.atZone(SEOUL_ZONE).toInstant();
+        Instant dueInstant = dueAt.atZone(UTC_ZONE).toInstant();
+        return !submittedInstant.isAfter(dueInstant);
+    }
 
     private final GradeRepository gradeRepository;
     private final AssignmentRepository assignmentRepository;
@@ -163,10 +174,7 @@ public class GradeServiceImpl implements GradeService {
                     pg.setSubmitted(true);
                     pg.setSubmittedAt(sub.getSubmittedAt());
                     if (assignment.getEndDate() != null) {
-                        pg.setIsOnTime(
-                                sub.getSubmittedAt().isBefore(assignment.getEndDate()) ||
-                                sub.getSubmittedAt().isEqual(assignment.getEndDate())
-                        );
+                        pg.setIsOnTime(isSubmittedOnTime(sub.getSubmittedAt(), assignment.getEndDate()));
                     } else {
                         pg.setIsOnTime(true);
                     }
@@ -233,10 +241,7 @@ public class GradeServiceImpl implements GradeService {
                 pg.setSubmitted(true);
                 pg.setSubmittedAt(sub.getSubmittedAt());
                 if (assignment.getEndDate() != null) {
-                    pg.setIsOnTime(
-                            sub.getSubmittedAt().isBefore(assignment.getEndDate()) ||
-                            sub.getSubmittedAt().isEqual(assignment.getEndDate())
-                    );
+                        pg.setIsOnTime(isSubmittedOnTime(sub.getSubmittedAt(), assignment.getEndDate()));
                 } else {
                     pg.setIsOnTime(true);
                 }
@@ -338,10 +343,7 @@ public class GradeServiceImpl implements GradeService {
                     .result(submission.getResult());
 
             if (assignment.getEndDate() != null) {
-                builder.isOnTime(
-                        submission.getSubmittedAt().isBefore(assignment.getEndDate()) ||
-                        submission.getSubmittedAt().isEqual(assignment.getEndDate())
-                );
+                builder.isOnTime(isSubmittedOnTime(submission.getSubmittedAt(), assignment.getEndDate()));
             } else {
                 builder.isOnTime(true);
             }
