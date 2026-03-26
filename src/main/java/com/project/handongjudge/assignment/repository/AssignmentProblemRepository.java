@@ -27,4 +27,7 @@ public interface AssignmentProblemRepository extends JpaRepository<AssignmentPro
     
     // 문제 ID로 AssignmentProblem 목록 조회
     List<AssignmentProblem> findByProblemId(Long problemId);
+
+    @Query("SELECT ap FROM AssignmentProblem ap WHERE ap.problem.id = :problemId AND ap.assignment.section.id = :sectionId")
+    List<AssignmentProblem> findByProblemIdAndSectionId(@Param("problemId") Long problemId, @Param("sectionId") Long sectionId);
 }
