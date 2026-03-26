@@ -250,13 +250,16 @@ public class SubmissionService {
             String cid = String.valueOf(savedSubmission.getSection().getId());
 
             long judgingStart = System.currentTimeMillis();
-            PollingResult<String> pollingResult = pollForResult(cid, savedSubmission.getSubmissionId(), 30);
+            PollingResult<SubmissionOutputResponseDTO> pollingResult =
+                    pollForResultOutput(cid, savedSubmission.getSubmissionId(), 30);
             long judgingDuration = System.currentTimeMillis() - judgingStart;
             metric.setJudgingDurationMs(judgingDuration);
             metric.setPollingAttempts(pollingResult.getAttempts());
             log.info("[METRIC] judging_duration_ms={} polling_attempts={}", judgingDuration, pollingResult.getAttempts());
 
-            savedSubmission.setResult(pollingResult.getResult());
+            SubmissionOutputResponseDTO judged = pollingResult.getResult();
+            savedSubmission.setResult(judged.getResult());
+            applyTestCaseCountsFromOutput(savedSubmission, judged);
             submissionRepository.save(savedSubmission);
 
             metric.setSubmission(savedSubmission);
@@ -282,41 +285,139 @@ public class SubmissionService {
         }
     }
 
-    private PollingResult<String> pollForResult(String cid, String submissionId, int maxWaitSeconds) {
-        int maxAttempts = maxWaitSeconds * 2;
-        int attempts = 0;
-
-        while (attempts < maxAttempts) {
-            long apiStart = System.currentTimeMillis();
-            try {
-                String result = domjudgeService.getResult(cid, submissionId);
-                long apiDuration = System.currentTimeMillis() - apiStart;
-                log.debug("[METRIC] getResult api_ms={} attempt={}/{} submissionId={}",
-                          apiDuration, attempts + 1, maxAttempts, submissionId);
-                if (result != null && !result.isEmpty()) {
-                    return new PollingResult<>(result, attempts + 1);
-                }
-            } catch (Exception e) {
-                long apiDuration = System.currentTimeMillis() - apiStart;
-                log.debug("[METRIC] getResult_failed api_ms={} attempt={}/{} error={}",
-                          apiDuration, attempts + 1, maxAttempts, e.getMessage());
-            }
-
-            try {
-                Thread.sleep(100);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                throw new RuntimeException("채점이 중단되었습니다. 잠시 후 다시 시도해 주세요.", e);
-            }
-            attempts++;
+    private void applyTestCaseCountsFromOutput(Submission submission, SubmissionOutputResponseDTO out) {
+        if (out == null || out.getOutputList() == null || out.getOutputList().isEmpty()) {
+            submission.setPassedTestCases(0);
+            submission.setTotalTestCases(0);
+            return;
         }
-
-        throw new RuntimeException("채점 결과를 가져오는 데 시간이 초과되었습니다. 제출은 완료되었을 수 있으니 제출 목록에서 확인해 주세요.");
+        int total = out.getOutputList().size();
+        int passed = (int) out.getOutputList().stream()
+                .filter(o -> "correct".equals(o.getResult()))
+                .count();
+        submission.setPassedTestCases(passed);
+        submission.setTotalTestCases(total);
     }
 
+    /**
+     * DB에 total_test_cases가 없는(구 제출) 경우 DomJudge 상세 결과를 조회해 집계 후 저장.
+     * 성적 API 조회 시 한 번 채워지면 이후에는 DB 값을 사용.
+     */
+    public void backfillTestCaseCountsIfMissing(Submission submission) {
+        if (submission == null) {
+            return;
+        }
+        if (submission.getSubmissionId() == null || submission.getSubmissionId().isBlank()) {
+            return;
+        }
+        if (submission.getTotalTestCases() != null) {
+            return;
+        }
+        if (submission.getSection() == null) {
+            log.warn("backfill test case counts skipped: submission id={} has no section", submission.getId());
+            return;
+        }
+        String cid = String.valueOf(submission.getSection().getId());
+        try {
+            SubmissionOutputResponseDTO out = domjudgeService.getResultOutput(cid, submission.getSubmissionId());
+            if (out == null) {
+                return;
+            }
+            applyTestCaseCountsFromOutput(submission, out);
+            submissionRepository.save(submission);
+        } catch (Exception e) {
+            log.warn("backfill test case counts failed domjudgeSubmissionId={}: {}",
+                    submission.getSubmissionId(), e.getMessage());
+        }
+    }
 
     // for with output.
 
+    /**
+     * DomJudge 제출 + 테스트케이스별 output 폴링만 수행 (DB에 Submission 행을 만들지 않음). 퀴즈 전용.
+     */
+    private SubmissionOutputResponseDTO submitAndPollOutputOnly(
+            Authentication authentication,
+            SubmissionAuthDTO submissionRequestDTO,
+            SubmissionMetric metric) {
+        long e2eStart = System.currentTimeMillis();
+        Long userId = Long.parseLong(authentication.getName());
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+        Problem problem = problemRepository.findById(submissionRequestDTO.getProblemId())
+                .orElseThrow(() -> new RuntimeException("Problem not found"));
+        Section section = sectionRepository.findById(submissionRequestDTO.getSectionId())
+                .orElseThrow(() -> new RuntimeException("Section not found"));
+
+        validateSubmission(
+                submissionRequestDTO.getProblemId(),
+                submissionRequestDTO.getSectionId(),
+                userId
+        );
+
+        String contestId = String.valueOf(section.getId());
+        String teamId = enrollmentRepository.findTeamIdByUserIdAndSectionId(user.getId(), section.getId());
+        String domjudgeProblemId = problem.getDomjudgeProblemId();
+
+        if (teamId == null || teamId.isEmpty()) {
+            throw new RuntimeException("현재 수업에 수강신청되어 있지 않습니다. 수강 신청 후 제출해 주세요.");
+        }
+
+        File codeFile = CodeExtenstion.StringToFile(
+                submissionRequestDTO.getLanguage(),
+                submissionRequestDTO.getCodeString()
+        );
+
+        long submitStart = System.currentTimeMillis();
+        String domjudgeSubmissionId = domjudgeService.submitCode(
+                contestId, teamId, domjudgeProblemId,
+                submissionRequestDTO.getLanguage(), codeFile
+        );
+        long submitDuration = System.currentTimeMillis() - submitStart;
+        metric.setSubmitDurationMs(submitDuration);
+        metric.setDomjudgeSubmissionId(domjudgeSubmissionId);
+        log.info("[METRIC] submit_duration_ms={} domjudge_submission_id={}", submitDuration, domjudgeSubmissionId);
+
+        if (codeFile != null) {
+            try {
+                Files.deleteIfExists(codeFile.toPath());
+                log.debug("TmpFile deleted: {}", codeFile.getName());
+            } catch (IOException e) {
+                log.error("Failed to delete TmpFile: {}", e.getMessage());
+            }
+        }
+
+        String cid = String.valueOf(section.getId());
+
+        long judgingStart = System.currentTimeMillis();
+        PollingResult<SubmissionOutputResponseDTO> pollingResult =
+                pollForResultOutput(cid, domjudgeSubmissionId, 30);
+        long judgingDuration = System.currentTimeMillis() - judgingStart;
+        metric.setJudgingDurationMs(judgingDuration);
+        metric.setPollingAttempts(pollingResult.getAttempts());
+        log.info("[METRIC] judging_duration_ms={} polling_attempts={}", judgingDuration, pollingResult.getAttempts());
+
+        SubmissionOutputResponseDTO responseDTO = pollingResult.getResult();
+
+        long e2eDuration = System.currentTimeMillis() - e2eStart;
+        metric.setE2eDurationMs(e2eDuration);
+        log.info("[METRIC] e2e_duration_ms={} language={} problemId={} flow=submitAndPollOutputOnly",
+                e2eDuration, submissionRequestDTO.getLanguage(), submissionRequestDTO.getProblemId());
+
+        return SubmissionOutputResponseDTO.builder()
+                .problemId(problem.getId())
+                .submissionId(domjudgeSubmissionId)
+                .language(submissionRequestDTO.getLanguage())
+                .submittedAt(LocalDateTime.now(KST_ZONE))
+                .result(responseDTO.getResult())
+                .outputList(responseDTO.getOutputList())
+                .sectionId(section.getId())
+                .build();
+    }
+
+    /**
+     * 과제 등: 상세 output 반환 + {@link Submission} 행에 결과·테스트케이스 수 저장 (성적 API용).
+     */
     public SubmissionOutputResponseDTO submitAndGetResultOutput(Authentication authentication, SubmissionAuthDTO submissionRequestDTO) {
         long e2eStart = System.currentTimeMillis();
         SubmissionMetric metric = SubmissionMetric.builder()
@@ -347,6 +448,10 @@ public class SubmissionService {
             String teamId = enrollmentRepository.findTeamIdByUserIdAndSectionId(user.getId(), section.getId());
             String domjudgeProblemId = problem.getDomjudgeProblemId();
 
+            if (teamId == null || teamId.isEmpty()) {
+                throw new RuntimeException("현재 수업에 수강신청되어 있지 않습니다. 수강 신청 후 제출해 주세요.");
+            }
+
             File codeFile = CodeExtenstion.StringToFile(
                     submissionRequestDTO.getLanguage(),
                     submissionRequestDTO.getCodeString()
@@ -371,16 +476,35 @@ public class SubmissionService {
                 }
             }
 
-            String cid = String.valueOf(section.getId());
+            Submission submission = Submission.builder()
+                    .problem(problem)
+                    .user(user)
+                    .language(submissionRequestDTO.getLanguage())
+                    .code(submissionRequestDTO.getCodeString())
+                    .submittedAt(LocalDateTime.now(KST_ZONE))
+                    .build();
+            submission.setSection(section);
+            submission.setSubmissionId(domjudgeSubmissionId);
+            submissionRepository.save(submission);
+
+            Submission savedSubmission = submissionRepository.findById(submission.getId())
+                    .orElseThrow(() -> new RuntimeException("Submission not found"));
+
+            String cid = String.valueOf(savedSubmission.getSection().getId());
 
             long judgingStart = System.currentTimeMillis();
-            PollingResult<SubmissionOutputResponseDTO> pollingResult = pollForResultOutput(cid, domjudgeSubmissionId, 30);
+            PollingResult<SubmissionOutputResponseDTO> pollingResult =
+                    pollForResultOutput(cid, savedSubmission.getSubmissionId(), 30);
             long judgingDuration = System.currentTimeMillis() - judgingStart;
             metric.setJudgingDurationMs(judgingDuration);
             metric.setPollingAttempts(pollingResult.getAttempts());
             log.info("[METRIC] judging_duration_ms={} polling_attempts={}", judgingDuration, pollingResult.getAttempts());
 
             SubmissionOutputResponseDTO responseDTO = pollingResult.getResult();
+
+            savedSubmission.setResult(responseDTO.getResult());
+            applyTestCaseCountsFromOutput(savedSubmission, responseDTO);
+            submissionRepository.save(savedSubmission);
 
             long e2eDuration = System.currentTimeMillis() - e2eStart;
             metric.setE2eDurationMs(e2eDuration);
@@ -389,9 +513,9 @@ public class SubmissionService {
 
             return SubmissionOutputResponseDTO.builder()
                     .problemId(problem.getId())
-                    .submissionId(domjudgeSubmissionId)
+                    .submissionId(savedSubmission.getSubmissionId())
                     .language(submissionRequestDTO.getLanguage())
-                    .submittedAt(LocalDateTime.now(KST_ZONE))
+                    .submittedAt(savedSubmission.getSubmittedAt())
                     .result(responseDTO.getResult())
                     .outputList(responseDTO.getOutputList())
                     .sectionId(section.getId())
@@ -413,21 +537,31 @@ public class SubmissionService {
     }
 
     /**
-     * 퀴즈 전용 제출 - submitAndGetResultOutput 재사용 + Submission 저장 + scoring 계산
+     * 퀴즈 전용 제출 — 폴링만 공유하고 DB에는 퀴즈용 Submission 한 번만 저장
      */
     public SubmissionQuizResponseDTO submitQuizCode(Authentication authentication, SubmissionAuthDTO submissionRequestDTO) {
-        SubmissionOutputResponseDTO outputDTO = submitAndGetResultOutput(authentication, submissionRequestDTO);
+        long e2eStart = System.currentTimeMillis();
+        SubmissionMetric metric = SubmissionMetric.builder()
+                .measuredAt(LocalDateTime.now())
+                .language(submissionRequestDTO.getLanguage())
+                .problemId(submissionRequestDTO.getProblemId())
+                .sectionId(submissionRequestDTO.getSectionId())
+                .flowType("submitQuizCode")
+                .timedOut(false)
+                .build();
+        try {
+            SubmissionOutputResponseDTO outputDTO =
+                    submitAndPollOutputOnly(authentication, submissionRequestDTO, metric);
 
-        Long userId = Long.parseLong(authentication.getName());
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new RuntimeException("User not found"));
-        Problem problem = problemRepository.findById(submissionRequestDTO.getProblemId())
-                .orElseThrow(() -> new RuntimeException("Problem not found"));
-        Section section = sectionRepository.findById(submissionRequestDTO.getSectionId())
-                .orElseThrow(() -> new RuntimeException("Section not found"));
+            Long userId = Long.parseLong(authentication.getName());
+            User user = userRepository.findById(userId)
+                    .orElseThrow(() -> new RuntimeException("User not found"));
+            Problem problem = problemRepository.findById(submissionRequestDTO.getProblemId())
+                    .orElseThrow(() -> new RuntimeException("Problem not found"));
+            Section section = sectionRepository.findById(submissionRequestDTO.getSectionId())
+                    .orElseThrow(() -> new RuntimeException("Section not found"));
 
-        // Submission 저장 (submitAndGetResultOutput은 저장하지 않음)
-        Submission submission = Submission.builder()
+            Submission submission = Submission.builder()
                 .problem(problem)
                 .user(user)
                 .language(submissionRequestDTO.getLanguage())
@@ -435,49 +569,63 @@ public class SubmissionService {
                 .submittedAt(LocalDateTime.now(KST_ZONE))
                 .result(outputDTO.getResult())
                 .build();
-        submission.setSection(section);
-        submission.setSubmissionId(outputDTO.getSubmissionId());
-        submissionRepository.save(submission);
+            submission.setSection(section);
+            submission.setSubmissionId(outputDTO.getSubmissionId());
 
-        // Scoring 계산
-        int passedCount = 0;
-        int totalCount = 0;
-        int points = 1;
-        double score = 0.0;
+            int passedCount = 0;
+            int totalCount = 0;
+            int points = 1;
+            double score = 0.0;
 
-        if (outputDTO.getOutputList() != null && !outputDTO.getOutputList().isEmpty()) {
-            totalCount = outputDTO.getOutputList().size();
-            passedCount = (int) outputDTO.getOutputList().stream()
-                    .filter(o -> "correct".equals(o.getResult()))
-                    .count();
+            if (outputDTO.getOutputList() != null && !outputDTO.getOutputList().isEmpty()) {
+                totalCount = outputDTO.getOutputList().size();
+                passedCount = (int) outputDTO.getOutputList().stream()
+                        .filter(o -> "correct".equals(o.getResult()))
+                        .count();
+            }
+
+            Optional<QuizProblem> quizProblemOpt = quizProblemRepository.findByProblemId(problem.getId())
+                    .stream()
+                    .filter(qp -> qp.getQuiz().getSection().getId().equals(section.getId()))
+                    .findFirst();
+            if (quizProblemOpt.isPresent() && quizProblemOpt.get().getPoints() != null && quizProblemOpt.get().getPoints() > 0) {
+                points = quizProblemOpt.get().getPoints();
+            }
+
+            if (totalCount > 0) {
+                score = (passedCount * 1.0 / totalCount) * points;
+            }
+
+            submission.setPassedTestCases(passedCount);
+            submission.setTotalTestCases(totalCount);
+            submissionRepository.save(submission);
+
+            return SubmissionQuizResponseDTO.builder()
+                    .problemId(outputDTO.getProblemId())
+                    .sectionId(outputDTO.getSectionId())
+                    .language(outputDTO.getLanguage())
+                    .submissionId(outputDTO.getSubmissionId())
+                    .result(outputDTO.getResult())
+                    .outputList(outputDTO.getOutputList())
+                    .submittedAt(outputDTO.getSubmittedAt())
+                    .passedCount(passedCount)
+                    .totalCount(totalCount)
+                    .points(points)
+                    .score(score)
+                    .build();
+        } catch (RuntimeException e) {
+            metric.setTimedOut(e.getMessage() != null && e.getMessage().contains("not available after"));
+            metric.setErrorMessage(e.getMessage() != null
+                    ? e.getMessage().substring(0, Math.min(e.getMessage().length(), 500)) : "unknown");
+            metric.setE2eDurationMs(System.currentTimeMillis() - e2eStart);
+            throw e;
+        } finally {
+            try {
+                submissionMetricRepository.save(metric);
+            } catch (Exception ex) {
+                log.error("[METRIC] Failed to save metric: {}", ex.getMessage());
+            }
         }
-
-        // QuizProblem.points 조회 (sectionId + problemId)
-        Optional<QuizProblem> quizProblemOpt = quizProblemRepository.findByProblemId(problem.getId())
-                .stream()
-                .filter(qp -> qp.getQuiz().getSection().getId().equals(section.getId()))
-                .findFirst();
-        if (quizProblemOpt.isPresent() && quizProblemOpt.get().getPoints() != null && quizProblemOpt.get().getPoints() > 0) {
-            points = quizProblemOpt.get().getPoints();
-        }
-
-        if (totalCount > 0) {
-            score = (passedCount * 1.0 / totalCount) * points;
-        }
-
-        return SubmissionQuizResponseDTO.builder()
-                .problemId(outputDTO.getProblemId())
-                .sectionId(outputDTO.getSectionId())
-                .language(outputDTO.getLanguage())
-                .submissionId(outputDTO.getSubmissionId())
-                .result(outputDTO.getResult())
-                .outputList(outputDTO.getOutputList())
-                .submittedAt(outputDTO.getSubmittedAt())
-                .passedCount(passedCount)
-                .totalCount(totalCount)
-                .points(points)
-                .score(score)
-                .build();
     }
 
     private PollingResult<SubmissionOutputResponseDTO> pollForResultOutput(String cid, String submissionId, int maxWaitSeconds) {
