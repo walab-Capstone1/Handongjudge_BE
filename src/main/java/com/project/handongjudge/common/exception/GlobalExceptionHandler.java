@@ -1,6 +1,7 @@
 package com.project.handongjudge.common.exception;
 
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.AuthenticationException;
@@ -34,12 +35,21 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
     }
 
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<Map<String, Object>> handleDataIntegrityViolation(DataIntegrityViolationException e) {
+        log.warn("Data integrity violation (duplicate or constraint): {}", e.getMessage());
+        Map<String, Object> response = new HashMap<>();
+        response.put("success", false);
+        response.put("message", "요청을 처리하는 중 충돌이 발생했습니다. 다시 시도해 주세요.");
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(response);
+    }
+
     @ExceptionHandler(RuntimeException.class)
     public ResponseEntity<Map<String, Object>> handleRuntimeException(RuntimeException e) {
         log.error("Runtime exception occurred: ", e);
         Map<String, Object> response = new HashMap<>();
         response.put("success", false);
-        response.put("message", e.getMessage());
+        response.put("message", e.getMessage() != null ? e.getMessage() : "서버 오류가 발생했습니다.");
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
     }
 

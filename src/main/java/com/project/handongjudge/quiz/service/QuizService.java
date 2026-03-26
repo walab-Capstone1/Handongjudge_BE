@@ -21,6 +21,7 @@ import com.project.handongjudge.assignment.dto.StudentProgressResponse;
 import com.project.handongjudge.grade.dto.StudentGradeSummaryDTO;
 import com.project.handongjudge.submission.entity.Submission;
 import com.project.handongjudge.submission.repository.SubmissionRepository;
+import com.project.handongjudge.submission.service.SubmissionService;
 import com.project.handongjudge.section.service.SectionRoleService;
 import com.project.handongjudge.mypage.dto.SubmissionCodeDto;
 import lombok.RequiredArgsConstructor;
@@ -52,6 +53,7 @@ public class QuizService {
     private final SubmissionRepository submissionRepository;
     private final SectionRoleService sectionRoleService;
     private final DomjudgeService domjudgeService;
+    private final SubmissionService submissionService;
 
     /**
      * Quiz 생성
@@ -502,9 +504,12 @@ public class QuizService {
 
                 if (submission.isPresent()) {
                     Submission sub = submission.get();
+                    submissionService.backfillTestCaseCountsIfMissing(sub);
                     pg.setSubmitted(true);
                     pg.setSubmittedAt(sub.getSubmittedAt());
                     pg.setResult(sub.getResult());
+                    pg.setPassedTestCases(sub.getPassedTestCases());
+                    pg.setTotalTestCases(sub.getTotalTestCases());
                     if (quiz.getEndTime() != null) {
                         pg.setIsOnTime(
                                 sub.getSubmittedAt().isBefore(quiz.getEndTime()) ||

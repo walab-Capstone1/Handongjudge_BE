@@ -4,8 +4,8 @@ server:
 
 spring:
   # .env import
-  config:
-    import: optional:file:.env[.properties]
+  #config:
+  #  import: optional:file:.env[.properties]
 
   redis:
     host: ${REDIS_HOST:127.0.0.1}
@@ -29,6 +29,11 @@ spring:
     username: ${DB_USERNAME}
     password: ${DB_PASSWORD}
     driver-class-name: org.mariadb.jdbc.Driver
+  redis:
+    host: ${REDIS_HOST:localhost}
+    port: ${REDIS_PORT:6379}
+    password: ${REDIS_PASSWORD:}
+
   thymeleaf:
     cache: false
     prefix: classpath:/templates/
@@ -71,8 +76,8 @@ domjudge:
 app:
   oauth2:
     authorized-redirect-uris:
-      #- http://localhost:3000/auth/callback  # 프론트엔드 콜백 페이지
-      - https://hj.walab.info/handongjudge/auth/callback
+      - http://localhost:3000/auth/callback  # 프론트엔드 콜백 페이지
+      #- https://hj.walab.info/handongjudge/auth/callback
   # SSH → Redis (default: no profile). Disabled when spring.profiles.active=prod (see application-prod.yml)
   ssh-tunnel:
     enabled: ${SSH_TUNNEL_ENABLED:true}

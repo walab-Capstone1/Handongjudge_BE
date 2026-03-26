@@ -1,6 +1,6 @@
 # Multi-stage build for optimized production image
 # Stage 1: Build stage
-FROM openjdk:11-jdk-slim AS builder
+FROM eclipse-temurin:11-jdk-jammy AS builder
 
 WORKDIR /app
 
@@ -22,7 +22,7 @@ COPY src/ src/
 RUN ./gradlew build --no-daemon -x test
 
 # Stage 2: Runtime stage
-FROM openjdk:11-jre-slim AS runtime
+FROM eclipse-temurin:11-jre-jammy AS runtime
 
 WORKDIR /opt/app
 
