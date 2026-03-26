@@ -34,6 +34,10 @@ public class StudentGradeSummaryDTO {
         private LocalDateTime submittedAt;
         private Boolean isOnTime;
         private String result;
+        /** 맞은 테스트케이스 수 (제출 시 저장된 값) */
+        private Integer passedTestCases;
+        /** 전체 테스트케이스 수 */
+        private Integer totalTestCases;
     }
 }
 

@@ -44,6 +44,13 @@ public class Submission {
     @Column(name = "result")
     String result;
 
+    /** 채점 완료 시 맞은 테스트케이스 수 (DomJudge output 기준, 없으면 null) */
+    @Column(name = "passed_test_cases")
+    private Integer passedTestCases;
+
+    /** 전체 테스트케이스 수 */
+    @Column(name = "total_test_cases")
+    private Integer totalTestCases;
 
     // Submission.java
     @ManyToOne(fetch = FetchType.LAZY)
