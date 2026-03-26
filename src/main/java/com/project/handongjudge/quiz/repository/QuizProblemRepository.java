@@ -37,5 +37,8 @@ public interface QuizProblemRepository extends JpaRepository<QuizProblem, Long> 
 
     // 문제 ID로 QuizProblem 목록 조회
     List<QuizProblem> findByProblemId(Long problemId);
+
+    @Query("SELECT qp FROM QuizProblem qp WHERE qp.problem.id = :problemId AND qp.quiz.section.id = :sectionId")
+    List<QuizProblem> findByProblemIdAndSectionId(@Param("problemId") Long problemId, @Param("sectionId") Long sectionId);
 }
 

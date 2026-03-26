@@ -19,6 +19,7 @@ import com.project.handongjudge.assignment.dto.ProblemSubmissionStats;
 import com.project.handongjudge.assignment.dto.StudentAcceptedCodeResponse;
 import com.project.handongjudge.assignment.dto.StudentProgressResponse;
 import com.project.handongjudge.grade.dto.StudentGradeSummaryDTO;
+import com.project.handongjudge.progress.repository.CodeProgressRepository;
 import com.project.handongjudge.submission.entity.Submission;
 import com.project.handongjudge.submission.repository.SubmissionRepository;
 import com.project.handongjudge.submission.service.SubmissionService;
@@ -31,6 +32,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -42,6 +44,7 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 @Transactional
 public class QuizService {
+    private static final ZoneId UTC_ZONE = ZoneId.of("UTC");
 
     private final QuizRepository quizRepository;
     private final QuizProblemRepository quizProblemRepository;
@@ -51,6 +54,7 @@ public class QuizService {
     private final UserRepository userRepository;
     private final EnrollmentRepository enrollmentRepository;
     private final SubmissionRepository submissionRepository;
+    private final CodeProgressRepository codeProgressRepository;
     private final SectionRoleService sectionRoleService;
     private final DomjudgeService domjudgeService;
     private final SubmissionService submissionService;
@@ -201,6 +205,39 @@ public class QuizService {
                         .problemOrder(qp.getProblemOrder())
                         .points(qp.getPoints() != null && qp.getPoints() > 0 ? qp.getPoints() : 1)
                         .build())
+                .collect(Collectors.toList());
+    }
+
+    @Transactional(readOnly = true)
+    public List<QuizProblemWorkStatusDto> getMyProblemStatuses(Long quizId, Long sectionId, Long userId) {
+        Quiz quiz = quizRepository.findById(quizId)
+                .orElseThrow(() -> new IllegalArgumentException("Quiz not found"));
+
+        if (!quiz.getSection().getId().equals(sectionId)) {
+            throw new IllegalArgumentException("해당 분반의 퀴즈가 아닙니다");
+        }
+        if (!sectionRoleService.hasAnyRole(userId, sectionId)) {
+            throw new IllegalArgumentException("접근 권한이 없습니다");
+        }
+
+        List<QuizProblem> quizProblems = quizProblemRepository.findByQuizIdOrderByProblemOrderAsc(quizId);
+        return quizProblems.stream()
+                .map(qp -> {
+                    Long problemId = qp.getProblem().getId();
+                    List<Submission> latest = submissionRepository.findLatestSubmissionsByUserAndProblem(
+                            userId, problemId, sectionId, PageRequest.of(0, 1)
+                    );
+                    Submission submission = latest.isEmpty() ? null : latest.get(0);
+                    boolean saved = codeProgressRepository.existsByUserIdAndProblemIdAndSectionIdAndLanguage(
+                            userId, problemId, sectionId, "c"
+                    );
+                    return QuizProblemWorkStatusDto.builder()
+                            .problemId(problemId)
+                            .submitted(submission != null)
+                            .result(submission != null ? submission.getResult() : null)
+                            .saved(saved)
+                            .build();
+                })
                 .collect(Collectors.toList());
     }
 
@@ -713,7 +750,7 @@ public class QuizService {
      * - 그 외에는 시간 기반 자동 결정
      */
     private void updateQuizStatus(Quiz quiz) {
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(UTC_ZONE);
 
         // 종료 시각 경과 시 항상 ENDED (안전)
         if (quiz.getEndTime() != null && now.isAfter(quiz.getEndTime())) {
@@ -749,7 +786,7 @@ public class QuizService {
         }
 
         // 종료 시각 경과 시 ENDED만 허용
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(UTC_ZONE);
         if (quiz.getEndTime() != null && now.isAfter(quiz.getEndTime())) {
             if (newStatus != Quiz.QuizStatus.ENDED) {
                 throw new IllegalArgumentException("종료 시각이 지난 코딩 테스트는 ENDED 상태만 가능합니다");
@@ -790,7 +827,7 @@ public class QuizService {
      * 시작/종료 시간에 따라 상태 결정
      */
     private Quiz.QuizStatus determineStatus(LocalDateTime startTime, LocalDateTime endTime) {
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(UTC_ZONE);
 
         if (now.isBefore(startTime)) {
             return Quiz.QuizStatus.WAITING;

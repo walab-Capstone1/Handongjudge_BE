@@ -14,4 +14,11 @@ public interface CodeProgressRepository extends JpaRepository<CodeProgress, Long
         Long sectionId,
         String language
     );
+
+    boolean existsByUserIdAndProblemIdAndSectionIdAndLanguage(
+        Long userId,
+        Long problemId,
+        Long sectionId,
+        String language
+    );
 }
