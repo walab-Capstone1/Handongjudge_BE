@@ -24,4 +24,4 @@ auth:
     path: /
   cors:
     allowed-origins:
-      - https://hj.walab.info
+      - https://hcl.walab.info
