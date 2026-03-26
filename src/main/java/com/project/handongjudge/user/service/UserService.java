@@ -47,7 +47,13 @@ import java.util.stream.Collectors;
 @Slf4j
 @Transactional(readOnly = true)
 public class UserService {
-    private static final ZoneId SEOUL_ZONE = ZoneId.of("Asia/Seoul");
+    /**
+     * endDate는 프론트에서 toISOString()으로 UTC 문자열을 보내고,
+     * @JsonFormat(timezone="UTC")에 의해 UTC 숫자 그대로 LocalDateTime에 저장된다.
+     * submittedAt은 LocalDateTime.now()로 JVM 시스템 타임존(서버 OS) 기준으로 저장된다.
+     * 두 값의 암묵적 타임존이 달라 직접 비교하면 시차만큼 오판정이 발생하므로,
+     * 각각의 기준 존으로 Instant 변환 후 비교한다.
+     */
     private static final ZoneId UTC_ZONE = ZoneId.of("UTC");
 
 
@@ -561,9 +567,9 @@ public class UserService {
                 submittedAt = latest.getSubmittedAt();
                 status = "AC".equals(latest.getResult()) ? "ACCEPTED" : "SUBMITTED";
                 if (endDate != null) {
-                    // endDate는 프론트 toISOString()을 통해 "UTC 시간값"이 LocalDateTime으로 저장되는 패턴이 있어,
-                    // 비교할 때는 endDate를 UTC로 해석해 instant로 변환한 뒤 submittedAt(서버 로컬 기준)과 비교한다.
-                    Instant submittedInstant = submittedAt.atZone(SEOUL_ZONE).toInstant();
+                    // submittedAt은 저장 시 Asia/Seoul(LocalDateTime.now(KST)) 기준으로 생성됨
+                    // endDate는 프론트 toISOString()→UTC 문자열이 @JsonFormat(timezone="UTC")로 저장 → UTC로 해석
+                    Instant submittedInstant = submittedAt.atZone(ZoneId.of("Asia/Seoul")).toInstant();
                     Instant dueInstant = endDate.atZone(UTC_ZONE).toInstant();
                     isOnTime = !submittedInstant.isAfter(dueInstant);
                     if (submittedInstant.isAfter(dueInstant)) {
