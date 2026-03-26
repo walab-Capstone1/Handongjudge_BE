@@ -30,6 +30,7 @@ import org.springframework.data.domain.PageRequest;
 @Service
 @RequiredArgsConstructor
 public class GradeServiceImpl implements GradeService {
+    private static final ZoneId KST_ZONE = ZoneId.of("Asia/Seoul");
     private static final ZoneId UTC_ZONE = ZoneId.of("UTC");
 
     /**
@@ -40,7 +41,7 @@ public class GradeServiceImpl implements GradeService {
      */
     private static boolean isSubmittedOnTime(LocalDateTime submittedAt, LocalDateTime dueAt) {
         if (submittedAt == null || dueAt == null) return true;
-        Instant submittedInstant = submittedAt.atZone(ZoneId.systemDefault()).toInstant();
+        Instant submittedInstant = submittedAt.atZone(KST_ZONE).toInstant();
         Instant dueInstant = dueAt.atZone(UTC_ZONE).toInstant();
         return !submittedInstant.isAfter(dueInstant);
     }
