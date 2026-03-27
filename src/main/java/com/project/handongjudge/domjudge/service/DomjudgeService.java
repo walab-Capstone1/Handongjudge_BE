@@ -569,9 +569,22 @@ public class DomjudgeService {
             }
             String judgementId = judgement.get("id").asText();
             return new JudgementInfo(result, judgementId);
+        } catch (HttpClientErrorException e) {
+            if (e.getStatusCode().value() == 404) {
+                log.debug("Judgement not found (404) for submission: {}", submissionId);
+                return null;
+            }
+            log.warn("HTTP client error getting judgement for submission {}: {}", submissionId, e.getStatusCode());
+            throw e;
+        } catch (ResourceAccessException e) {
+            log.warn("Network error getting judgement for submission {}: {}", submissionId, e.getMessage());
+            throw e;
+        } catch (HttpServerErrorException e) {
+            log.warn("DOMjudge server error getting judgement for submission {}: {}", submissionId, e.getStatusCode());
+            throw e;
         } catch (Exception e) {
-            log.debug("Could not get judgement info for submission {}: {}", submissionId, e.getMessage());
-            return null;
+            log.error("Unexpected error getting judgement for submission {}: {}", submissionId, e.getMessage());
+            throw (e instanceof RuntimeException) ? (RuntimeException) e : new RuntimeException(e);
         }
     }
 
