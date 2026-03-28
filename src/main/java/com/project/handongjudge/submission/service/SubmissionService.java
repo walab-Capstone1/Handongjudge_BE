@@ -46,9 +46,13 @@ import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.project.handongjudge.domjudge.service.DomjudgeService;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
+import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.client.HttpServerErrorException;
+import org.springframework.web.client.ResourceAccessException;
 
 
 
@@ -58,6 +62,8 @@ public class SubmissionService {
     private static final Logger log = LoggerFactory.getLogger(SubmissionService.class);
     private static final ZoneId KST_ZONE = ZoneId.of("Asia/Seoul");
     private static final ZoneId UTC_ZONE = ZoneId.of("UTC");
+    private static final long POLL_INITIAL_BACKOFF_MS = 500L;
+    private static final long POLL_MAX_BACKOFF_MS = 3_000L;
     private final SubmissionRepository submissionRepository;
     private final UserRepository userRepository;
     private final ProblemRepository problemRepository;
@@ -273,7 +279,7 @@ public class SubmissionService {
             return toSubmissionResponseDTO(savedSubmission);
 
         } catch (RuntimeException e) {
-            metric.setTimedOut(e.getMessage() != null && e.getMessage().contains("not available after"));
+            metric.setTimedOut(isJudgingTimeoutMessage(e.getMessage()));
             metric.setErrorMessage(e.getMessage() != null
                     ? e.getMessage().substring(0, Math.min(e.getMessage().length(), 500)) : "unknown");
             metric.setE2eDurationMs(System.currentTimeMillis() - e2eStart);
@@ -524,7 +530,7 @@ public class SubmissionService {
                     .build();
 
         } catch (RuntimeException e) {
-            metric.setTimedOut(e.getMessage() != null && e.getMessage().contains("not available after"));
+            metric.setTimedOut(isJudgingTimeoutMessage(e.getMessage()));
             metric.setErrorMessage(e.getMessage() != null
                     ? e.getMessage().substring(0, Math.min(e.getMessage().length(), 500)) : "unknown");
             metric.setE2eDurationMs(System.currentTimeMillis() - e2eStart);
@@ -617,7 +623,7 @@ public class SubmissionService {
                     .score(score)
                     .build();
         } catch (RuntimeException e) {
-            metric.setTimedOut(e.getMessage() != null && e.getMessage().contains("not available after"));
+            metric.setTimedOut(isJudgingTimeoutMessage(e.getMessage()));
             metric.setErrorMessage(e.getMessage() != null
                     ? e.getMessage().substring(0, Math.min(e.getMessage().length(), 500)) : "unknown");
             metric.setE2eDurationMs(System.currentTimeMillis() - e2eStart);
@@ -637,17 +643,26 @@ public class SubmissionService {
         }
     }
 
-    private PollingResult<SubmissionOutputResponseDTO> pollForResultOutput(String cid, String submissionId, int maxWaitSeconds) {
-        int maxAttempts = maxWaitSeconds * 2;
-        int attempts = 0;
+    private static boolean isJudgingTimeoutMessage(String message) {
+        if (message == null) {
+            return false;
+        }
+        return message.contains("not available after") || message.contains("시간이 초과");
+    }
 
-        while (attempts < maxAttempts) {
+    private PollingResult<SubmissionOutputResponseDTO> pollForResultOutput(String cid, String submissionId, int maxWaitSeconds) {
+        long deadlineMs = System.currentTimeMillis() + maxWaitSeconds * 1000L;
+        int attempts = 0;
+        long backoffMs = POLL_INITIAL_BACKOFF_MS;
+
+        while (System.currentTimeMillis() < deadlineMs) {
+            attempts++;
             long apiStart = System.currentTimeMillis();
             try {
                 SubmissionOutputResponseDTO result = domjudgeService.getResultOutput(cid, submissionId);
                 long apiDuration = System.currentTimeMillis() - apiStart;
-                log.debug("[METRIC] getResultOutput api_ms={} attempt={}/{} submissionId={}",
-                          apiDuration, attempts + 1, maxAttempts, submissionId);
+                log.debug("[METRIC] getResultOutput api_ms={} attempt={} submissionId={}",
+                          apiDuration, attempts, submissionId);
 
                 if (result != null && !result.getResult().isEmpty()) {
                     if (result.getOutputList() != null && !result.getOutputList().isEmpty()) {
@@ -655,27 +670,54 @@ public class SubmissionService {
                             .allMatch(output -> output.getResult() != null && !output.getResult().isEmpty());
 
                         if (allCompleted) {
-                            return new PollingResult<>(result, attempts + 1);
+                            return new PollingResult<>(result, attempts);
                         }
                     } else {
                         if ("CE".equals(result.getResult())) {
-                            return new PollingResult<>(result, attempts + 1);
+                            return new PollingResult<>(result, attempts);
                         }
                     }
                 }
+            } catch (HttpClientErrorException e) {
+                long apiDuration = System.currentTimeMillis() - apiStart;
+                if (e.getStatusCode().value() == 404) {
+                    log.debug("[METRIC] getResultOutput not ready (404) api_ms={} attempt={} submissionId={}",
+                              apiDuration, attempts, submissionId);
+                } else {
+                    log.warn("[METRIC] getResultOutput client error api_ms={} attempt={} status={} submissionId={}",
+                             apiDuration, attempts, e.getStatusCode(), submissionId);
+                    throw new RuntimeException("채점 서버에서 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.", e);
+                }
+            } catch (ResourceAccessException e) {
+                long apiDuration = System.currentTimeMillis() - apiStart;
+                log.warn("[METRIC] getResultOutput network error api_ms={} attempt={} submissionId={} error={}",
+                         apiDuration, attempts, submissionId, e.getMessage());
+            } catch (HttpServerErrorException e) {
+                long apiDuration = System.currentTimeMillis() - apiStart;
+                log.warn("[METRIC] getResultOutput server error api_ms={} attempt={} status={} submissionId={}",
+                         apiDuration, attempts, e.getStatusCode(), submissionId);
+            } catch (JsonProcessingException e) {
+                log.warn("[METRIC] getResultOutput parse error attempt={} submissionId={} error={}",
+                         attempts, submissionId, e.getMessage());
+                throw new RuntimeException("채점 결과를 해석하는 중 오류가 발생했습니다.", e);
             } catch (Exception e) {
                 long apiDuration = System.currentTimeMillis() - apiStart;
-                log.debug("[METRIC] getResultOutput_failed api_ms={} attempt={}/{} error={}",
-                          apiDuration, attempts + 1, maxAttempts, e.getMessage());
+                log.warn("[METRIC] getResultOutput unexpected error api_ms={} attempt={} submissionId={} error={}",
+                         apiDuration, attempts, submissionId, e.getMessage());
             }
 
+            long remaining = deadlineMs - System.currentTimeMillis();
+            if (remaining <= 0) {
+                break;
+            }
+            long sleepMs = Math.min(backoffMs, remaining);
             try {
-                Thread.sleep(500);
+                Thread.sleep(sleepMs);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 throw new RuntimeException("채점이 중단되었습니다. 잠시 후 다시 시도해 주세요.", e);
             }
-            attempts++;
+            backoffMs = Math.min(backoffMs * 2, POLL_MAX_BACKOFF_MS);
         }
 
         throw new RuntimeException("채점 결과를 가져오는 데 시간이 초과되었습니다. 제출은 완료되었을 수 있으니 제출 목록에서 확인해 주세요.");

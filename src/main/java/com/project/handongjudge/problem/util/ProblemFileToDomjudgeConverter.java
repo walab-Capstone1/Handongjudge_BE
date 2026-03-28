@@ -31,7 +31,8 @@ public class ProblemFileToDomjudgeConverter {
         try (ZipOutputStream zos = new ZipOutputStream(baos)) {
             // problem.yaml
             zos.putNextEntry(new ZipEntry("problem.yaml"));
-            zos.write(createProblemYaml(title, timeLimit, memoryLimit).getBytes(StandardCharsets.UTF_8));
+            zos.write(createProblemYaml(title, timeLimit, memoryLimit,
+                    Boolean.TRUE.equals(result.getStrictWhitespaceGrading())).getBytes(StandardCharsets.UTF_8));
             zos.closeEntry();
 
             // problem_statement/problem.md
@@ -67,7 +68,8 @@ public class ProblemFileToDomjudgeConverter {
         return baos.toByteArray();
     }
 
-    private static String createProblemYaml(String title, String timeLimit, String memoryLimit) {
+    private static String createProblemYaml(String title, String timeLimit, String memoryLimit,
+                                            boolean strictWhitespaceGrading) {
         StringBuilder sb = new StringBuilder();
         sb.append("name: ").append(title).append("\n");
         sb.append("author: HandongJudge\n");
@@ -75,6 +77,10 @@ public class ProblemFileToDomjudgeConverter {
         sb.append("limits:\n");
         sb.append("  time: ").append(timeLimit).append("\n");
         sb.append("  memory: ").append(memoryLimit).append("\n");
+        if (strictWhitespaceGrading) {
+            sb.append("validation: default\n");
+            sb.append("validator_flags: space_change_sensitive\n");
+        }
         return sb.toString();
     }
 
