@@ -35,6 +35,12 @@ public class Problem {
     @Column(name = "memory_limit")
     private Integer memoryLimit;
 
+    /**
+     * true면 problem.yaml에 validator_flags: space_change_sensitive 등을 넣어 공백/형식을 엄격히 채점 (Domjudge 기본 비교와 구분)
+     */
+    @Column(name = "strict_whitespace_grading")
+    private Boolean strictWhitespaceGrading;
+
     private LocalDateTime createdAt;
 
     // 문제를 만든 instructor 정보

@@ -18,4 +18,6 @@ public class ProblemCreateRequest {
     private String memoryLimit;
     private String sampleInputs;  // JSON string
     private List<TestCaseDto> testcases;  // 테스트케이스 (name, input, output, type)
+    /** null/false: Domjudge 기본(공백 느슨), true: space_change_sensitive */
+    private Boolean strictWhitespaceGrading;
 }

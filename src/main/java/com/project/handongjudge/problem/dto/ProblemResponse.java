@@ -16,6 +16,8 @@ public class ProblemResponse {
     private Integer order;
     private Double timeLimit;  // 초 단위
     private Integer memoryLimit;  // MB 단위
+    /** 공백 엄격 채점(Domjudge validator_flags) 사용 여부 */
+    private Boolean strictWhitespaceGrading;
     private Boolean isUsed;  // 사용 중인지 여부
     private Integer assignmentCount;  // 사용 중인 과제 개수
     private Integer problemSetCount;  // 사용 중인 문제집 개수
