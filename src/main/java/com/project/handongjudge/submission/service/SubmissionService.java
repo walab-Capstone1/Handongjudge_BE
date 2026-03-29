@@ -2,6 +2,7 @@ package com.project.handongjudge.submission.service;
 
 import com.project.handongjudge.section.entity.Contest;
 import com.project.handongjudge.section.repository.ContestRepository;
+import com.project.handongjudge.submission.dto.QuizSubmitResponseDTO;
 import com.project.handongjudge.submission.dto.SubmissionOutputResponseDTO;
 import com.project.handongjudge.submission.dto.SubmissionQuizResponseDTO;
 import com.project.handongjudge.submission.dto.SubmissionRequestDTO;
@@ -11,6 +12,7 @@ import com.project.handongjudge.submission.entity.Output;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.security.core.Authentication;
+import org.springframework.transaction.annotation.Transactional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import lombok.RequiredArgsConstructor;
@@ -635,6 +637,204 @@ public class SubmissionService {
                 log.error("[METRIC] Failed to save metric: {}", ex.getMessage());
             }
         }
+    }
+
+    // =========================================================================
+    // Phase 2: Submit / Result 분리 API (클라이언트 폴링)
+    // =========================================================================
+
+    /**
+     * Phase 2: DOMjudge에 코드 제출 후 pending Submission을 DB에 저장하고 즉시 반환.
+     * 채점 결과는 GET /result/{submissionDbId} 로 클라이언트가 폴링.
+     */
+    public QuizSubmitResponseDTO submitQuizCodeAsync(Authentication authentication, SubmissionAuthDTO submissionRequestDTO) {
+        validateQuizLanguage(submissionRequestDTO.getLanguage());
+
+        Long userId = Long.parseLong(authentication.getName());
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+        Problem problem = problemRepository.findById(submissionRequestDTO.getProblemId())
+                .orElseThrow(() -> new RuntimeException("Problem not found"));
+        Section section = sectionRepository.findById(submissionRequestDTO.getSectionId())
+                .orElseThrow(() -> new RuntimeException("Section not found"));
+
+        validateSubmission(
+                submissionRequestDTO.getProblemId(),
+                submissionRequestDTO.getSectionId(),
+                userId
+        );
+
+        String contestId = String.valueOf(section.getId());
+        String teamId = enrollmentRepository.findTeamIdByUserIdAndSectionId(user.getId(), section.getId());
+        String domjudgeProblemId = problem.getDomjudgeProblemId();
+
+        if (teamId == null || teamId.isEmpty()) {
+            throw new RuntimeException("현재 수업에 수강신청되어 있지 않습니다. 수강 신청 후 제출해 주세요.");
+        }
+
+        File codeFile = CodeExtenstion.StringToFile(
+                submissionRequestDTO.getLanguage(),
+                submissionRequestDTO.getCodeString()
+        );
+
+        String domjudgeSubmissionId = domjudgeService.submitCode(
+                contestId, teamId, domjudgeProblemId,
+                submissionRequestDTO.getLanguage(), codeFile
+        );
+        log.info("[PHASE2] DOMjudge submission created: {}", domjudgeSubmissionId);
+
+        if (codeFile != null) {
+            try {
+                Files.deleteIfExists(codeFile.toPath());
+                log.debug("TmpFile deleted: {}", codeFile.getName());
+            } catch (IOException e) {
+                log.error("Failed to delete TmpFile: {}", e.getMessage());
+            }
+        }
+
+        Submission submission = Submission.builder()
+                .problem(problem)
+                .user(user)
+                .language(submissionRequestDTO.getLanguage())
+                .code(submissionRequestDTO.getCodeString())
+                .submittedAt(LocalDateTime.now(KST_ZONE))
+                .build();
+        submission.setSection(section);
+        submission.setSubmissionId(domjudgeSubmissionId);
+        Submission saved = submissionRepository.save(submission);
+
+        return QuizSubmitResponseDTO.builder()
+                .submissionDbId(saved.getId())
+                .submissionId(domjudgeSubmissionId)
+                .problemId(problem.getId())
+                .sectionId(section.getId())
+                .language(submissionRequestDTO.getLanguage())
+                .submittedAt(saved.getSubmittedAt())
+                .build();
+    }
+
+    /**
+     * Phase 2: 채점 결과 조회 — DB에 결과가 있으면 즉시 반환, 없으면 DOMjudge에 1회 조회.
+     * 채점 중이면 {@code null} 반환 (컨트롤러에서 204 No Content 처리).
+     */
+    @Transactional
+    public SubmissionQuizResponseDTO getQuizResult(Authentication authentication, Long submissionDbId) {
+        Long userId = Long.parseLong(authentication.getName());
+
+        Submission submission = submissionRepository.findById(submissionDbId)
+                .orElseThrow(() -> new RuntimeException("Submission not found"));
+
+        // 본인 제출 또는 관리자/튜터만 조회 가능
+        if (!submission.getUser().getId().equals(userId) &&
+                !sectionRoleService.isManager(userId, submission.getSection().getId())) {
+            throw new IllegalArgumentException("해당 제출에 접근할 권한이 없습니다.");
+        }
+
+        // 이미 결과가 저장된 경우 즉시 반환 (DOMjudge 호출 없음)
+        if (submission.getResult() != null && !submission.getResult().isEmpty()) {
+            return buildQuizResponseFromSubmission(submission, null);
+        }
+
+        // DOMjudge에 1회 조회
+        String cid = String.valueOf(submission.getSection().getId());
+        String domjudgeSubmissionId = submission.getSubmissionId();
+
+        SubmissionOutputResponseDTO outputDTO;
+        try {
+            outputDTO = domjudgeService.getResultOutput(cid, domjudgeSubmissionId);
+        } catch (HttpClientErrorException e) {
+            if (e.getStatusCode().value() == 404) {
+                return null; // 아직 채점 큐에 없음 → 채점 중
+            }
+            log.warn("[PHASE2] getResultOutput client error status={} submissionId={}",
+                    e.getStatusCode(), domjudgeSubmissionId);
+            throw new RuntimeException("채점 서버에서 오류가 발생했습니다.", e);
+        } catch (ResourceAccessException e) {
+            log.warn("[PHASE2] getResultOutput network error submissionId={} error={}",
+                    domjudgeSubmissionId, e.getMessage());
+            return null; // 일시적 네트워크 오류 → 채점 중으로 처리
+        } catch (JsonProcessingException e) {
+            throw new RuntimeException("채점 결과를 해석하는 중 오류가 발생했습니다.", e);
+        } catch (Exception e) {
+            log.warn("[PHASE2] getResultOutput unexpected error submissionId={} error={}",
+                    domjudgeSubmissionId, e.getMessage());
+            return null;
+        }
+
+        if (outputDTO == null || outputDTO.getResult() == null || outputDTO.getResult().isEmpty()) {
+            return null; // 아직 채점 중
+        }
+
+        // CE는 outputList 없이도 완료 판정
+        boolean isReady;
+        if ("CE".equals(outputDTO.getResult())) {
+            isReady = true;
+        } else if (outputDTO.getOutputList() != null && !outputDTO.getOutputList().isEmpty()) {
+            isReady = outputDTO.getOutputList().stream()
+                    .allMatch(o -> o.getResult() != null && !o.getResult().isEmpty());
+        } else {
+            return null; // 테스트케이스 결과 미완료
+        }
+
+        if (!isReady) {
+            return null;
+        }
+
+        // 테스트케이스 수·정답 수 계산
+        int passedCount = 0;
+        int totalCount = 0;
+        if (outputDTO.getOutputList() != null && !outputDTO.getOutputList().isEmpty()) {
+            totalCount = outputDTO.getOutputList().size();
+            passedCount = (int) outputDTO.getOutputList().stream()
+                    .filter(o -> "correct".equals(o.getResult()))
+                    .count();
+        }
+
+        // 조건부 UPDATE (레이스 컨디션 방지: result IS NULL인 경우만 업데이트)
+        submissionRepository.updateResultIfPending(
+                submissionDbId, outputDTO.getResult(), passedCount, totalCount);
+
+        // 최신 Submission 재조회 (다른 요청이 먼저 저장했을 수도 있음)
+        Submission latest = submissionRepository.findById(submissionDbId)
+                .orElseThrow(() -> new RuntimeException("Submission not found"));
+
+        return buildQuizResponseFromSubmission(latest, outputDTO.getOutputList());
+    }
+
+    private SubmissionQuizResponseDTO buildQuizResponseFromSubmission(
+            Submission submission, List<Output> outputList) {
+        int passedCount = submission.getPassedTestCases() != null ? submission.getPassedTestCases() : 0;
+        int totalCount = submission.getTotalTestCases() != null ? submission.getTotalTestCases() : 0;
+
+        int points = 1;
+        double score = 0.0;
+
+        Optional<QuizProblem> quizProblemOpt = quizProblemRepository
+                .findByProblemId(submission.getProblem().getId())
+                .stream()
+                .filter(qp -> qp.getQuiz().getSection().getId().equals(submission.getSection().getId()))
+                .findFirst();
+        if (quizProblemOpt.isPresent() && quizProblemOpt.get().getPoints() != null
+                && quizProblemOpt.get().getPoints() > 0) {
+            points = quizProblemOpt.get().getPoints();
+        }
+        if (totalCount > 0) {
+            score = (passedCount * 1.0 / totalCount) * points;
+        }
+
+        return SubmissionQuizResponseDTO.builder()
+                .problemId(submission.getProblem().getId())
+                .sectionId(submission.getSection().getId())
+                .language(submission.getLanguage())
+                .submissionId(submission.getSubmissionId())
+                .result(submission.getResult())
+                .outputList(outputList)
+                .submittedAt(submission.getSubmittedAt())
+                .passedCount(passedCount)
+                .totalCount(totalCount)
+                .points(points)
+                .score(score)
+                .build();
     }
 
     private void validateQuizLanguage(String language) {
