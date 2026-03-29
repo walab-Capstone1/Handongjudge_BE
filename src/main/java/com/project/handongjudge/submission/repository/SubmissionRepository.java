@@ -3,9 +3,11 @@ package com.project.handongjudge.submission.repository;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import com.project.handongjudge.submission.entity.Submission;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -154,6 +156,19 @@ public interface SubmissionRepository extends JpaRepository<Submission, Long> {
     // 특정 문제에 대한 모든 제출 조회
     @Query("SELECT s FROM Submission s WHERE s.problem.id = :problemId")
     List<Submission> findByProblemId(@Param("problemId") Long problemId);
+
+    /**
+     * Phase 2: result가 아직 null인 경우에만 결과를 저장 (레이스 컨디션 방지).
+     * 반환값이 1이면 이 요청이 결과를 저장한 것, 0이면 이미 다른 요청이 먼저 저장한 것.
+     */
+    @Modifying(clearAutomatically = true)
+    @Transactional
+    @Query("UPDATE Submission s SET s.result = :result, s.passedTestCases = :passed, " +
+           "s.totalTestCases = :total WHERE s.id = :id AND s.result IS NULL")
+    int updateResultIfPending(@Param("id") Long id,
+                              @Param("result") String result,
+                              @Param("passed") Integer passed,
+                              @Param("total") Integer total);
 
     /** 퀴즈 제출 기록 목록 (튜터용, 필터/페이지네이션 지원) */
     @Query(
