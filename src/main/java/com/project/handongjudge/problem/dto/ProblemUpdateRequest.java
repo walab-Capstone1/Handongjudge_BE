@@ -19,4 +19,6 @@ public class ProblemUpdateRequest {
     private MultipartFile newZipFile;  // 선택적: 완전히 새로운 ZIP 파일
     private String metadataUpdated;  // "true" 또는 "false" 문자열: 메타데이터만 업데이트 여부
     private List<MultipartFile> testcaseFiles;  // 테스트케이스 파일들
+    /** 폼에서 "true"/"false" 문자열로 전달 */
+    private Boolean strictWhitespaceGrading;
 }

@@ -128,6 +128,7 @@ public class ProblemService {
         );
 
         // ProblemFileParseResult 형태로 변환 후 DOMjudge ZIP 생성
+        boolean strictWs = Boolean.TRUE.equals(request.getStrictWhitespaceGrading());
         com.project.handongjudge.problem.dto.ProblemFileParseResult parseResult =
                 com.project.handongjudge.problem.dto.ProblemFileParseResult.builder()
                         .title(request.getTitle())
@@ -135,6 +136,7 @@ public class ProblemService {
                         .timeLimit(parseDoubleOrNull(request.getTimeLimit(), 1.0))
                         .memoryLimit(parseIntOrNull(request.getMemoryLimit(), 256))
                         .testcases(request.getTestcases() != null ? request.getTestcases() : java.util.Collections.emptyList())
+                        .strictWhitespaceGrading(strictWs)
                         .build();
 
         byte[] zipBytes = ProblemFileToDomjudgeConverter.toDomjudgeZip(parseResult);
@@ -166,6 +168,7 @@ public class ProblemService {
                 .domjudgeProblemId(domjudgeProblemId)
                 .timeLimit(parseResult.getTimeLimit())
                 .memoryLimit(parseResult.getMemoryLimit())
+                .strictWhitespaceGrading(strictWs)
                 .createdAt(LocalDateTime.now())
                 .createdBy(instructor)
                 .zipFilePath(null)
@@ -173,7 +176,7 @@ public class ProblemService {
                 .build();
 
         problemRepository.save(problem);
-        log.info("문제 생성 완료: ID={}, Title={}", problem.getId(), originalTitle);
+        log.info("문제 생성 완료: ID={}, Title={}, strictWhitespace={}", problem.getId(), originalTitle, strictWs);
 
         return problem.getId();
     }
@@ -252,13 +255,14 @@ public class ProblemService {
      * DOMjudge 형식의 ZIP 파일 생성
      */
     private byte[] createDomjudgeZip(String title, String description, String timeLimit,
-                                     String memoryLimit, List<MultipartFile> testcaseFiles, String externalId) throws IOException {
+                                     String memoryLimit, List<MultipartFile> testcaseFiles, String externalId,
+                                     boolean strictWhitespaceGrading) throws IOException {
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
 
         try (ZipOutputStream zos = new ZipOutputStream(baos)) {
             // 1. problem.yaml 생성
             zos.putNextEntry(new ZipEntry("problem.yaml"));
-            String yaml = createProblemYaml(title, timeLimit, memoryLimit);
+            String yaml = createProblemYaml(title, timeLimit, memoryLimit, strictWhitespaceGrading);
             zos.write(yaml.getBytes(StandardCharsets.UTF_8));
             zos.closeEntry();
 
@@ -300,7 +304,7 @@ public class ProblemService {
     /**
      * problem.yaml 내용 생성
      */
-    private String createProblemYaml(String title, String timeLimit, String memoryLimit) {
+    private String createProblemYaml(String title, String timeLimit, String memoryLimit, boolean strictWhitespaceGrading) {
         StringBuilder yaml = new StringBuilder();
         yaml.append("name: ").append(title).append("\n");
         yaml.append("author: HandongJudge\n");
@@ -314,6 +318,14 @@ public class ProblemService {
         if (memoryLimit != null && !memoryLimit.isEmpty()) {
             yaml.append("  memory: ").append(memoryLimit).append("\n");
         }
+
+     // 기본 validator는 항상 명시
+    yaml.append("validation: default\n");
+
+    // 공백까지 엄격 채점할 때만 추가
+    if (strictWhitespaceGrading) {
+        yaml.append("validator_flags: space_change_sensitive\n");
+    }
 
         return yaml.toString();
     }
@@ -366,6 +378,7 @@ public class ProblemService {
                 .difficulty(problem.getDifficulty())
                 .memoryLimit(problem.getMemoryLimit())
                 .timeLimit(problem.getTimeLimit())
+                .strictWhitespaceGrading(Boolean.TRUE.equals(problem.getStrictWhitespaceGrading()))
                 .isUsed(isUsed)
                 .assignmentCount(assignmentCount)
                 .problemSetCount(problemSetCount)
@@ -389,6 +402,7 @@ public class ProblemService {
                 .difficulty(problem.getDifficulty())
                 .timeLimit(problem.getTimeLimit())
                 .memoryLimit(problem.getMemoryLimit())
+                .strictWhitespaceGrading(Boolean.TRUE.equals(problem.getStrictWhitespaceGrading()))
                 .createdAt(problem.getCreatedAt())
                 .build();
     }
@@ -505,6 +519,7 @@ public class ProblemService {
                 .domjudgeProblemId(newDomjudgeProblemId)
                 .timeLimit(sourceProblem.getTimeLimit())
                 .memoryLimit(sourceProblem.getMemoryLimit())
+                .strictWhitespaceGrading(sourceProblem.getStrictWhitespaceGrading())
                 .createdAt(LocalDateTime.now())
                 .createdBy(instructor)
                 .zipFilePath(null) // 더 이상 사용하지 않음
@@ -1171,6 +1186,10 @@ public class ProblemService {
                 String memoryLimitStr = request.getMemoryLimit() != null ? 
                     String.valueOf(request.getMemoryLimit()) : 
                     (problem.getMemoryLimit() != null ? String.valueOf(problem.getMemoryLimit()) : "256");
+
+                boolean strictWsForZip = request.getStrictWhitespaceGrading() != null
+                        ? Boolean.TRUE.equals(request.getStrictWhitespaceGrading())
+                        : Boolean.TRUE.equals(problem.getStrictWhitespaceGrading());
                 
                 // DOMjudge 형식의 ZIP 파일 생성
                 byte[] zipBytes = createDomjudgeZip(
@@ -1179,7 +1198,8 @@ public class ProblemService {
                         timeLimitStr,
                         memoryLimitStr,
                         request.getTestcaseFiles(),
-                        externalId
+                        externalId,
+                        strictWsForZip
                 );
 
                 // MultipartFile로 변환
@@ -1237,11 +1257,13 @@ public class ProblemService {
             String descriptionToUpdate = isOnlyMetadataChange ? null : request.getDescription();
             Double timeLimitToUpdate = isOnlyMetadataChange ? null : request.getTimeLimit();
             Integer memoryLimitToUpdate = isOnlyMetadataChange ? null : request.getMemoryLimit();
+            Boolean strictWhitespaceToUpdate = isOnlyMetadataChange ? null
+                    : Boolean.TRUE.equals(request.getStrictWhitespaceGrading());
             
             updateProblemFields(problem, request.getTitle(), descriptionToUpdate,
                     timeLimitToUpdate, memoryLimitToUpdate,
                     request.getDifficulty(), request.getTags(),
-                    newDomjudgeProblemId, newZipFileData);
+                    newDomjudgeProblemId, newZipFileData, strictWhitespaceToUpdate);
 
             problemRepository.save(problem);
             
@@ -1319,7 +1341,8 @@ public class ProblemService {
     private void updateProblemFields(Problem problem, String title, String description,
                                      Double timeLimit, Integer memoryLimit,
                                      String difficulty, String tags,
-                                     String domjudgeProblemId, byte[] zipFileData) {
+                                     String domjudgeProblemId, byte[] zipFileData,
+                                     Boolean strictWhitespaceGrading) {
         try {
             if (title != null) {
                 java.lang.reflect.Field titleField = Problem.class.getDeclaredField("title");
@@ -1369,6 +1392,12 @@ public class ProblemService {
                 java.lang.reflect.Field zipDataField = Problem.class.getDeclaredField("zipFileData");
                 zipDataField.setAccessible(true);
                 zipDataField.set(problem, zipFileData);
+            }
+
+            if (strictWhitespaceGrading != null) {
+                java.lang.reflect.Field swField = Problem.class.getDeclaredField("strictWhitespaceGrading");
+                swField.setAccessible(true);
+                swField.set(problem, strictWhitespaceGrading);
             }
 
         } catch (Exception e) {

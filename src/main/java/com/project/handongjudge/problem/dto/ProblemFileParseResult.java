@@ -20,4 +20,5 @@ public class ProblemFileParseResult {
     private Double timeLimit;
     private Integer memoryLimit;
     private List<TestCaseDto> testcases;
+    private Boolean strictWhitespaceGrading;
 }
