@@ -242,7 +242,9 @@ public class QuizService {
     }
 
     /**
-     * Quiz 수정
+     * Quiz 수정.
+     * <p>{@code problemIds}가 {@code null}이면 기존 문제 연결은 유지한다(과제 {@code updateAssignment}와 동일).
+     * 필드가 있으면 기존 {@code QuizProblem}을 모두 삭제한 뒤 전달 순서대로 다시 연결한다.
      */
     public QuizResponse updateQuiz(Long sectionId, Long quizId, QuizRequest request, Long userId) {
         Quiz quiz = quizRepository.findById(quizId)

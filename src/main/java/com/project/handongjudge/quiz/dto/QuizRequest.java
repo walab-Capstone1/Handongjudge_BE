@@ -17,7 +17,8 @@ public class QuizRequest {
     @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", timezone = "UTC")
     private LocalDateTime endTime;
 
-    private List<Long> problemIds; // 연결할 문제 ID 리스트
+    /** 연결할 문제 ID(순서 유지). {@code null}이면 수정 시 기존 연결 유지. 빈 리스트면 전부 제거. */
+    private List<Long> problemIds;
 }
 
 
