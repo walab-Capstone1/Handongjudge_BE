@@ -169,6 +169,21 @@ public class QuizController {
     }
 
     /**
+     * 퀴즈에 문제 추가 (단건, 기존 연결 유지)
+     */
+    @PostMapping("/{quizId}/problems/{problemId}")
+    public ResponseEntity<Void> addProblemToQuiz(
+            @PathVariable Long sectionId,
+            @PathVariable Long quizId,
+            @PathVariable Long problemId,
+            Authentication authentication
+    ) {
+        Long userId = Long.parseLong(authentication.getName());
+        quizService.addProblemToQuiz(sectionId, quizId, problemId, userId);
+        return ResponseEntity.status(HttpStatus.CREATED).build();
+    }
+
+    /**
      * 퀴즈에서 문제 제거
      */
     @DeleteMapping("/{quizId}/problems/{problemId}")

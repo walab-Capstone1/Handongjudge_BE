@@ -447,6 +447,48 @@ public class QuizService {
     }
 
     /**
+     * 퀴즈에 문제 한 건만 추가 (기존 {@link QuizProblem} 행은 유지).
+     * 과제 {@code AssignmentProblemService.addProblemToAssignment}와 동일한 패턴.
+     */
+    public void addProblemToQuiz(Long sectionId, Long quizId, Long problemId, Long userId) {
+        Quiz quiz = quizRepository.findById(quizId)
+                .orElseThrow(() -> new IllegalArgumentException("Quiz not found"));
+        if (!quiz.getSection().getId().equals(sectionId)) {
+            throw new IllegalArgumentException("해당 퀴즈는 이 분반에 속하지 않습니다");
+        }
+        if (!sectionRoleService.isManager(userId, sectionId)) {
+            throw new IllegalArgumentException("해당 코딩 테스트를 수정할 권한이 없습니다");
+        }
+
+        if (quizProblemRepository.findByQuizIdAndProblemId(quizId, problemId).isPresent()) {
+            throw new IllegalArgumentException("이미 이 코딩 테스트에 포함된 문제입니다");
+        }
+
+        Problem problem = problemRepository.findById(problemId)
+                .orElseThrow(() -> new IllegalArgumentException("문제 ID 없음: " + problemId));
+
+        List<QuizProblem> existing = quizProblemRepository.findByQuizIdOrderByProblemOrderAsc(quizId);
+        int nextOrder = 1;
+        if (!existing.isEmpty()) {
+            nextOrder = existing.stream()
+                    .mapToInt(qp -> qp.getProblemOrder() != null ? qp.getProblemOrder() : 0)
+                    .max()
+                    .orElse(0) + 1;
+        }
+
+        QuizProblem qp = QuizProblem.builder()
+                .quiz(quiz)
+                .problem(problem)
+                .problemOrder(nextOrder)
+                .points(1)
+                .build();
+        quizProblemRepository.save(qp);
+
+        Long contestId = quiz.getSection().getId();
+        domjudgeService.addProblemToContest(contestId, problem.getDomjudgeProblemId());
+    }
+
+    /**
      * 퀴즈에서 문제 제거
      */
     public void removeProblemFromQuiz(Long quizId, Long problemId, Long instructorId) {
