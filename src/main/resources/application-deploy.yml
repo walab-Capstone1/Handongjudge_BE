@@ -43,12 +43,12 @@ auth:
     name: refreshToken
     secure: true
     same-site: None        # 프론트/백 도메인 분리 시 필요
-    domain: hj.walab.info
+    domain: hcl.walab.info
     max-age: 604800        # 7일 (초)
     path: /
   cors:
     allowed-origins:
-      - https://hj.walab.info
+      - https://hcl.walab.info
 
 app:
   ssh-tunnel:
