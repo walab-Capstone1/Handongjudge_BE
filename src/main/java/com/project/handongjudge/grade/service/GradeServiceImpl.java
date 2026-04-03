@@ -168,8 +168,11 @@ public class GradeServiceImpl implements GradeService {
                     pg.setSubmittedAt(sub.getSubmittedAt());
                     if (assignment.getEndDate() != null) {
                         pg.setIsOnTime(SubmissionDeadlineComparison.isSubmittedOnTime(sub.getSubmittedAt(), assignment.getEndDate()));
+                        pg.setLateDuration(SubmissionDeadlineComparison.lateDurationText(
+                                sub.getSubmittedAt(), assignment.getEndDate()));
                     } else {
                         pg.setIsOnTime(true);
+                        pg.setLateDuration("");
                     }
                     pg.setResult(sub.getResult());
                     pg.setPassedTestCases(sub.getPassedTestCases());
@@ -183,6 +186,7 @@ public class GradeServiceImpl implements GradeService {
                 } else {
                     pg.setSubmitted(false);
                     pg.setIsOnTime(false);
+                    pg.setLateDuration("");
                     pg.setScore(0);
                 }
 
@@ -238,8 +242,11 @@ public class GradeServiceImpl implements GradeService {
                 pg.setSubmittedAt(sub.getSubmittedAt());
                 if (assignment.getEndDate() != null) {
                         pg.setIsOnTime(SubmissionDeadlineComparison.isSubmittedOnTime(sub.getSubmittedAt(), assignment.getEndDate()));
+                        pg.setLateDuration(SubmissionDeadlineComparison.lateDurationText(
+                                sub.getSubmittedAt(), assignment.getEndDate()));
                 } else {
                     pg.setIsOnTime(true);
+                    pg.setLateDuration("");
                 }
                 pg.setResult(sub.getResult());
                 pg.setPassedTestCases(sub.getPassedTestCases());
@@ -253,6 +260,7 @@ public class GradeServiceImpl implements GradeService {
             } else {
                 pg.setSubmitted(false);
                 pg.setIsOnTime(false);
+                pg.setLateDuration("");
                 pg.setScore(0);
             }
 
