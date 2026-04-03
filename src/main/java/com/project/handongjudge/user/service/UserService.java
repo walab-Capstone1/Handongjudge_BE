@@ -29,13 +29,11 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.project.handongjudge.common.time.SubmissionDeadlineComparison;
 import com.project.handongjudge.community.service.NotificationService;
 import com.project.handongjudge.domjudge.service.DomjudgeService;
 import java.util.ArrayList;
 import java.time.LocalDateTime;
-import java.time.temporal.ChronoUnit;
-import java.time.Instant;
-import java.time.ZoneId;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -47,15 +45,6 @@ import java.util.stream.Collectors;
 @Slf4j
 @Transactional(readOnly = true)
 public class UserService {
-    /**
-     * endDate는 프론트에서 toISOString()으로 UTC 문자열을 보내고,
-     * @JsonFormat(timezone="UTC")에 의해 UTC 숫자 그대로 LocalDateTime에 저장된다.
-     * submittedAt은 LocalDateTime.now()로 JVM 시스템 타임존(서버 OS) 기준으로 저장된다.
-     * 두 값의 암묵적 타임존이 달라 직접 비교하면 시차만큼 오판정이 발생하므로,
-     * 각각의 기준 존으로 Instant 변환 후 비교한다.
-     */
-    private static final ZoneId UTC_ZONE = ZoneId.of("UTC");
-
 
     private final UserRepository userRepository;
     private final EnrollmentRepository enrollmentRepository;
@@ -567,14 +556,8 @@ public class UserService {
                 submittedAt = latest.getSubmittedAt();
                 status = "AC".equals(latest.getResult()) ? "ACCEPTED" : "SUBMITTED";
                 if (endDate != null) {
-                    // submittedAt은 저장 시 Asia/Seoul(LocalDateTime.now(KST)) 기준으로 생성됨
-                    // endDate는 프론트 toISOString()→UTC 문자열이 @JsonFormat(timezone="UTC")로 저장 → UTC로 해석
-                    Instant submittedInstant = submittedAt.atZone(ZoneId.of("Asia/Seoul")).toInstant();
-                    Instant dueInstant = endDate.atZone(UTC_ZONE).toInstant();
-                    isOnTime = !submittedInstant.isAfter(dueInstant);
-                    if (submittedInstant.isAfter(dueInstant)) {
-                        minutesLate = (int) ChronoUnit.MINUTES.between(dueInstant, submittedInstant);
-                    }
+                    isOnTime = SubmissionDeadlineComparison.isSubmittedOnTime(submittedAt, endDate);
+                    minutesLate = SubmissionDeadlineComparison.minutesLateIfLate(submittedAt, endDate);
                 } else {
                     isOnTime = true;
                 }
