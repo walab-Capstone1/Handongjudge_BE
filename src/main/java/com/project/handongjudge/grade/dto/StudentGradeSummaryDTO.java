@@ -33,6 +33,8 @@ public class StudentGradeSummaryDTO {
         private Boolean submitted;
         private LocalDateTime submittedAt;
         private Boolean isOnTime;
+        /** ZIP submissions.csv의 lateDuration과 동일 (SubmissionDeadlineComparison) */
+        private String lateDuration;
         private String result;
         /** 맞은 테스트케이스 수 (제출 시 저장된 값) */
         private Integer passedTestCases;

@@ -12,6 +12,7 @@ import com.project.handongjudge.section.entity.Section;
 import com.project.handongjudge.section.service.SectionRoleService;
 import com.project.handongjudge.submission.entity.Submission;
 import com.project.handongjudge.submission.repository.SubmissionRepository;
+import com.project.handongjudge.common.time.SubmissionDeadlineComparison;
 import com.project.handongjudge.submission.service.SubmissionService;
 import com.project.handongjudge.user.entity.User;
 import com.project.handongjudge.user.repository.EnrollmentRepository;
@@ -21,8 +22,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
-import java.time.Instant;
-import java.time.ZoneId;
 import java.util.*;
 
 import org.springframework.data.domain.PageRequest;
@@ -31,21 +30,6 @@ import org.springframework.data.domain.PageRequest;
 @Service
 @RequiredArgsConstructor
 public class GradeServiceImpl implements GradeService {
-    private static final ZoneId KST_ZONE = ZoneId.of("Asia/Seoul");
-    private static final ZoneId UTC_ZONE = ZoneId.of("UTC");
-
-    /**
-     * 지각 여부 판정 헬퍼.
-     * submittedAt은 서버 JVM 시스템 타임존(LocalDateTime.now()) 기준,
-     * dueAt은 프론트 toISOString()→UTC 문자열이 그대로 저장된 UTC 기준 LocalDateTime이므로
-     * 각각 올바른 ZoneId로 Instant 변환 후 비교한다.
-     */
-    private static boolean isSubmittedOnTime(LocalDateTime submittedAt, LocalDateTime dueAt) {
-        if (submittedAt == null || dueAt == null) return true;
-        Instant submittedInstant = submittedAt.atZone(KST_ZONE).toInstant();
-        Instant dueInstant = dueAt.atZone(UTC_ZONE).toInstant();
-        return !submittedInstant.isAfter(dueInstant);
-    }
 
     private final GradeRepository gradeRepository;
     private final AssignmentRepository assignmentRepository;
@@ -183,9 +167,12 @@ public class GradeServiceImpl implements GradeService {
                     pg.setSubmitted(true);
                     pg.setSubmittedAt(sub.getSubmittedAt());
                     if (assignment.getEndDate() != null) {
-                        pg.setIsOnTime(isSubmittedOnTime(sub.getSubmittedAt(), assignment.getEndDate()));
+                        pg.setIsOnTime(SubmissionDeadlineComparison.isSubmittedOnTime(sub.getSubmittedAt(), assignment.getEndDate()));
+                        pg.setLateDuration(SubmissionDeadlineComparison.lateDurationText(
+                                sub.getSubmittedAt(), assignment.getEndDate()));
                     } else {
                         pg.setIsOnTime(true);
+                        pg.setLateDuration("");
                     }
                     pg.setResult(sub.getResult());
                     pg.setPassedTestCases(sub.getPassedTestCases());
@@ -199,6 +186,7 @@ public class GradeServiceImpl implements GradeService {
                 } else {
                     pg.setSubmitted(false);
                     pg.setIsOnTime(false);
+                    pg.setLateDuration("");
                     pg.setScore(0);
                 }
 
@@ -253,9 +241,12 @@ public class GradeServiceImpl implements GradeService {
                 pg.setSubmitted(true);
                 pg.setSubmittedAt(sub.getSubmittedAt());
                 if (assignment.getEndDate() != null) {
-                        pg.setIsOnTime(isSubmittedOnTime(sub.getSubmittedAt(), assignment.getEndDate()));
+                        pg.setIsOnTime(SubmissionDeadlineComparison.isSubmittedOnTime(sub.getSubmittedAt(), assignment.getEndDate()));
+                        pg.setLateDuration(SubmissionDeadlineComparison.lateDurationText(
+                                sub.getSubmittedAt(), assignment.getEndDate()));
                 } else {
                     pg.setIsOnTime(true);
+                    pg.setLateDuration("");
                 }
                 pg.setResult(sub.getResult());
                 pg.setPassedTestCases(sub.getPassedTestCases());
@@ -269,6 +260,7 @@ public class GradeServiceImpl implements GradeService {
             } else {
                 pg.setSubmitted(false);
                 pg.setIsOnTime(false);
+                pg.setLateDuration("");
                 pg.setScore(0);
             }
 
@@ -357,7 +349,7 @@ public class GradeServiceImpl implements GradeService {
                     .result(submission.getResult());
 
             if (assignment.getEndDate() != null) {
-                builder.isOnTime(isSubmittedOnTime(submission.getSubmittedAt(), assignment.getEndDate()));
+                builder.isOnTime(SubmissionDeadlineComparison.isSubmittedOnTime(submission.getSubmittedAt(), assignment.getEndDate()));
             } else {
                 builder.isOnTime(true);
             }
