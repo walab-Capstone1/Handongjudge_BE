@@ -23,6 +23,7 @@ import com.project.handongjudge.progress.repository.CodeProgressRepository;
 import com.project.handongjudge.submission.entity.Submission;
 import com.project.handongjudge.submission.repository.SubmissionRepository;
 import com.project.handongjudge.submission.service.SubmissionService;
+import com.project.handongjudge.common.time.SubmissionDeadlineComparison;
 import com.project.handongjudge.section.service.SectionRoleService;
 import com.project.handongjudge.mypage.dto.SubmissionCodeDto;
 import lombok.RequiredArgsConstructor;
@@ -592,10 +593,8 @@ public class QuizService {
                     pg.setPassedTestCases(sub.getPassedTestCases());
                     pg.setTotalTestCases(sub.getTotalTestCases());
                     if (quiz.getEndTime() != null) {
-                        pg.setIsOnTime(
-                                sub.getSubmittedAt().isBefore(quiz.getEndTime()) ||
-                                sub.getSubmittedAt().isEqual(quiz.getEndTime())
-                        );
+                        pg.setIsOnTime(SubmissionDeadlineComparison.isSubmittedOnTime(
+                                sub.getSubmittedAt(), quiz.getEndTime()));
                     } else {
                         pg.setIsOnTime(true);
                     }
@@ -774,10 +773,8 @@ public class QuizService {
                     .submittedAt(submission.getSubmittedAt())
                     .result(submission.getResult());
             if (quiz.getEndTime() != null) {
-                b.isOnTime(
-                        submission.getSubmittedAt().isBefore(quiz.getEndTime()) ||
-                        submission.getSubmittedAt().isEqual(quiz.getEndTime())
-                );
+                b.isOnTime(SubmissionDeadlineComparison.isSubmittedOnTime(
+                        submission.getSubmittedAt(), quiz.getEndTime()));
             } else {
                 b.isOnTime(true);
             }

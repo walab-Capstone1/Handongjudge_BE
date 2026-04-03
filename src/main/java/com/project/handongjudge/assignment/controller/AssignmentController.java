@@ -21,10 +21,11 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import com.project.handongjudge.assignment.dto.StudentProgressResponse;
 import com.project.handongjudge.assignment.dto.StudentAcceptedCodeResponse;
+import com.project.handongjudge.common.ZipExportPathUtils;
+import com.project.handongjudge.common.time.SubmissionDeadlineComparison;
 
 import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
-import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.HashSet;
 import java.util.List;
@@ -201,7 +202,7 @@ public class AssignmentController {
 
     /**
      * 섹션의 전체 과제 제출 코드 ZIP 다운로드
-     * 구조: 전체과제/{과제명}/{문제}/{학번}/코드파일
+     * 구조: 전체과제/{과제명}/{문제}/{학번_이름}/코드파일
      */
     @GetMapping("/export-zip-all")
     public ResponseEntity<byte[]> exportAllAssignmentCodesZip(
@@ -232,11 +233,11 @@ public class AssignmentController {
                         }
 
                         String safeAssignment = sanitize(assignment.getTitle());
-                        String safeStudent = sanitize(student.getStudentId());
+                        String safeStudent = ZipExportPathUtils.studentFolderSegment(student);
                         String safeProblem = sanitize(pg.getProblemTitle());
                         String ext = languageToExt(codeResponse.getLanguage());
                         String problemFolder = pg.getProblemId() + "_" + safeProblem;
-                        String baseCodePath = "전체과제/" + safeAssignment + "/" + problemFolder + "/" + safeStudent + "/" + safeProblem + "_" + fileTime(pg.getSubmittedAt());
+                        String baseCodePath = "전체과제/" + safeAssignment + "/" + problemFolder + "/" + safeStudent + "/" + safeProblem + "_" + SubmissionDeadlineComparison.submittedAtKstForZipPath(pg.getSubmittedAt());
                         String codePath = uniquePath(
                                 baseCodePath,
                                 ext,
@@ -260,10 +261,10 @@ public class AssignmentController {
                                 .append(csvEsc(pg.getProblemTitle())).append(',')
                                 .append(csvEsc(withSubmittedAt(pg.getProblemTitle(), pg.getSubmittedAt()))).append(',')
                                 .append(csvEsc(pg.getResult())).append(',')
-                                .append(csvEsc(toStr(pg.getSubmittedAt()))).append(',')
-                                .append(csvEsc(toStr(assignment.getEndDate()))).append(',')
+                                .append(csvEsc(SubmissionDeadlineComparison.formatSubmittedAtKstCsv(pg.getSubmittedAt()))).append(',')
+                                .append(csvEsc(SubmissionDeadlineComparison.formatDueKstCsv(assignment.getEndDate()))).append(',')
                                 .append(Boolean.TRUE.equals(pg.getIsOnTime()) ? "true" : "false").append(',')
-                                .append(csvEsc(toLateText(pg.getSubmittedAt(), assignment.getEndDate()))).append(',')
+                                .append(csvEsc(SubmissionDeadlineComparison.lateDurationText(pg.getSubmittedAt(), assignment.getEndDate()))).append(',')
                                 .append(csvEsc(codePath))
                                 .append('\n');
                     }
@@ -296,35 +297,11 @@ public class AssignmentController {
         return value.replaceAll("[^a-zA-Z0-9가-힣._-]", "_");
     }
 
-    private static String toStr(LocalDateTime dt) {
-        return dt == null ? "" : dt.toString();
-    }
-
-    private static String toLateText(LocalDateTime submittedAt, LocalDateTime dueAt) {
-        if (submittedAt == null || dueAt == null) return "";
-        Duration d = Duration.between(dueAt, submittedAt);
-        if (d.isNegative() || d.isZero()) return "";
-        long minutes = d.toMinutes();
-        long days = minutes / (60 * 24);
-        long hours = (minutes % (60 * 24)) / 60;
-        long mins = minutes % 60;
-        StringBuilder sb = new StringBuilder();
-        if (days > 0) sb.append(days).append("일 ");
-        if (hours > 0) sb.append(hours).append("시간 ");
-        if (mins > 0 || sb.length() == 0) sb.append(mins).append("분");
-        return sb.toString().trim();
-    }
-
     private static String withSubmittedAt(String base, LocalDateTime submittedAt) {
         String value = base == null ? "" : base;
-        String submitted = toStr(submittedAt);
+        String submitted = SubmissionDeadlineComparison.formatSubmittedAtKstCsv(submittedAt);
         if (submitted.isEmpty()) return value;
         return value + " (" + submitted + ")";
-    }
-
-    private static String fileTime(LocalDateTime dt) {
-        if (dt == null) return "unknown_time";
-        return dt.toString().replace(":", "-").replace(".", "-");
     }
 
     private static String languageToExt(String language) {
