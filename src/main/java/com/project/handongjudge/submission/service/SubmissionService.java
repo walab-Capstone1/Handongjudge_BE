@@ -946,6 +946,7 @@ public class SubmissionService {
      * 비고:
      * - 관리자/튜터는 비활성화된 과제/퀴즈도 제출 가능
      * - 학생은 마감일이 지나면 제출 불가
+     * - 학생은 퀴즈 상태가 PAUSED·ENDED이거나 종료 시각이 지나면 제출 불가
      * - 관리자/튜터는 퀴즈 종료 후에도 제출 가능 (과제는 마감일 체크)
      */
     private void validateSubmission(Long problemId, Long sectionId, Long userId) {
@@ -1012,6 +1013,10 @@ public class SubmissionService {
                             continue;
                         }
 
+                        if (quiz.getStatus() == Quiz.QuizStatus.ENDED) {
+                            continue;
+                        }
+
                         if (quiz.getEndTime() == null || !now.isAfter(quiz.getEndTime())) {
                             quizValid = true;
                             hasRunningOrWaitingQuiz = true;
@@ -1025,6 +1030,10 @@ public class SubmissionService {
                         }
                         if (!hasRunningOrWaitingQuiz && quizzesInSection.stream().anyMatch(q -> q.getStatus() == Quiz.QuizStatus.PAUSED)) {
                             throw new IllegalArgumentException("코딩 테스트가 일시정지 상태입니다. 진행이 재개될 때까지 제출할 수 없습니다");
+                        }
+                        if (!hasRunningOrWaitingQuiz && quizzesInSection.stream().anyMatch(q ->
+                                Boolean.TRUE.equals(q.getActive()) && q.getStatus() == Quiz.QuizStatus.ENDED)) {
+                            throw new IllegalArgumentException("코딩 테스트가 종료되어 제출할 수 없습니다");
                         }
                         throw new IllegalArgumentException("코딩 테스트 시간이 종료되었습니다");
                     }
