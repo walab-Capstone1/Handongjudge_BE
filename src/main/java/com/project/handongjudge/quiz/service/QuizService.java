@@ -595,8 +595,11 @@ public class QuizService {
                     if (quiz.getEndTime() != null) {
                         pg.setIsOnTime(SubmissionDeadlineComparison.isSubmittedOnTime(
                                 sub.getSubmittedAt(), quiz.getEndTime()));
+                        pg.setLateDuration(SubmissionDeadlineComparison.lateDurationText(
+                                sub.getSubmittedAt(), quiz.getEndTime()));
                     } else {
                         pg.setIsOnTime(true);
+                        pg.setLateDuration("");
                     }
                     if ("AC".equals(sub.getResult())) {
                         pg.setScore(1);
@@ -607,6 +610,7 @@ public class QuizService {
                 } else {
                     pg.setSubmitted(false);
                     pg.setIsOnTime(false);
+                    pg.setLateDuration("");
                     pg.setScore(0);
                 }
 
