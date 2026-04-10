@@ -36,6 +36,7 @@ public class SubmissionController {
         return result;
     }
 
+    /** 과제 테스트하기: output 상세 반환만 하고 submissions 테이블에는 저장하지 않음. */
     @PostMapping(value = "/submitAndGetResult/output")
     public SubmissionOutputResponseDTO submitAndGetResultOutput(Authentication authentication, @RequestBody SubmissionAuthDTO request) {
         SubmissionOutputResponseDTO result = submissionService.submitAndGetResultOutput(authentication, request);
