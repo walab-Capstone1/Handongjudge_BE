@@ -344,7 +344,8 @@ public class SubmissionService {
     // for with output.
 
     /**
-     * DomJudge 제출 + 테스트케이스별 output 폴링만 수행 (DB에 Submission 행을 만들지 않음). 퀴즈 전용.
+     * DomJudge 제출 + 테스트케이스별 output 폴링만 수행 (DB에 Submission 행을 만들지 않음).
+     * 퀴즈 제출({@link #submitQuizCode}) 및 과제 「테스트하기」({@link #submitAndGetResultOutput})에서 공통 사용.
      */
     private SubmissionOutputResponseDTO submitAndPollOutputOnly(
             Authentication authentication,
@@ -426,7 +427,8 @@ public class SubmissionService {
     }
 
     /**
-     * 과제 등: 상세 output 반환 + {@link Submission} 행에 결과·테스트케이스 수 저장 (성적 API용).
+     * 과제 「테스트하기」: DomJudge 채점 + 테스트케이스별 output 반환.
+     * {@link Submission} 행은 만들지 않음 — 성적·최신 제출 집계는 {@link #submitAndGetResult}만 사용.
      */
     public SubmissionOutputResponseDTO submitAndGetResultOutput(Authentication authentication, SubmissionAuthDTO submissionRequestDTO) {
         long e2eStart = System.currentTimeMillis();
@@ -440,97 +442,7 @@ public class SubmissionService {
                 .build();
 
         try {
-            Long userId = Long.parseLong(authentication.getName());
-            User user = userRepository.findById(userId)
-                    .orElseThrow(() -> new RuntimeException("User not found"));
-            Problem problem = problemRepository.findById(submissionRequestDTO.getProblemId())
-                    .orElseThrow(() -> new RuntimeException("Problem not found"));
-            Section section = sectionRepository.findById(submissionRequestDTO.getSectionId())
-                    .orElseThrow(() -> new RuntimeException("Section not found"));
-
-            validateSubmission(
-                    submissionRequestDTO.getProblemId(),
-                    submissionRequestDTO.getSectionId(),
-                    userId
-            );
-
-            String contestId = String.valueOf(section.getId());
-            String teamId = enrollmentRepository.findTeamIdByUserIdAndSectionId(user.getId(), section.getId());
-            String domjudgeProblemId = problem.getDomjudgeProblemId();
-
-            if (teamId == null || teamId.isEmpty()) {
-                throw new RuntimeException("현재 수업에 수강신청되어 있지 않습니다. 수강 신청 후 제출해 주세요.");
-            }
-
-            File codeFile = CodeExtenstion.StringToFile(
-                    submissionRequestDTO.getLanguage(),
-                    submissionRequestDTO.getCodeString()
-            );
-
-            long submitStart = System.currentTimeMillis();
-            String domjudgeSubmissionId = domjudgeService.submitCode(
-                    contestId, teamId, domjudgeProblemId,
-                    submissionRequestDTO.getLanguage(), codeFile
-            );
-            long submitDuration = System.currentTimeMillis() - submitStart;
-            metric.setSubmitDurationMs(submitDuration);
-            metric.setDomjudgeSubmissionId(domjudgeSubmissionId);
-            log.info("[METRIC] submit_duration_ms={} domjudge_submission_id={}", submitDuration, domjudgeSubmissionId);
-
-            if (codeFile != null) {
-                try {
-                    Files.deleteIfExists(codeFile.toPath());
-                    log.debug("TmpFile deleted: {}", codeFile.getName());
-                } catch (IOException e) {
-                    log.error("Failed to delete TmpFile: {}", e.getMessage());
-                }
-            }
-
-            Submission submission = Submission.builder()
-                    .problem(problem)
-                    .user(user)
-                    .language(submissionRequestDTO.getLanguage())
-                    .code(submissionRequestDTO.getCodeString())
-                    .submittedAt(LocalDateTime.now(KST_ZONE))
-                    .build();
-            submission.setSection(section);
-            submission.setSubmissionId(domjudgeSubmissionId);
-            submissionRepository.save(submission);
-
-            Submission savedSubmission = submissionRepository.findById(submission.getId())
-                    .orElseThrow(() -> new RuntimeException("Submission not found"));
-
-            String cid = String.valueOf(savedSubmission.getSection().getId());
-
-            long judgingStart = System.currentTimeMillis();
-            PollingResult<SubmissionOutputResponseDTO> pollingResult =
-                    pollForResultOutput(cid, savedSubmission.getSubmissionId(), 30);
-            long judgingDuration = System.currentTimeMillis() - judgingStart;
-            metric.setJudgingDurationMs(judgingDuration);
-            metric.setPollingAttempts(pollingResult.getAttempts());
-            log.info("[METRIC] judging_duration_ms={} polling_attempts={}", judgingDuration, pollingResult.getAttempts());
-
-            SubmissionOutputResponseDTO responseDTO = pollingResult.getResult();
-
-            savedSubmission.setResult(responseDTO.getResult());
-            applyTestCaseCountsFromOutput(savedSubmission, responseDTO);
-            submissionRepository.save(savedSubmission);
-
-            long e2eDuration = System.currentTimeMillis() - e2eStart;
-            metric.setE2eDurationMs(e2eDuration);
-            log.info("[METRIC] e2e_duration_ms={} language={} problemId={} flow=submitAndGetResultOutput",
-                     e2eDuration, submissionRequestDTO.getLanguage(), submissionRequestDTO.getProblemId());
-
-            return SubmissionOutputResponseDTO.builder()
-                    .problemId(problem.getId())
-                    .submissionId(savedSubmission.getSubmissionId())
-                    .language(submissionRequestDTO.getLanguage())
-                    .submittedAt(savedSubmission.getSubmittedAt())
-                    .result(responseDTO.getResult())
-                    .outputList(responseDTO.getOutputList())
-                    .sectionId(section.getId())
-                    .build();
-
+            return submitAndPollOutputOnly(authentication, submissionRequestDTO, metric);
         } catch (RuntimeException e) {
             metric.setTimedOut(isJudgingTimeoutMessage(e.getMessage()));
             metric.setErrorMessage(e.getMessage() != null
