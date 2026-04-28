@@ -92,40 +92,6 @@ public class CommentController {
 
         return ResponseEntity.ok(result);
     }
-
-    @PostMapping("/{commentId}/accept")
-    @Operation(summary = "댓글 채택 (질문 작성자만)")
-    public ResponseEntity<Map<String, Object>> acceptComment(
-            @PathVariable Long commentId,
-            Authentication authentication) {
-        
-        Long userId = Long.parseLong(authentication.getName());
-        CommentResponseDto response = commentService.acceptComment(commentId, userId);
-
-        Map<String, Object> result = new HashMap<>();
-        result.put("success", true);
-        result.put("message", "댓글이 채택되었습니다");
-        result.put("data", response);
-
-        return ResponseEntity.ok(result);
-    }
-
-    @DeleteMapping("/{commentId}/accept")
-    @Operation(summary = "댓글 채택 해제")
-    public ResponseEntity<Map<String, Object>> unacceptComment(
-            @PathVariable Long commentId,
-            Authentication authentication) {
-        
-        Long userId = Long.parseLong(authentication.getName());
-        CommentResponseDto response = commentService.unacceptComment(commentId, userId);
-
-        Map<String, Object> result = new HashMap<>();
-        result.put("success", true);
-        result.put("message", "댓글 채택이 해제되었습니다");
-        result.put("data", response);
-
-        return ResponseEntity.ok(result);
-    }
 }
 
 

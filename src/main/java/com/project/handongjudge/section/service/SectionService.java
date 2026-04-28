@@ -104,14 +104,23 @@ public class SectionService {
     // SectionService의 getSectionInfo 메서드 수정
 
     public SectionInfoDto getSectionInfo(Long sectionId) {
+        return getSectionInfo(sectionId, null);
+    }
+
+    public SectionInfoDto getSectionInfo(Long sectionId, Long currentUserId) {
         Section section = sectionRepository.findById(sectionId)
                 .orElseThrow(() -> new IllegalArgumentException("분반을 찾을 수 없습니다: " + sectionId));
+
+        boolean staff = currentUserId != null
+                && sectionRoleService.isManager(currentUserId, sectionId);
 
         return SectionInfoDto.builder()
                 .sectionId(section.getId())
                 .sectionNumber(section.getSectionNumber())
                 .courseTitle(section.getCourse().getTitle())
                 .instructorName(section.getInstructor().getName())
+                .instructorId(section.getInstructor().getId())
+                .isCurrentUserSectionStaff(staff)
                 .enrollmentCode(section.getEnrollmentCode())  // 추가
                 .active(section.getActive())  // 추가
                 .build();
