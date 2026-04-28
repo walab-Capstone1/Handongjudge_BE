@@ -26,12 +26,14 @@ public class CommentResponseDto {
     private Boolean isLikedByCurrentUser;  // 현재 사용자가 추천했는지
     private Boolean isAuthor;  // 현재 사용자가 작성자인지
 
+    /** 교수/TA만 수신: 실제 작성자 이름 */
+    private String authorRealNameForStaff;
+
     // Entity -> DTO 변환
     public static CommentResponseDto fromEntity(Comment comment) {
         return CommentResponseDto.builder()
                 .id(comment.getId())
                 .questionId(comment.getQuestion().getId())
-                .authorId(comment.getAuthor().getId())
                 .authorDisplayName(comment.getAuthorDisplayName())
                 .content(comment.getContent())
                 .isAnonymous(comment.getIsAnonymous())
