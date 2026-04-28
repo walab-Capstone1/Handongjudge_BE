@@ -9,6 +9,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.authentication.InsufficientAuthenticationException;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
@@ -31,7 +32,7 @@ public class CommentController {
             @Valid @RequestBody CommentCreateDto dto,
             Authentication authentication) {
         
-        Long userId = Long.parseLong(authentication.getName());
+        Long userId = extractUserId(authentication);
         CommentResponseDto response = commentService.createComment(dto, userId);
 
         Map<String, Object> result = new HashMap<>();
@@ -48,7 +49,7 @@ public class CommentController {
             @RequestParam Long questionId,
             Authentication authentication) {
         
-        Long userId = Long.parseLong(authentication.getName());
+        Long userId = extractUserId(authentication);
         List<CommentResponseDto> comments = commentService.getCommentsByQuestion(questionId, userId);
 
         Map<String, Object> result = new HashMap<>();
@@ -66,7 +67,7 @@ public class CommentController {
             @Valid @RequestBody CommentUpdateDto dto,
             Authentication authentication) {
         
-        Long userId = Long.parseLong(authentication.getName());
+        Long userId = extractUserId(authentication);
         CommentResponseDto response = commentService.updateComment(commentId, dto, userId);
 
         Map<String, Object> result = new HashMap<>();
@@ -83,7 +84,7 @@ public class CommentController {
             @PathVariable Long commentId,
             Authentication authentication) {
         
-        Long userId = Long.parseLong(authentication.getName());
+        Long userId = extractUserId(authentication);
         commentService.deleteComment(commentId, userId);
 
         Map<String, Object> result = new HashMap<>();
@@ -91,6 +92,21 @@ public class CommentController {
         result.put("message", "댓글이 삭제되었습니다");
 
         return ResponseEntity.ok(result);
+    }
+
+    private Long extractUserId(Authentication authentication) {
+        if (authentication == null || !authentication.isAuthenticated()) {
+            throw new InsufficientAuthenticationException("인증 정보가 없습니다");
+        }
+        String principal = authentication.getName();
+        if (principal == null || principal.isBlank() || "anonymousUser".equals(principal)) {
+            throw new InsufficientAuthenticationException("인증 정보가 없습니다");
+        }
+        try {
+            return Long.parseLong(principal);
+        } catch (NumberFormatException e) {
+            throw new InsufficientAuthenticationException("유효하지 않은 인증 정보입니다");
+        }
     }
 }
 
