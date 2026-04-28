@@ -27,10 +27,6 @@ public interface CommentRepository extends JpaRepository<Comment, Long> {
     // 질문별 댓글 수
     Long countByQuestion(Question question);
 
-    // 질문별 채택된 댓글 조회
-    @Query("SELECT c FROM Comment c WHERE c.question = :question AND c.isAccepted = true")
-    List<Comment> findAcceptedCommentsByQuestion(@Param("question") Question question);
-
     // 교수/TA 답변 조회
     @Query("SELECT c FROM Comment c WHERE c.question = :question AND c.isInstructorAnswer = true ORDER BY c.createdAt ASC")
     List<Comment> findInstructorCommentsByQuestion(@Param("question") Question question);
