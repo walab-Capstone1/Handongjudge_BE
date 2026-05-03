@@ -61,6 +61,9 @@ public interface QuestionRepository extends JpaRepository<Question, Long> {
     // 핀된 질문 목록
     List<Question> findBySectionAndIsPinnedTrueOrderByCreatedAtDesc(Section section);
 
+    /** 같은 섹션·익명 질문에서 이미 쓰인 표시명인지 (랜덤 별칭 중복 방지) */
+    boolean existsBySectionAndIsAnonymousTrueAndAuthorDisplayName(Section section, String authorDisplayName);
+
     /** 과제 삭제 시 FK 제약 회피: 해당 과제를 참조하는 질문의 assignment를 null로 변경 (질문은 유지) */
     @Modifying
     @Query("UPDATE Question q SET q.assignment = null WHERE q.assignment.id = :assignmentId")

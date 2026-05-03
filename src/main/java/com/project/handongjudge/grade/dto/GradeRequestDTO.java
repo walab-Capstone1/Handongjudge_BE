@@ -28,5 +28,8 @@ public class GradeRequestDTO {
     private Integer score;
     
     private String comment;
+
+    /** true이면 score를 0으로 저장하고 rejected 플래그 설정 */
+    private Boolean rejected;
 }
 

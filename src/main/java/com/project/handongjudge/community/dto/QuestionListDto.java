@@ -27,6 +27,15 @@ public class QuestionListDto {
     private Boolean hasAcceptedAnswer;
     private Boolean isPublic;
 
+    /** 현재 로그인 사용자가 작성자인지 */
+    private Boolean isAuthor;
+
+    /** 교수/TA에게만 내려가는 실제 작성자 이름 */
+    private String authorRealNameForStaff;
+
+    /** 교수/TA에게만 내려가는 작성자 user id */
+    private Long authorId;
+
     // Entity -> DTO 변환 (목록용 축약)
     public static QuestionListDto fromEntity(Question question) {
         return QuestionListDto.builder()

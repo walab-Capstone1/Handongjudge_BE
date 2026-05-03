@@ -70,6 +70,10 @@ public class Question {
     @Builder.Default
     private Boolean isAnonymous = false;
 
+    // 익명 질문일 때 표시에 별명을 쓸지(true) / 문자 그대로 "익명"만 쓸지(false). 비익명이면 null
+    @Column(name = "anonymous_use_nickname")
+    private Boolean anonymousUseNickname;
+
     // 공개/비공개 (false: 공개, true: 비공개 - 교수만 볼 수 있음)
     @Column(name = "is_public", nullable = false)
     @Builder.Default

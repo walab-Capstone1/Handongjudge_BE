@@ -5,10 +5,10 @@ import com.project.handongjudge.assignment.repository.AssignmentRepository;
 import com.project.handongjudge.common.exception.CustomException;
 import com.project.handongjudge.community.dto.*;
 import com.project.handongjudge.community.entity.Question;
-import com.project.handongjudge.community.entity.UserNickname;
 import com.project.handongjudge.community.repository.QuestionLikeRepository;
 import com.project.handongjudge.community.repository.QuestionRepository;
 import com.project.handongjudge.community.repository.UserNicknameRepository;
+import com.project.handongjudge.community.util.CommunityDisplayNameGenerator;
 import com.project.handongjudge.problem.entity.Problem;
 import com.project.handongjudge.problem.repository.ProblemRepository;
 import com.project.handongjudge.section.entity.Section;
@@ -24,7 +24,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
-import java.util.Optional;
 import java.util.stream.Collectors;
 
 @Service
@@ -53,8 +52,9 @@ public class QuestionService {
         Section section = sectionRepository.findById(dto.getSectionId())
                 .orElseThrow(() -> new CustomException("섹션을 찾을 수 없습니다"));
 
+        Boolean useNicknameWhenAnonymous = resolveAnonymousUseNickname(dto);
         // 작성자 표시명 설정
-        String displayName = getDisplayName(author, section, dto.getIsAnonymous());
+        String displayName = getDisplayName(author, section, dto.getIsAnonymous(), useNicknameWhenAnonymous);
 
         // 질문 엔티티 생성
         Question.QuestionBuilder questionBuilder = Question.builder()
@@ -63,6 +63,7 @@ public class QuestionService {
                 .title(dto.getTitle())
                 .content(sanitizeHtmlContent(dto.getContent()))
                 .isAnonymous(dto.getIsAnonymous())
+                .anonymousUseNickname(dto.getIsAnonymous() ? useNicknameWhenAnonymous : null)
                 .isPublic(dto.getIsPublic())
                 .authorDisplayName(displayName);
 
@@ -109,14 +110,14 @@ public class QuestionService {
         }
 
         // 비공개 질문 필터링 (교수가 아닌 경우)
-        Page<QuestionListDto> result = questions.map(QuestionListDto::fromEntity);
+        Page<QuestionListDto> result = questions.map(q -> toQuestionListDto(q, user, section));
         
         if (!isInstructor(user, section)) {
             // 비공개 질문 필터링: 작성자 본인 또는 교수만 볼 수 있음
             List<QuestionListDto> filteredContent = result.getContent().stream()
                     .filter(q -> {
                         // 공개 글이거나, 작성자 본인인 경우만 표시
-                        if (q.getIsPublic()) return true;
+                        if (Boolean.TRUE.equals(q.getIsPublic())) return true;
                         // 비공개 글은 작성자만 볼 수 있음
                         Question originalQuestion = questionRepository.findById(q.getId()).orElse(null);
                         return originalQuestion != null && originalQuestion.getAuthor().getId().equals(userId);
@@ -270,14 +271,14 @@ public class QuestionService {
         Page<Question> questions = questionRepository.searchByKeyword(section, keyword, pageable);
 
         // 비공개 질문 필터링
-        Page<QuestionListDto> result = questions.map(QuestionListDto::fromEntity);
+        Page<QuestionListDto> result = questions.map(q -> toQuestionListDto(q, user, section));
 
         if (!isInstructor(user, section)) {
             // 비공개 질문 필터링: 작성자 본인 또는 교수만 볼 수 있음
             List<QuestionListDto> filteredContent = result.getContent().stream()
                     .filter(q -> {
                         // 공개 글이거나, 작성자 본인인 경우만 표시
-                        if (q.getIsPublic()) return true;
+                        if (Boolean.TRUE.equals(q.getIsPublic())) return true;
                         // 비공개 글은 작성자만 볼 수 있음
                         Question originalQuestion = questionRepository.findById(q.getId()).orElse(null);
                         return originalQuestion != null && originalQuestion.getAuthor().getId().equals(userId);
@@ -292,25 +293,68 @@ public class QuestionService {
 
     // ========== Helper Methods ==========
 
-    private String getDisplayName(User user, Section section, Boolean isAnonymous) {
-        if (isAnonymous) {
-            Optional<UserNickname> nicknameOpt = userNicknameRepository.findByUserAndSection(user, section);
-            if (nicknameOpt.isPresent()) {
-                return nicknameOpt.get().getNickname();
-            } else {
-                // 별명이 없으면 기본 별명 생성
-                String defaultNickname = "익명" + user.getId();
-                UserNickname nickname = UserNickname.builder()
-                        .user(user)
-                        .section(section)
-                        .nickname(defaultNickname)
-                        .build();
-                userNicknameRepository.save(nickname);
-                return defaultNickname;
-            }
-        } else {
+    private QuestionListDto toQuestionListDto(Question question, User viewer, Section section) {
+        QuestionListDto dto = QuestionListDto.fromEntity(question);
+        dto.setIsAuthor(question.getAuthor().getId().equals(viewer.getId()));
+        if (isInstructor(viewer, section)) {
+            dto.setAuthorRealNameForStaff(question.getAuthor().getName());
+            dto.setAuthorId(question.getAuthor().getId());
+        } else if (!Boolean.TRUE.equals(question.getIsAnonymous())) {
+            dto.setAuthorId(question.getAuthor().getId());
+        }
+        return dto;
+    }
+
+    private Boolean resolveAnonymousUseNickname(QuestionCreateDto dto) {
+        if (!Boolean.TRUE.equals(dto.getIsAnonymous())) {
+            return null;
+        }
+        if (dto.getAnonymousUseNickname() == null) {
+            return true;
+        }
+        return dto.getAnonymousUseNickname();
+    }
+
+    private String getDisplayName(User user, Section section, Boolean isAnonymous, Boolean anonymousUseNickname) {
+        if (!Boolean.TRUE.equals(isAnonymous)) {
             return user.getName();
         }
+        if (Boolean.FALSE.equals(anonymousUseNickname)) {
+            return "익명";
+        }
+        return pickUniqueRandomDisplayName(section);
+    }
+
+    /**
+     * 섹션 내 UserNickname 및 익명 질문 표시명과 겹치지 않게 형용사+명사 조합 생성
+     */
+    private String pickUniqueRandomDisplayName(Section section) {
+        for (int i = 0; i < 80; i++) {
+            String candidate = CommunityDisplayNameGenerator.randomDisplayName();
+            if (!isDisplayNameTakenInSection(section, candidate)) {
+                return candidate;
+            }
+        }
+        for (int j = 0; j < 40; j++) {
+            String base = CommunityDisplayNameGenerator.randomDisplayName();
+            String suffix = CommunityDisplayNameGenerator.numericSuffix();
+            String candidate = trimTo50(base + suffix);
+            if (!isDisplayNameTakenInSection(section, candidate)) {
+                return candidate;
+            }
+        }
+        return trimTo50("익명" + System.currentTimeMillis());
+    }
+
+    private static String trimTo50(String s) {
+        return s.length() > 50 ? s.substring(0, 50) : s;
+    }
+
+    private boolean isDisplayNameTakenInSection(Section section, String name) {
+        if (userNicknameRepository.existsBySectionAndNickname(section, name)) {
+            return true;
+        }
+        return questionRepository.existsBySectionAndIsAnonymousTrueAndAuthorDisplayName(section, name);
     }
 
     private boolean isInstructor(User user, Section section) {
@@ -324,10 +368,24 @@ public class QuestionService {
     }
 
     private QuestionResponseDto convertToResponseDto(Question question, Long currentUserId) {
+        User viewer = userRepository.findById(currentUserId)
+                .orElseThrow(() -> new CustomException("사용자를 찾을 수 없습니다"));
+        boolean manager = isInstructor(viewer, question.getSection());
+
         QuestionResponseDto dto = QuestionResponseDto.fromEntity(question);
         dto.setIsLikedByCurrentUser(
                 questionLikeRepository.existsByQuestionIdAndUserId(question.getId(), currentUserId));
         dto.setIsAuthor(question.getAuthor().getId().equals(currentUserId));
+
+        if (Boolean.TRUE.equals(question.getIsAnonymous()) && !manager) {
+            dto.setAuthorId(null);
+        } else {
+            dto.setAuthorId(question.getAuthor().getId());
+        }
+        if (manager) {
+            dto.setAuthorRealNameForStaff(question.getAuthor().getName());
+        }
+
         return dto;
     }
 }

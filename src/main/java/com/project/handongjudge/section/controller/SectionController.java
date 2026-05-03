@@ -19,6 +19,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.web.bind.annotation.*;
 import com.project.handongjudge.section.dto.SectionCopyRequest;
 import java.time.LocalDateTime;
@@ -45,9 +46,17 @@ public class SectionController {
     }
 
     @GetMapping("/{sectionId}")
-    public ResponseEntity<SectionInfoDto> getSectionInfo(@PathVariable Long sectionId) {
+    public ResponseEntity<SectionInfoDto> getSectionInfo(
+            @PathVariable Long sectionId,
+            Authentication authentication) {
         try {
-            SectionInfoDto sectionInfo = sectionService.getSectionInfo(sectionId);
+            Long userId = null;
+            if (authentication != null
+                    && authentication.isAuthenticated()
+                    && !(authentication instanceof AnonymousAuthenticationToken)) {
+                userId = Long.parseLong(authentication.getName());
+            }
+            SectionInfoDto sectionInfo = sectionService.getSectionInfo(sectionId, userId);
             return ResponseEntity.ok(sectionInfo);
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).build();

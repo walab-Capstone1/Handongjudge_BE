@@ -699,5 +699,44 @@ public class NotificationService {
             e.printStackTrace();
         }
     }
+
+    /**
+     * 과제 문제 반려 시 해당 학생에게 알림.
+     */
+    @Async("taskExecutor")
+    @Transactional
+    public void notifyStudentAssignmentProblemRejected(
+            User student, Assignment assignment, String problemTitle, User actor, Long relatedProblemId) {
+        try {
+            if (student == null || assignment == null) {
+                return;
+            }
+            Assignment loaded = assignmentRepository.findById(assignment.getId()).orElse(null);
+            if (loaded == null) {
+                return;
+            }
+            User a = actor != null ? actor : student;
+            String pTitle = problemTitle != null && !problemTitle.isBlank() ? problemTitle : "문제";
+            String msg = String.format(
+                    "[과제: %s] \"%s\" 문제가 반려 처리되었습니다. 코멘트를 확인하고 수정 후 다시 제출하세요. "
+                            + "재제출 후 채점에 통과하면 배점이 반영됩니다.",
+                    loaded.getTitle(),
+                    pTitle);
+            if (msg.length() > 500) {
+                msg = msg.substring(0, 497) + "...";
+            }
+            Notification notification = Notification.builder()
+                    .recipient(student)
+                    .actor(a)
+                    .assignment(loaded)
+                    .relatedProblemId(relatedProblemId)
+                    .type(Notification.NotificationType.ASSIGNMENT_PROBLEM_REJECTED)
+                    .message(msg)
+                    .build();
+            notificationRepository.save(notification);
+        } catch (Exception e) {
+            log.warn("과제 반려 알림 실패: {}", e.getMessage());
+        }
+    }
 }
 

@@ -11,6 +11,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.authentication.InsufficientAuthenticationException;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
@@ -32,7 +33,7 @@ public class QuestionController {
             @Valid @RequestBody QuestionCreateDto dto,
             Authentication authentication) {
         
-        Long userId = Long.parseLong(authentication.getName());
+        Long userId = extractUserId(authentication);
         QuestionResponseDto response = questionService.createQuestion(dto, userId);
 
         Map<String, Object> result = new HashMap<>();
@@ -51,7 +52,7 @@ public class QuestionController {
             @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable,
             Authentication authentication) {
         
-        Long userId = Long.parseLong(authentication.getName());
+        Long userId = extractUserId(authentication);
         Page<QuestionListDto> questions = questionService.getQuestionsBySection(
                 sectionId, status, userId, pageable);
 
@@ -69,7 +70,7 @@ public class QuestionController {
             @PathVariable Long questionId,
             Authentication authentication) {
         
-        Long userId = Long.parseLong(authentication.getName());
+        Long userId = extractUserId(authentication);
         QuestionResponseDto response = questionService.getQuestionById(questionId, userId);
 
         Map<String, Object> result = new HashMap<>();
@@ -87,7 +88,7 @@ public class QuestionController {
             @Valid @RequestBody QuestionUpdateDto dto,
             Authentication authentication) {
         
-        Long userId = Long.parseLong(authentication.getName());
+        Long userId = extractUserId(authentication);
         QuestionResponseDto response = questionService.updateQuestion(questionId, dto, userId);
 
         Map<String, Object> result = new HashMap<>();
@@ -104,7 +105,7 @@ public class QuestionController {
             @PathVariable Long questionId,
             Authentication authentication) {
         
-        Long userId = Long.parseLong(authentication.getName());
+        Long userId = extractUserId(authentication);
         questionService.deleteQuestion(questionId, userId);
 
         Map<String, Object> result = new HashMap<>();
@@ -120,7 +121,7 @@ public class QuestionController {
             @PathVariable Long questionId,
             Authentication authentication) {
         
-        Long userId = Long.parseLong(authentication.getName());
+        Long userId = extractUserId(authentication);
         QuestionResponseDto response = questionService.togglePin(questionId, userId);
 
         Map<String, Object> result = new HashMap<>();
@@ -137,7 +138,7 @@ public class QuestionController {
             @PathVariable Long questionId,
             Authentication authentication) {
         
-        Long userId = Long.parseLong(authentication.getName());
+        Long userId = extractUserId(authentication);
         QuestionResponseDto response = questionService.toggleResolve(questionId, userId);
 
         Map<String, Object> result = new HashMap<>();
@@ -157,7 +158,7 @@ public class QuestionController {
             @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable,
             Authentication authentication) {
         
-        Long userId = Long.parseLong(authentication.getName());
+        Long userId = extractUserId(authentication);
         Page<QuestionListDto> questions = questionService.searchQuestions(
                 sectionId, keyword, userId, pageable);
 
@@ -167,6 +168,21 @@ public class QuestionController {
         result.put("data", questions);
 
         return ResponseEntity.ok(result);
+    }
+
+    private Long extractUserId(Authentication authentication) {
+        if (authentication == null || !authentication.isAuthenticated()) {
+            throw new InsufficientAuthenticationException("인증 정보가 없습니다");
+        }
+        String principal = authentication.getName();
+        if (principal == null || principal.isBlank() || "anonymousUser".equals(principal)) {
+            throw new InsufficientAuthenticationException("인증 정보가 없습니다");
+        }
+        try {
+            return Long.parseLong(principal);
+        } catch (NumberFormatException e) {
+            throw new InsufficientAuthenticationException("유효하지 않은 인증 정보입니다");
+        }
     }
 }
 

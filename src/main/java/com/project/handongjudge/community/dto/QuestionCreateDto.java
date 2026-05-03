@@ -30,6 +30,11 @@ public class QuestionCreateDto {
     @NotNull(message = "익명 여부는 필수입니다")
     private Boolean isAnonymous;
 
+    /**
+     * 익명 질문일 때만 사용. true(기본): 섹션 별명으로 표시, false: 표시명 "익명" 고정
+     */
+    private Boolean anonymousUseNickname;
+
     @NotNull(message = "공개 여부는 필수입니다")
     private Boolean isPublic;
 }
