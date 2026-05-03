@@ -43,7 +43,12 @@ public class Grade {
     private Integer score; // 입력한 점수 (null 가능 - 미채점)
     
     @Column(length = 500)
-    private String comment; // 코멘트
+    private String comment; // 코멘트 (학생에게도 표시)
+
+    /** 강사·튜터 반려 태그 (true면 점수 0으로 처리) */
+    @Column(nullable = false)
+    @Builder.Default
+    private boolean rejected = false;
     
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "graded_by")

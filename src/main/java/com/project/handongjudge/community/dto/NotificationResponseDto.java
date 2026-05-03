@@ -22,6 +22,8 @@ public class NotificationResponseDto {
     private String noticeTitle;
     private Long assignmentId;
     private String assignmentTitle;
+    /** 과제 문제 반려 알림 등에서 이동할 문제 ID */
+    private Long relatedProblemId;
     private Long sectionId;
     private String courseTitle;
     private String sectionName; // "Course Title - Section N" 형식
@@ -65,6 +67,7 @@ public class NotificationResponseDto {
                 .noticeTitle(notification.getNotice() != null ? notification.getNotice().getTitle() : null)
                 .assignmentId(notification.getAssignment() != null ? notification.getAssignment().getId() : null)
                 .assignmentTitle(notification.getAssignment() != null ? notification.getAssignment().getTitle() : null)
+                .relatedProblemId(notification.getRelatedProblemId())
                 .sectionId(sectionId)
                 .courseTitle(courseTitle)
                 .sectionName(sectionName)
