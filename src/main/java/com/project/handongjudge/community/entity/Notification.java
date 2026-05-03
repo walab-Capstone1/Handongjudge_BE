@@ -64,6 +64,10 @@ public class Notification {
     @JsonIgnore
     private Assignment assignment;
 
+    /** 과제 문제 반려 등 과제 하위 문제 참조 (선택) */
+    @Column(name = "related_problem_id")
+    private Long relatedProblemId;
+
     // 알림 타입
     @Enumerated(EnumType.STRING)
     @Column(name = "type", nullable = false, length = 30)
@@ -94,7 +98,8 @@ public class Notification {
         NOTICE_CREATED,        // 새 공지사항 작성됨
         ASSIGNMENT_CREATED,    // 새 과제 생성됨
         ASSIGNMENT_DEADLINE,  // 과제 마감 임박/마감됨
-        STUDENT_ENROLLED      // 학생이 수업에 추가됨
+        STUDENT_ENROLLED,     // 학생이 수업에 추가됨
+        ASSIGNMENT_PROBLEM_REJECTED // 과제 문제 반려(학생 알림)
     }
 
     // 비즈니스 메서드

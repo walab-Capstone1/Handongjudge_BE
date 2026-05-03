@@ -23,6 +23,7 @@ public class GradeResponseDTO {
     private Integer points; // 배점
     private Integer score; // 입력한 점수
     private String comment;
+    private Boolean rejected;
     private LocalDateTime gradedAt;
     private String gradedByName;
     

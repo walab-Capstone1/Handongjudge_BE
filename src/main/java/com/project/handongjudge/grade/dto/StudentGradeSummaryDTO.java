@@ -40,6 +40,10 @@ public class StudentGradeSummaryDTO {
         private Integer passedTestCases;
         /** 전체 테스트케이스 수 */
         private Integer totalTestCases;
+        /** 강사·튜터 코멘트(학생에게도 동일 표시) */
+        private String comment;
+        /** 반려 태그 */
+        private Boolean rejected;
     }
 }
 
