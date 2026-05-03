@@ -17,6 +17,7 @@ import com.project.handongjudge.submission.service.SubmissionService;
 import com.project.handongjudge.user.entity.User;
 import com.project.handongjudge.user.repository.EnrollmentRepository;
 import com.project.handongjudge.user.repository.UserRepository;
+import com.project.handongjudge.community.service.NotificationService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -39,6 +40,23 @@ public class GradeServiceImpl implements GradeService {
     private final EnrollmentRepository enrollmentRepository;
     private final SectionRoleService sectionRoleService;
     private final SubmissionService submissionService;
+    private final NotificationService notificationService;
+
+    @Override
+    public void clearRejectedOnAcForAssignmentProblem(Long userId, Long sectionId, Long problemId) {
+        List<AssignmentProblem> aps = assignmentProblemRepository.findByProblemIdAndSectionId(problemId, sectionId);
+        for (AssignmentProblem ap : aps) {
+            Long aid = ap.getAssignment().getId();
+            gradeRepository.findByAssignmentIdAndProblemIdAndStudentId(aid, problemId, userId)
+                    .ifPresent(g -> {
+                        if (g.isRejected()) {
+                            g.setRejected(false);
+                            g.setScore(null);
+                            gradeRepository.save(g);
+                        }
+                    });
+        }
+    }
 
     @Override
     public GradeResponseDTO saveGrade(GradeRequestDTO request, Long tutorId) {
@@ -55,13 +73,6 @@ public class GradeServiceImpl implements GradeService {
         AssignmentProblem assignmentProblem = assignmentProblemRepository
                 .findByAssignmentIdAndProblemId(request.getAssignmentId(), request.getProblemId())
                 .orElseThrow(() -> new IllegalArgumentException("과제 문제를 찾을 수 없습니다"));
-
-        // 3. 점수 유효성 검증
-        if (request.getScore() != null && request.getScore() > assignmentProblem.getPoints()) {
-            throw new IllegalArgumentException(
-                    "점수는 배점(" + assignmentProblem.getPoints() + ")을 초과할 수 없습니다"
-            );
-        }
 
         // 4. 기존 성적 조회 또는 생성
         Grade grade = gradeRepository
@@ -81,7 +92,31 @@ public class GradeServiceImpl implements GradeService {
             grade.setPoints(assignmentProblem.getPoints());
         }
 
-        grade.setScore(request.getScore());
+        int maxPoints = assignmentProblem.getPoints() != null ? assignmentProblem.getPoints() : 1;
+        Boolean rej = request.getRejected();
+        if (Boolean.TRUE.equals(rej)) {
+            grade.setScore(0);
+            grade.setRejected(true);
+        } else if (Boolean.FALSE.equals(rej)) {
+            grade.setRejected(false);
+            if (request.getScore() != null && request.getScore() > maxPoints) {
+                throw new IllegalArgumentException(
+                        "점수는 배점(" + maxPoints + ")을 초과할 수 없습니다"
+                );
+            }
+            grade.setScore(request.getScore());
+        } else {
+            // rejected 미전송: 코멘트만 수정 등 — 기존 행이면 반려·점수 유지
+            if (grade.getId() == null) {
+                grade.setRejected(false);
+                if (request.getScore() != null && request.getScore() > maxPoints) {
+                    throw new IllegalArgumentException(
+                            "점수는 배점(" + maxPoints + ")을 초과할 수 없습니다"
+                    );
+                }
+                grade.setScore(request.getScore());
+            }
+        }
         grade.setComment(request.getComment());
         grade.setGradedBy(userRepository.findById(tutorId)
                 .orElseThrow(() -> new IllegalArgumentException("튜터를 찾을 수 없습니다")));
@@ -89,6 +124,14 @@ public class GradeServiceImpl implements GradeService {
 
         // 6. 저장
         Grade savedGrade = gradeRepository.save(grade);
+
+        if (Boolean.TRUE.equals(rej)) {
+            User student = savedGrade.getStudent();
+            Problem prob = savedGrade.getProblem();
+            User tutor = userRepository.findById(tutorId).orElse(null);
+            notificationService.notifyStudentAssignmentProblemRejected(
+                    student, assignment, prob.getTitle(), tutor, prob.getId());
+        }
 
         // 7. 제출 정보 조회
         Optional<Submission> latestSubmission = findLatestSubmission(
@@ -152,15 +195,19 @@ public class GradeServiceImpl implements GradeService {
 
             for (AssignmentProblem ap : assignmentProblems) {
                 Problem problem = ap.getProblem();
+                int problemPoints = ap.getPoints() != null ? ap.getPoints() : 1;
                 StudentGradeSummaryDTO.ProblemGradeDTO pg = new StudentGradeSummaryDTO.ProblemGradeDTO();
                 pg.setProblemId(problem.getId());
                 pg.setProblemTitle(problem.getTitle());
-                pg.setPoints(1); // 과제/퀴즈: 통과 시 1점
-                totalPoints += 1;
+                pg.setPoints(problemPoints);
+                totalPoints += problemPoints;
 
+                Optional<Grade> gradeOpt = gradeRepository
+                        .findByAssignmentIdAndProblemIdAndStudentId(assignmentId, problem.getId(), student.getId());
                 Optional<Submission> submission = findLatestSubmission(
                         student.getId(), problem.getId(), sectionId);
 
+                int autoScore = 0;
                 if (submission.isPresent()) {
                     Submission sub = submission.get();
                     submissionService.backfillTestCaseCountsIfMissing(sub);
@@ -178,18 +225,31 @@ public class GradeServiceImpl implements GradeService {
                     pg.setPassedTestCases(sub.getPassedTestCases());
                     pg.setTotalTestCases(sub.getTotalTestCases());
                     if ("AC".equals(sub.getResult())) {
-                        pg.setScore(1);
-                        totalScore += 1;
-                    } else {
-                        pg.setScore(0);
+                        autoScore = problemPoints;
                     }
                 } else {
                     pg.setSubmitted(false);
                     pg.setIsOnTime(false);
                     pg.setLateDuration("");
-                    pg.setScore(0);
                 }
 
+                if (gradeOpt.isPresent()) {
+                    Grade g = gradeOpt.get();
+                    pg.setComment(g.getComment());
+                    pg.setRejected(g.isRejected());
+                    if (g.getScore() != null) {
+                        pg.setScore(g.getScore());
+                    } else {
+                        pg.setScore(autoScore);
+                    }
+                } else {
+                    pg.setComment(null);
+                    pg.setRejected(false);
+                    pg.setScore(autoScore);
+                }
+
+                int rowScore = pg.getScore() != null ? pg.getScore() : 0;
+                totalScore += rowScore;
                 problemGrades.add(pg);
             }
 
@@ -226,15 +286,19 @@ public class GradeServiceImpl implements GradeService {
 
         for (AssignmentProblem ap : assignmentProblems) {
             Problem problem = ap.getProblem();
+            int problemPoints = ap.getPoints() != null ? ap.getPoints() : 1;
             StudentGradeSummaryDTO.ProblemGradeDTO pg = new StudentGradeSummaryDTO.ProblemGradeDTO();
             pg.setProblemId(problem.getId());
             pg.setProblemTitle(problem.getTitle());
-            pg.setPoints(1);
-            totalPoints += 1;
+            pg.setPoints(problemPoints);
+            totalPoints += problemPoints;
 
+            Optional<Grade> gradeOpt = gradeRepository
+                    .findByAssignmentIdAndProblemIdAndStudentId(assignmentId, problem.getId(), userId);
             Optional<Submission> submission = findLatestSubmission(
                     userId, problem.getId(), assignment.getSection().getId());
 
+            int autoScore = 0;
             if (submission.isPresent()) {
                 Submission sub = submission.get();
                 submissionService.backfillTestCaseCountsIfMissing(sub);
@@ -252,18 +316,31 @@ public class GradeServiceImpl implements GradeService {
                 pg.setPassedTestCases(sub.getPassedTestCases());
                 pg.setTotalTestCases(sub.getTotalTestCases());
                 if ("AC".equals(sub.getResult())) {
-                    pg.setScore(1);
-                    totalScore += 1;
-                } else {
-                    pg.setScore(0);
+                    autoScore = problemPoints;
                 }
             } else {
                 pg.setSubmitted(false);
                 pg.setIsOnTime(false);
                 pg.setLateDuration("");
-                pg.setScore(0);
             }
 
+            if (gradeOpt.isPresent()) {
+                Grade g = gradeOpt.get();
+                pg.setComment(g.getComment());
+                pg.setRejected(g.isRejected());
+                if (g.getScore() != null) {
+                    pg.setScore(g.getScore());
+                } else {
+                    pg.setScore(autoScore);
+                }
+            } else {
+                pg.setComment(null);
+                pg.setRejected(false);
+                pg.setScore(autoScore);
+            }
+
+            int rowScore = pg.getScore() != null ? pg.getScore() : 0;
+            totalScore += rowScore;
             problemGrades.add(pg);
         }
 
@@ -337,6 +414,7 @@ public class GradeServiceImpl implements GradeService {
                 .points(grade.getPoints())
                 .score(grade.getScore())
                 .comment(grade.getComment())
+                .rejected(grade.isRejected())
                 .gradedAt(grade.getGradedAt());
 
         if (grade.getGradedBy() != null) {

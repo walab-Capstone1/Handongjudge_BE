@@ -20,6 +20,8 @@ import com.project.handongjudge.notice.repository.NoticeRepository;
 import com.project.handongjudge.assignment.entity.Assignment;
 import com.project.handongjudge.assignment.repository.AssignmentRepository;
 import com.project.handongjudge.assignment.repository.AssignmentProblemRepository;
+import com.project.handongjudge.grade.entity.Grade;
+import com.project.handongjudge.grade.repository.GradeRepository;
 import com.project.handongjudge.quiz.repository.QuizProblemRepository;
 import com.project.handongjudge.submission.repository.SubmissionRepository;
 import lombok.extern.slf4j.Slf4j;
@@ -61,6 +63,7 @@ public class UserService {
     private final ProblemRepository problemRepository;
     private final QuizProblemRepository quizProblemRepository;
     private final NotificationService notificationService;
+    private final GradeRepository gradeRepository;
 
     @Autowired
     public UserService(UserRepository userRepository,
@@ -76,6 +79,7 @@ public class UserService {
                        SubmissionRepository submissionRepository,
                        ProblemRepository problemRepository,
                        QuizProblemRepository quizProblemRepository,
+                       GradeRepository gradeRepository,
                        @Lazy NotificationService notificationService,
                        @Lazy PasswordEncoder passwordEncoder) {
         this.userRepository = userRepository;
@@ -92,6 +96,7 @@ public class UserService {
         this.submissionRepository = submissionRepository;
         this.problemRepository = problemRepository;
         this.quizProblemRepository = quizProblemRepository;
+        this.gradeRepository = gradeRepository;
         this.notificationService = notificationService;
     }
 
@@ -564,6 +569,19 @@ public class UserService {
             }
 
             int submissionCount = submissionRepository.countByUserIdAndProblemId(userId, problemId);
+            String gradeComment = null;
+            Boolean gradeRejected = null;
+            LocalDateTime gradeRejectedAt = null;
+            Optional<Grade> maybeGrade = gradeRepository.findByAssignmentIdAndProblemIdAndStudentId(
+                    assignmentId, problemId, userId);
+            if (maybeGrade.isPresent()) {
+                Grade g = maybeGrade.get();
+                gradeComment = g.getComment();
+                gradeRejected = g.isRejected();
+                if (g.isRejected()) {
+                    gradeRejectedAt = g.getGradedAt();
+                }
+            }
             problemStatusList.add(StudentProblemStatusDto.builder()
                     .problemId(problemId)
                     .problemTitle(problem.getTitle())
@@ -572,6 +590,9 @@ public class UserService {
                     .isOnTime(isOnTime)
                     .submittedAt(submittedAt)
                     .minutesLate(minutesLate)
+                    .gradeComment(gradeComment)
+                    .gradeRejected(gradeRejected)
+                    .gradeRejectedAt(gradeRejectedAt)
                     .build());
         }
 

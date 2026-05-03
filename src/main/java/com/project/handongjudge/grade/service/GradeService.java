@@ -29,5 +29,10 @@ public interface GradeService {
     
     // 과제의 모든 문제 배점 일괄 설정
     void setBulkProblemPoints(Long assignmentId, Map<Long, Integer> problemPoints);
+
+    /**
+     * 과제 제출이 AC로 확정된 뒤, 해당 문제에 반려(Grade)가 있으면 해제하고 수동 0점을 풀어 자동 채점 반영.
+     */
+    void clearRejectedOnAcForAssignmentProblem(Long userId, Long sectionId, Long problemId);
 }
 

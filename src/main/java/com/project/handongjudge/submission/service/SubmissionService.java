@@ -11,6 +11,7 @@ import com.project.handongjudge.submission.dto.SubmissionAuthDTO;
 import com.project.handongjudge.submission.entity.Output;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.security.core.Authentication;
 import org.springframework.transaction.annotation.Transactional;
 import org.slf4j.Logger;
@@ -50,6 +51,7 @@ import java.util.stream.Collectors;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.project.handongjudge.domjudge.service.DomjudgeService;
+import com.project.handongjudge.grade.service.GradeService;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import org.springframework.web.client.HttpClientErrorException;
@@ -79,6 +81,20 @@ public class SubmissionService {
     private final QuizRepository quizRepository;
     private final QuizProblemRepository quizProblemRepository;
     private final SubmissionMetricRepository submissionMetricRepository;
+    private final ObjectProvider<GradeService> gradeServiceProvider;
+
+    private void maybeClearAssignmentRejectIfAc(Submission submission) {
+        if (submission == null || submission.getResult() == null) {
+            return;
+        }
+        if (!"AC".equals(submission.getResult())) {
+            return;
+        }
+        gradeServiceProvider.getObject().clearRejectedOnAcForAssignmentProblem(
+                submission.getUser().getId(),
+                submission.getSection().getId(),
+                submission.getProblem().getId());
+    }
 
     @Getter
     @AllArgsConstructor
@@ -271,6 +287,7 @@ public class SubmissionService {
             savedSubmission.setResult(judged.getResult());
             applyTestCaseCountsFromOutput(savedSubmission, judged);
             submissionRepository.save(savedSubmission);
+            maybeClearAssignmentRejectIfAc(savedSubmission);
 
             metric.setSubmission(savedSubmission);
             long e2eDuration = System.currentTimeMillis() - e2eStart;
@@ -644,6 +661,7 @@ public class SubmissionService {
 
         // 이미 결과가 저장된 경우 즉시 반환 (DOMjudge 호출 없음)
         if (submission.getResult() != null && !submission.getResult().isEmpty()) {
+            maybeClearAssignmentRejectIfAc(submission);
             return buildQuizResponseFromSubmission(submission, null);
         }
 
@@ -709,6 +727,7 @@ public class SubmissionService {
         // 최신 Submission 재조회 (다른 요청이 먼저 저장했을 수도 있음)
         Submission latest = submissionRepository.findById(submissionDbId)
                 .orElseThrow(() -> new RuntimeException("Submission not found"));
+        maybeClearAssignmentRejectIfAc(latest);
 
         return buildQuizResponseFromSubmission(latest, outputDTO.getOutputList());
     }
