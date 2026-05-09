@@ -2,7 +2,7 @@ package com.project.handongjudge.submission.service;
 
 import com.project.handongjudge.section.entity.Contest;
 import com.project.handongjudge.section.repository.ContestRepository;
-import com.project.handongjudge.submission.dto.QuizSubmitResponseDTO;
+import com.project.handongjudge.submission.dto.AsyncSubmitResponseDTO;
 import com.project.handongjudge.submission.dto.SubmissionOutputResponseDTO;
 import com.project.handongjudge.submission.dto.SubmissionQuizResponseDTO;
 import com.project.handongjudge.submission.dto.SubmissionRequestDTO;
@@ -68,6 +68,8 @@ public class SubmissionService {
     private static final ZoneId UTC_ZONE = ZoneId.of("UTC");
     private static final long POLL_INITIAL_BACKOFF_MS = 500L;
     private static final long POLL_MAX_BACKOFF_MS = 3_000L;
+    private static final String FLOW_ASSIGNMENT_ASYNC = "assignmentAsyncSubmit";
+    private static final String FLOW_QUIZ_ASYNC = "quizAsyncSubmit";
     private final SubmissionRepository submissionRepository;
     private final UserRepository userRepository;
     private final ProblemRepository problemRepository;
@@ -94,6 +96,57 @@ public class SubmissionService {
                 submission.getUser().getId(),
                 submission.getSection().getId(),
                 submission.getProblem().getId());
+    }
+
+    /** 비동기 제출 직후: submit 핸들러 시간·DOMjudge submitCode 구간을 submission_metrics에 저장 */
+    private void persistAsyncSubmitMetric(Submission saved, SubmissionAuthDTO dto, long handlerStartedAtMs,
+                                          long submitCodeStartedAtMs, long submitCodeEndedAtMs, String flowType) {
+        long submitDurationMs = submitCodeEndedAtMs - submitCodeStartedAtMs;
+        long submitHandlerDurationMs = System.currentTimeMillis() - handlerStartedAtMs;
+        try {
+            SubmissionMetric metric = SubmissionMetric.builder()
+                    .measuredAt(LocalDateTime.now(KST_ZONE))
+                    .submission(saved)
+                    .flowType(flowType)
+                    .language(dto.getLanguage())
+                    .problemId(dto.getProblemId())
+                    .sectionId(dto.getSectionId())
+                    .domjudgeSubmissionId(saved.getSubmissionId())
+                    .submitDurationMs(submitDurationMs)
+                    .submitHandlerDurationMs(submitHandlerDurationMs)
+                    .timedOut(false)
+                    .build();
+            submissionMetricRepository.save(metric);
+        } catch (Exception ex) {
+            log.error("[METRIC] Failed to save async submit metric: {}", ex.getMessage());
+        }
+    }
+
+    /** GET result 1회당: getResultOutput 소요시간 누적 + polling_attempts (단일 UPDATE). */
+    private void recordAsyncPollSample(long submissionDbId, long getResultDurationMs) {
+        try {
+            submissionMetricRepository.addAsyncPollSampleBySubmissionId(submissionDbId, getResultDurationMs);
+        } catch (Exception ex) {
+            log.warn("[METRIC] record async poll sample failed submissionId={}: {}", submissionDbId, ex.getMessage());
+        }
+    }
+
+    /** 채점 결과가 DB에 확정된 뒤: e2e = submit_handler_duration_ms + judging_duration_ms (최초 1회만). */
+    private void finalizeAsyncMetricE2eIfPending(long submissionDbId) {
+        try {
+            submissionMetricRepository.findBySubmission_Id(submissionDbId).ifPresent(metric -> {
+                if (metric.getE2eDurationMs() != null) {
+                    return;
+                }
+                SubmissionMetric fresh = submissionMetricRepository.findById(metric.getId()).orElse(metric);
+                long handler = fresh.getSubmitHandlerDurationMs() != null ? fresh.getSubmitHandlerDurationMs() : 0L;
+                long judging = fresh.getJudgingDurationMs() != null ? fresh.getJudgingDurationMs() : 0L;
+                fresh.setE2eDurationMs(handler + judging);
+                submissionMetricRepository.save(fresh);
+            });
+        } catch (Exception ex) {
+            log.warn("[METRIC] finalize async e2e failed submissionId={}: {}", submissionDbId, ex.getMessage());
+        }
     }
 
     @Getter
@@ -569,15 +622,187 @@ public class SubmissionService {
     }
 
     // =========================================================================
-    // Phase 2: Submit / Result 분리 API (클라이언트 폴링)
+    // 과제 비동기 제출 — Submit / Result 분리 API (클라이언트 폴링)
+    // =========================================================================
+
+    /**
+     * 과제 비동기 제출: DOMjudge에 코드를 제출하고 pending Submission을 DB에 저장한 뒤 즉시 반환.
+     * 채점 결과는 GET /api/submissions/result/{submissionDbId} 로 클라이언트가 폴링.
+     */
+    public AsyncSubmitResponseDTO submitAssignmentAsync(Authentication authentication, SubmissionAuthDTO submissionRequestDTO) {
+        long handlerStartMs = System.currentTimeMillis();
+        Long userId = Long.parseLong(authentication.getName());
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+        Problem problem = problemRepository.findById(submissionRequestDTO.getProblemId())
+                .orElseThrow(() -> new RuntimeException("Problem not found"));
+        Section section = sectionRepository.findById(submissionRequestDTO.getSectionId())
+                .orElseThrow(() -> new RuntimeException("Section not found"));
+
+        validateSubmission(
+                submissionRequestDTO.getProblemId(),
+                submissionRequestDTO.getSectionId(),
+                userId
+        );
+
+        String contestId = String.valueOf(section.getId());
+        String teamId = enrollmentRepository.findTeamIdByUserIdAndSectionId(user.getId(), section.getId());
+        String domjudgeProblemId = problem.getDomjudgeProblemId();
+
+        if (teamId == null || teamId.isEmpty()) {
+            throw new RuntimeException("현재 수업에 수강신청되어 있지 않습니다. 수강 신청 후 제출해 주세요.");
+        }
+
+        File codeFile = CodeExtenstion.StringToFile(
+                submissionRequestDTO.getLanguage(),
+                submissionRequestDTO.getCodeString()
+        );
+
+        long submitCodeStartMs = System.currentTimeMillis();
+        String domjudgeSubmissionId = domjudgeService.submitCode(
+                contestId, teamId, domjudgeProblemId,
+                submissionRequestDTO.getLanguage(), codeFile
+        );
+        long submitCodeEndMs = System.currentTimeMillis();
+        log.info("[ASYNC] Assignment DOMjudge submission created: {}", domjudgeSubmissionId);
+
+        if (codeFile != null) {
+            try {
+                Files.deleteIfExists(codeFile.toPath());
+                log.debug("TmpFile deleted: {}", codeFile.getName());
+            } catch (IOException e) {
+                log.error("Failed to delete TmpFile: {}", e.getMessage());
+            }
+        }
+
+        Submission submission = Submission.builder()
+                .problem(problem)
+                .user(user)
+                .language(submissionRequestDTO.getLanguage())
+                .code(submissionRequestDTO.getCodeString())
+                .submittedAt(LocalDateTime.now(KST_ZONE))
+                .build();
+        submission.setSection(section);
+        submission.setSubmissionId(domjudgeSubmissionId);
+        Submission saved = submissionRepository.save(submission);
+
+        persistAsyncSubmitMetric(saved, submissionRequestDTO, handlerStartMs, submitCodeStartMs, submitCodeEndMs,
+                FLOW_ASSIGNMENT_ASYNC);
+
+        return AsyncSubmitResponseDTO.builder()
+                .submissionDbId(saved.getId())
+                .submissionId(domjudgeSubmissionId)
+                .problemId(problem.getId())
+                .sectionId(section.getId())
+                .language(submissionRequestDTO.getLanguage())
+                .submittedAt(saved.getSubmittedAt())
+                .build();
+    }
+
+    /**
+     * 과제 채점 결과 조회 — DB에 결과가 있으면 즉시 반환, 없으면 DOMjudge에 1회 조회.
+     * 채점 중이면 {@code null} 반환 (컨트롤러에서 204 No Content 처리).
+     */
+    @Transactional
+    public SubmissionResponseDTO getAssignmentResult(Authentication authentication, Long submissionDbId) {
+        Long userId = Long.parseLong(authentication.getName());
+
+        Submission submission = submissionRepository.findById(submissionDbId)
+                .orElseThrow(() -> new RuntimeException("Submission not found"));
+
+        if (!submission.getUser().getId().equals(userId) &&
+                !sectionRoleService.isManager(userId, submission.getSection().getId())) {
+            throw new IllegalArgumentException("해당 제출에 접근할 권한이 없습니다.");
+        }
+
+        // 이미 결과가 저장된 경우 즉시 반환 (DOMjudge 호출 없음)
+        if (submission.getResult() != null && !submission.getResult().isEmpty()) {
+            maybeClearAssignmentRejectIfAc(submission);
+            return toSubmissionResponseDTO(submission);
+        }
+
+        // DOMjudge에 1회 조회
+        String cid = String.valueOf(submission.getSection().getId());
+        String domjudgeSubmissionId = submission.getSubmissionId();
+
+        long pollStartMs = System.currentTimeMillis();
+        SubmissionOutputResponseDTO outputDTO = null;
+        try {
+            outputDTO = domjudgeService.getResultOutput(cid, domjudgeSubmissionId);
+        } catch (HttpClientErrorException e) {
+            if (e.getStatusCode().value() == 404) {
+                return null;
+            }
+            log.warn("[ASYNC] getResultOutput client error status={} submissionId={}",
+                    e.getStatusCode(), domjudgeSubmissionId);
+            throw new RuntimeException("채점 서버에서 오류가 발생했습니다.", e);
+        } catch (ResourceAccessException e) {
+            log.warn("[ASYNC] getResultOutput network error submissionId={} error={}",
+                    domjudgeSubmissionId, e.getMessage());
+            return null;
+        } catch (JsonProcessingException e) {
+            throw new RuntimeException("채점 결과를 해석하는 중 오류가 발생했습니다.", e);
+        } catch (Exception e) {
+            log.warn("[ASYNC] getResultOutput unexpected error submissionId={} error={}",
+                    domjudgeSubmissionId, e.getMessage());
+            return null;
+        } finally {
+            recordAsyncPollSample(submissionDbId, System.currentTimeMillis() - pollStartMs);
+        }
+
+        if (outputDTO == null || outputDTO.getResult() == null || outputDTO.getResult().isEmpty()) {
+            return null;
+        }
+
+        // CE는 outputList 없이도 완료 판정
+        boolean isReady;
+        if ("CE".equals(outputDTO.getResult())) {
+            isReady = true;
+        } else if (outputDTO.getOutputList() != null && !outputDTO.getOutputList().isEmpty()) {
+            isReady = outputDTO.getOutputList().stream()
+                    .allMatch(o -> o.getResult() != null && !o.getResult().isEmpty());
+        } else {
+            return null;
+        }
+
+        if (!isReady) {
+            return null;
+        }
+
+        // 테스트케이스 수·정답 수 계산
+        int passedCount = 0;
+        int totalCount = 0;
+        if (outputDTO.getOutputList() != null && !outputDTO.getOutputList().isEmpty()) {
+            totalCount = outputDTO.getOutputList().size();
+            passedCount = (int) outputDTO.getOutputList().stream()
+                    .filter(o -> "correct".equals(o.getResult()))
+                    .count();
+        }
+
+        submissionRepository.updateResultIfPending(
+                submissionDbId, outputDTO.getResult(), passedCount, totalCount);
+
+        Submission latest = submissionRepository.findById(submissionDbId)
+                .orElseThrow(() -> new RuntimeException("Submission not found"));
+        if (latest.getResult() != null && !latest.getResult().isEmpty()) {
+            finalizeAsyncMetricE2eIfPending(submissionDbId);
+        }
+        maybeClearAssignmentRejectIfAc(latest);
+
+        return toSubmissionResponseDTO(latest);
+    }
+
+    // =========================================================================
+    // Phase 2: Submit / Result 분리 API (클라이언트 폴링) — 퀴즈 전용
     // =========================================================================
 
     /**
      * Phase 2: DOMjudge에 코드 제출 후 pending Submission을 DB에 저장하고 즉시 반환.
      * 채점 결과는 GET /result/{submissionDbId} 로 클라이언트가 폴링.
      */
-    public QuizSubmitResponseDTO submitQuizCodeAsync(Authentication authentication, SubmissionAuthDTO submissionRequestDTO) {
+    public AsyncSubmitResponseDTO submitQuizCodeAsync(Authentication authentication, SubmissionAuthDTO submissionRequestDTO) {
         validateQuizLanguage(submissionRequestDTO.getLanguage());
+        long handlerStartMs = System.currentTimeMillis();
 
         Long userId = Long.parseLong(authentication.getName());
         User user = userRepository.findById(userId)
@@ -606,10 +831,12 @@ public class SubmissionService {
                 submissionRequestDTO.getCodeString()
         );
 
+        long submitCodeStartMs = System.currentTimeMillis();
         String domjudgeSubmissionId = domjudgeService.submitCode(
                 contestId, teamId, domjudgeProblemId,
                 submissionRequestDTO.getLanguage(), codeFile
         );
+        long submitCodeEndMs = System.currentTimeMillis();
         log.info("[PHASE2] DOMjudge submission created: {}", domjudgeSubmissionId);
 
         if (codeFile != null) {
@@ -632,7 +859,10 @@ public class SubmissionService {
         submission.setSubmissionId(domjudgeSubmissionId);
         Submission saved = submissionRepository.save(submission);
 
-        return QuizSubmitResponseDTO.builder()
+        persistAsyncSubmitMetric(saved, submissionRequestDTO, handlerStartMs, submitCodeStartMs, submitCodeEndMs,
+                FLOW_QUIZ_ASYNC);
+
+        return AsyncSubmitResponseDTO.builder()
                 .submissionDbId(saved.getId())
                 .submissionId(domjudgeSubmissionId)
                 .problemId(problem.getId())
@@ -669,7 +899,8 @@ public class SubmissionService {
         String cid = String.valueOf(submission.getSection().getId());
         String domjudgeSubmissionId = submission.getSubmissionId();
 
-        SubmissionOutputResponseDTO outputDTO;
+        long pollStartMs = System.currentTimeMillis();
+        SubmissionOutputResponseDTO outputDTO = null;
         try {
             outputDTO = domjudgeService.getResultOutput(cid, domjudgeSubmissionId);
         } catch (HttpClientErrorException e) {
@@ -689,6 +920,8 @@ public class SubmissionService {
             log.warn("[PHASE2] getResultOutput unexpected error submissionId={} error={}",
                     domjudgeSubmissionId, e.getMessage());
             return null;
+        } finally {
+            recordAsyncPollSample(submissionDbId, System.currentTimeMillis() - pollStartMs);
         }
 
         if (outputDTO == null || outputDTO.getResult() == null || outputDTO.getResult().isEmpty()) {
@@ -727,6 +960,9 @@ public class SubmissionService {
         // 최신 Submission 재조회 (다른 요청이 먼저 저장했을 수도 있음)
         Submission latest = submissionRepository.findById(submissionDbId)
                 .orElseThrow(() -> new RuntimeException("Submission not found"));
+        if (latest.getResult() != null && !latest.getResult().isEmpty()) {
+            finalizeAsyncMetricE2eIfPending(submissionDbId);
+        }
         maybeClearAssignmentRejectIfAc(latest);
 
         return buildQuizResponseFromSubmission(latest, outputDTO.getOutputList());
