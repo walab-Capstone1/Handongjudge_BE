@@ -91,12 +91,12 @@ public class TestOutputPollingTask {
                                         output.getMemoryUsed()
                                 );
                                 //Debug for SSE  ,to check if the SSE is working in web browser testcase by testcase
-                                try {
-                                    Thread.sleep(500); // 0.5초 간격
-                                } catch (InterruptedException e) {
-                                    Thread.currentThread().interrupt();
-                                    return;
-                                }
+                                // try {
+                                //     Thread.sleep(500); // 0.5초 간격
+                                // } catch (InterruptedException e) {
+                                //     Thread.currentThread().interrupt();
+                                //     return;
+                                // }
 
                             }
                         }
