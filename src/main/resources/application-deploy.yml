@@ -3,6 +3,15 @@
 spring:
   jpa:
     show-sql: false
+  datasource:
+    hikari:
+      maximum-pool-size: 25
+      minimum-idle: 5
+      connection-timeout: 30000     # 커넥션 획득 최대 대기 시간 (ms)
+      idle-timeout: 600000          # 유휴 커넥션 유지 시간 (ms)
+      max-lifetime: 1800000         # 커넥션 최대 수명 (ms), MariaDB wait_timeout 이하
+      keepalive-time: 60000         # 유휴 커넥션 ping 주기 (ms)
+      pool-name: HikariPool-Deploy
   redis:
     host: ${REDIS_HOST}
     port: ${REDIS_PORT:6379}
