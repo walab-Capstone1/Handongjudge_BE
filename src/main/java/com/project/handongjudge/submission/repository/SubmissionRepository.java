@@ -158,6 +158,12 @@ public interface SubmissionRepository extends JpaRepository<Submission, Long> {
     List<Submission> findByProblemId(@Param("problemId") Long problemId);
 
     /**
+     * SSE 폴링 태스크에서 LazyLoading 없이 section 정보를 함께 로드.
+     */
+    @Query("SELECT s FROM Submission s JOIN FETCH s.section WHERE s.id = :id")
+    Optional<Submission> findByIdWithSection(@Param("id") Long id);
+
+    /**
      * Phase 2: result가 아직 null인 경우에만 결과를 저장 (레이스 컨디션 방지).
      * 반환값이 1이면 이 요청이 결과를 저장한 것, 0이면 이미 다른 요청이 먼저 저장한 것.
      */
