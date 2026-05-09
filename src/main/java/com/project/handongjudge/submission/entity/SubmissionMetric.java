@@ -26,6 +26,10 @@ public class SubmissionMetric {
     @Column(name = "submit_duration_ms")
     private Long submitDurationMs;
 
+    /** 비동기 제출 API 전체: 검증·파일·submitCode·DB 저장까지의 서버 처리 시간(ms). e2e = 이 값 + judging_duration_ms 누적 */
+    @Column(name = "submit_handler_duration_ms")
+    private Long submitHandlerDurationMs;
+
     @Column(name = "judging_duration_ms")
     private Long judgingDurationMs;
 

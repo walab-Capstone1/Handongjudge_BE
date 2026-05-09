@@ -1,6 +1,6 @@
 package com.project.handongjudge.quiz.controller;
 
-import com.project.handongjudge.submission.dto.QuizSubmitResponseDTO;
+import com.project.handongjudge.submission.dto.AsyncSubmitResponseDTO;
 import com.project.handongjudge.submission.dto.SubmissionAuthDTO;
 import com.project.handongjudge.submission.dto.SubmissionQuizResponseDTO;
 import com.project.handongjudge.submission.service.SubmissionService;
@@ -37,7 +37,7 @@ public class QuizSubmissionController {
      * 서블릿 스레드 점유 없이 ~1초 내에 응답.
      */
     @PostMapping("/submit")
-    public QuizSubmitResponseDTO submitQuizCodeAsync(
+    public AsyncSubmitResponseDTO submitQuizCodeAsync(
             Authentication authentication,
             @RequestBody SubmissionAuthDTO request
     ) {

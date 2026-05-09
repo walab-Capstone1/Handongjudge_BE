@@ -1,5 +1,6 @@
 package com.project.handongjudge.submission.controller;
 
+import com.project.handongjudge.submission.dto.AsyncSubmitResponseDTO;
 import com.project.handongjudge.submission.dto.SubmissionOutputResponseDTO;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -50,6 +51,38 @@ public class SubmissionController {
             @RequestParam("submissionId") String submissionId) {
 
         SubmissionOutputResponseDTO result = submissionService.getResultOutput(sectionId, submissionId);
+        return ResponseEntity.ok(result);
+    }
+
+    // =========================================================================
+    // 과제 비동기 제출 — Submit / Result 분리 API
+    // =========================================================================
+
+    /**
+     * 과제 비동기 제출: DOMjudge에 코드 제출 후 submissionDbId를 즉시 반환.
+     * 클라이언트는 GET /api/submissions/result/{submissionDbId} 를 폴링해 결과를 확인.
+     */
+    @PostMapping("/submit")
+    public ResponseEntity<AsyncSubmitResponseDTO> submitAssignmentAsync(
+            Authentication authentication,
+            @RequestBody SubmissionAuthDTO request) {
+        AsyncSubmitResponseDTO result = submissionService.submitAssignmentAsync(authentication, request);
+        return ResponseEntity.ok(result);
+    }
+
+    /**
+     * 과제 채점 결과 조회.
+     * 채점 완료 → 200 OK + SubmissionResponseDTO
+     * 채점 중   → 204 No Content
+     */
+    @GetMapping("/result/{submissionDbId}")
+    public ResponseEntity<SubmissionResponseDTO> getAssignmentResult(
+            Authentication authentication,
+            @PathVariable Long submissionDbId) {
+        SubmissionResponseDTO result = submissionService.getAssignmentResult(authentication, submissionDbId);
+        if (result == null) {
+            return ResponseEntity.noContent().build();
+        }
         return ResponseEntity.ok(result);
     }
 
