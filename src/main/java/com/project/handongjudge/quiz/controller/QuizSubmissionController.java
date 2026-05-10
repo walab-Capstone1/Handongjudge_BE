@@ -3,6 +3,7 @@ package com.project.handongjudge.quiz.controller;
 import com.project.handongjudge.submission.dto.AsyncSubmitResponseDTO;
 import com.project.handongjudge.submission.dto.SubmissionAuthDTO;
 import com.project.handongjudge.submission.dto.SubmissionQuizResponseDTO;
+import com.project.handongjudge.submission.dto.TestSubmitResponseDTO;
 import com.project.handongjudge.submission.service.SubmissionService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -58,6 +59,24 @@ public class QuizSubmissionController {
         if (result == null) {
             return ResponseEntity.noContent().build(); // 204: 아직 채점 중
         }
+        return ResponseEntity.ok(result);
+    }
+
+    // =========================================================================
+    // 테스트하기 SSE — DB 저장 없는 일회성 테스트 제출
+    // =========================================================================
+
+    /**
+     * 퀴즈 테스트하기 비동기 제출: DOMjudge에만 제출하고 sessionKey를 즉시 반환.
+     * DB에 Submission을 저장하지 않으며, 클라이언트는
+     * GET /api/submissions/test/stream/{sessionKey} 로 SSE 연결해 output 결과를 수신한다.
+     */
+    @PostMapping("/test/submit")
+    public ResponseEntity<TestSubmitResponseDTO> testQuizSubmitAsync(
+            Authentication authentication,
+            @RequestBody SubmissionAuthDTO request
+    ) {
+        TestSubmitResponseDTO result = submissionService.submitCodeForTestAsync(authentication, request);
         return ResponseEntity.ok(result);
     }
 }
