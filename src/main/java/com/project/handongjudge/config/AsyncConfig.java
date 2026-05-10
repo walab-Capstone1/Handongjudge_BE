@@ -6,6 +6,7 @@ import org.springframework.scheduling.annotation.EnableAsync;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
 import java.util.concurrent.Executor;
+import java.util.concurrent.ThreadPoolExecutor;
 
 @Configuration
 @EnableAsync
@@ -25,10 +26,13 @@ public class AsyncConfig {
     @Bean(name = "sseExecutor")
     public Executor sseExecutor() {
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
-        executor.setCorePoolSize(5);
-        executor.setMaxPoolSize(20);
-        executor.setQueueCapacity(50);
+        executor.setCorePoolSize(60); // 50명 + 여유 10
+        executor.setMaxPoolSize(100); // 피크 대비
+        executor.setQueueCapacity(0); // 큐잉 없이 즉시 스레드 배정
+        executor.setKeepAliveSeconds(60); // 유휴 스레드 회수
         executor.setThreadNamePrefix("sse-");
+        // 풀 소진 시 Tomcat 워커에서 직접 실행 (최후 안전망)
+        executor.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());
         executor.initialize();
         return executor;
     }
