@@ -38,7 +38,9 @@ import com.project.handongjudge.quiz.repository.QuizProblemRepository;
 import com.project.handongjudge.quiz.entity.Quiz;
 import com.project.handongjudge.quiz.entity.QuizProblem;
 import com.project.handongjudge.submission.entity.SubmissionMetric;
+import com.project.handongjudge.submission.dto.TestSubmitResponseDTO;
 import com.project.handongjudge.submission.repository.SubmissionMetricRepository;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.File;
 import java.io.IOException;
@@ -84,6 +86,10 @@ public class SubmissionService {
     private final QuizProblemRepository quizProblemRepository;
     private final SubmissionMetricRepository submissionMetricRepository;
     private final ObjectProvider<GradeService> gradeServiceProvider;
+    private final SubmissionSseService submissionSseService;
+    private final SubmissionPollingTask submissionPollingTask;
+    private final TestOutputSseService testOutputSseService;
+    private final TestOutputPollingTask testOutputPollingTask;
 
     private void maybeClearAssignmentRejectIfAc(Submission submission) {
         if (submission == null || submission.getResult() == null) {
@@ -251,7 +257,13 @@ public class SubmissionService {
         return null;
     }
 
+    /**
+     * @deprecated SSE 스트리밍 방식(POST /submit → GET /stream/{id})으로 교체되었습니다.
+     *             이 API는 하위 호환 유지 목적으로만 남아있으며 추후 제거될 예정입니다.
+     */
+    @Deprecated
     public SubmissionResponseDTO submitAndGetResult(Authentication authentication, SubmissionAuthDTO submissionRequestDTO) {
+        log.warn("[DEPRECATED] submitAndGetResult called — please migrate to /submit + /stream/{submissionDbId}");
         long e2eStart = System.currentTimeMillis();
         SubmissionMetric metric = SubmissionMetric.builder()
                 .measuredAt(LocalDateTime.now())
@@ -700,6 +712,29 @@ public class SubmissionService {
     }
 
     /**
+     * SSE 스트리밍 세션 생성.
+     * 소유권 검증 후 SseEmitter를 등록하고 @Async 폴링 태스크를 시작한 뒤 emitter를 반환한다.
+     * 클라이언트는 text/event-stream 응답으로 채점 결과를 실시간 수신한다.
+     */
+    @Transactional(readOnly = true)
+    public SseEmitter createSseStream(Authentication authentication, Long submissionDbId) {
+        Long userId = Long.parseLong(authentication.getName());
+
+        Submission submission = submissionRepository.findById(submissionDbId)
+                .orElseThrow(() -> new RuntimeException("Submission not found"));
+
+        if (!submission.getUser().getId().equals(userId) &&
+                !sectionRoleService.isManager(userId, submission.getSection().getId())) {
+            throw new IllegalArgumentException("해당 제출에 접근할 권한이 없습니다.");
+        }
+
+        SseEmitter emitter = submissionSseService.register(submissionDbId);
+        submissionPollingTask.pollAndStream(submissionDbId);
+        log.info("[SSE] stream created submissionDbId={} userId={}", submissionDbId, userId);
+        return emitter;
+    }
+
+    /**
      * 과제 채점 결과 조회 — DB에 결과가 있으면 즉시 반환, 없으면 DOMjudge에 1회 조회.
      * 채점 중이면 {@code null} 반환 (컨트롤러에서 204 No Content 처리).
      */
@@ -1101,6 +1136,69 @@ public class SubmissionService {
                 .orElse(null);
 
         return result;
+    }
+
+    // =========================================================================
+    // 테스트하기 비동기 — SSE 스트리밍 (DB 저장 없음)
+    // =========================================================================
+
+    /**
+     * 테스트하기 비동기 제출: DOMjudge에만 제출하고 sessionKey(= domjudgeSubmissionId)를 반환.
+     * DB에 Submission을 저장하지 않으며, 클라이언트는
+     * GET /api/submissions/test/stream/{sessionKey} 로 SSE 연결해 output 결과를 수신한다.
+     */
+    public TestSubmitResponseDTO submitCodeForTestAsync(Authentication authentication, SubmissionAuthDTO dto) {
+        Long userId = Long.parseLong(authentication.getName());
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+        Problem problem = problemRepository.findById(dto.getProblemId())
+                .orElseThrow(() -> new RuntimeException("Problem not found"));
+        Section section = sectionRepository.findById(dto.getSectionId())
+                .orElseThrow(() -> new RuntimeException("Section not found"));
+
+        validateSubmission(dto.getProblemId(), dto.getSectionId(), userId);
+
+        String contestId = String.valueOf(section.getId());
+        String teamId = enrollmentRepository.findTeamIdByUserIdAndSectionId(user.getId(), section.getId());
+        String domjudgeProblemId = problem.getDomjudgeProblemId();
+
+        if (teamId == null || teamId.isEmpty()) {
+            throw new RuntimeException("현재 수업에 수강신청되어 있지 않습니다. 수강 신청 후 제출해 주세요.");
+        }
+
+        File codeFile = CodeExtenstion.StringToFile(dto.getLanguage(), dto.getCodeString());
+
+        String domjudgeSubmissionId = domjudgeService.submitCode(
+                contestId, teamId, domjudgeProblemId, dto.getLanguage(), codeFile);
+        log.info("[TEST-SSE] DOMjudge submission created: {}", domjudgeSubmissionId);
+
+        if (codeFile != null) {
+            try {
+                java.nio.file.Files.deleteIfExists(codeFile.toPath());
+            } catch (java.io.IOException e) {
+                log.error("Failed to delete TmpFile: {}", e.getMessage());
+            }
+        }
+
+        return TestSubmitResponseDTO.builder()
+                .sessionKey(domjudgeSubmissionId)
+                .sectionId(section.getId())
+                .problemId(problem.getId())
+                .language(dto.getLanguage())
+                .submittedAt(java.time.LocalDateTime.now(KST_ZONE))
+                .build();
+    }
+
+    /**
+     * 테스트하기 SSE 스트림 생성.
+     * 인증 확인 후 emitter를 등록하고 @Async 폴링 태스크를 시작한다.
+     */
+    public SseEmitter createTestOutputStream(Authentication authentication, String sessionKey, Long sectionId) {
+        Long.parseLong(authentication.getName()); // 인증 확인 (파싱 실패 시 예외)
+        SseEmitter emitter = testOutputSseService.register(sessionKey);
+        testOutputPollingTask.pollAndStream(sessionKey, String.valueOf(sectionId));
+        log.info("[TEST-SSE] stream created sessionKey={}", sessionKey);
+        return emitter;
     }
 
     /**

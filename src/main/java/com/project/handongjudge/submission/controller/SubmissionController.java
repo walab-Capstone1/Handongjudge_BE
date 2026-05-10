@@ -2,9 +2,11 @@ package com.project.handongjudge.submission.controller;
 
 import com.project.handongjudge.submission.dto.AsyncSubmitResponseDTO;
 import com.project.handongjudge.submission.dto.SubmissionOutputResponseDTO;
+import com.project.handongjudge.submission.dto.TestSubmitResponseDTO;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import com.project.handongjudge.submission.dto.SubmissionRequestDTO;
 import com.project.handongjudge.submission.dto.SubmissionAuthDTO;
 import com.project.handongjudge.submission.dto.SubmissionResponseDTO;
@@ -84,6 +86,56 @@ public class SubmissionController {
             return ResponseEntity.noContent().build();
         }
         return ResponseEntity.ok(result);
+    }
+
+    /**
+     * 과제 채점 결과 SSE 스트리밍.
+     * POST /submit으로 얻은 submissionDbId를 사용해 연결하면,
+     * 테스트케이스 결과가 실시간으로 이벤트 스트림으로 전달된다.
+     *
+     * 이벤트 타입:
+     *   testcase — { index, result }
+     *   complete — { result, passedCount, totalCount }
+     *   ce       — { result: "CE" }
+     *   error    — { message }
+     */
+    @GetMapping(value = "/stream/{submissionDbId}", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter streamAssignmentResult(
+            Authentication authentication,
+            @PathVariable Long submissionDbId) {
+        return submissionService.createSseStream(authentication, submissionDbId);
+    }
+
+    // =========================================================================
+    // 테스트하기 SSE 스트리밍 — DB 저장 없는 일회성 테스트 제출
+    // =========================================================================
+
+    /**
+     * 테스트하기 비동기 제출: DOMjudge에만 제출하고 sessionKey를 즉시 반환.
+     * 반환된 sessionKey로 GET /test/stream/{sessionKey} SSE 연결 후 output 결과 수신.
+     */
+    @PostMapping("/test/submit")
+    public ResponseEntity<TestSubmitResponseDTO> testSubmitAsync(
+            Authentication authentication,
+            @RequestBody SubmissionAuthDTO request) {
+        TestSubmitResponseDTO result = submissionService.submitCodeForTestAsync(authentication, request);
+        return ResponseEntity.ok(result);
+    }
+
+    /**
+     * 테스트하기 output 결과 SSE 스트리밍.
+     * 이벤트 타입:
+     *   testcase — { index, result, output, outputError, outputDiff, testcaseInput, expectedOutput, runtime, memoryUsed }
+     *   complete — { result }
+     *   ce       — { result: "CE" }
+     *   error    — { message }
+     */
+    @GetMapping(value = "/test/stream/{sessionKey}", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter streamTestOutput(
+            Authentication authentication,
+            @PathVariable String sessionKey,
+            @RequestParam Long sectionId) {
+        return submissionService.createTestOutputStream(authentication, sessionKey, sectionId);
     }
 
     @GetMapping("/lastSubmitCode")
