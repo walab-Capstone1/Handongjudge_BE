@@ -28,7 +28,7 @@ public class TestOutputPollingTask {
     private static final Logger log = LoggerFactory.getLogger(TestOutputPollingTask.class);
     private static final long POLL_INITIAL_BACKOFF_MS = 500L;
     private static final long POLL_MAX_BACKOFF_MS = 3_000L;
-    private static final long SSE_POLL_TIMEOUT_MS = 30_000L;
+    private static final long SSE_POLL_TIMEOUT_MS = 50_000L;
 
     private final DomjudgeService domjudgeService;
     private final TestOutputSseService testOutputSseService;

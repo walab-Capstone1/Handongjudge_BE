@@ -26,8 +26,8 @@ public class AsyncConfig {
     @Bean(name = "sseExecutor")
     public Executor sseExecutor() {
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
-        executor.setCorePoolSize(60); // 50명 + 여유 10
-        executor.setMaxPoolSize(100); // 피크 대비
+        executor.setCorePoolSize(100); // 50명 + 여유 10
+        executor.setMaxPoolSize(150); // 피크 대비
         executor.setQueueCapacity(0); // 큐잉 없이 즉시 스레드 배정
         executor.setKeepAliveSeconds(60); // 유휴 스레드 회수
         executor.setThreadNamePrefix("sse-");
