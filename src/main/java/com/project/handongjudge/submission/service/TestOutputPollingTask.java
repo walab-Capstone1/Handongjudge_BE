@@ -26,10 +26,8 @@ import java.util.Set;
 public class TestOutputPollingTask {
 
     private static final Logger log = LoggerFactory.getLogger(TestOutputPollingTask.class);
-    // [지수 백오프 → 고정 폴링 변경] 기존 지수 백오프 상수
-    // private static final long POLL_INITIAL_BACKOFF_MS = 500L;
-    // private static final long POLL_MAX_BACKOFF_MS = 3_000L;
-    private static final long POLL_INTERVAL_MS = 1_000L;
+    private static final long POLL_INITIAL_BACKOFF_MS = 500L;
+    private static final long POLL_MAX_BACKOFF_MS = 3_000L;
     private static final long SSE_POLL_TIMEOUT_MS = 30_000L;
 
     private final DomjudgeService domjudgeService;
@@ -44,6 +42,7 @@ public class TestOutputPollingTask {
         log.info("[TEST-SSE] polling started sessionKey={} cid={}", sessionKey, cid);
 
         long deadlineMs = System.currentTimeMillis() + SSE_POLL_TIMEOUT_MS;
+        long backoffMs = POLL_INITIAL_BACKOFF_MS;
         Set<Integer> sentIndices = new HashSet<>();
         boolean totalSent = false;
 
@@ -135,14 +134,12 @@ public class TestOutputPollingTask {
             if (remaining <= 0) break;
 
             try {
-                // [지수 백오프 → 고정 폴링 변경]
-                // Thread.sleep(Math.min(backoffMs, remaining));
-                // backoffMs = Math.min(backoffMs * 2, POLL_MAX_BACKOFF_MS);
-                Thread.sleep(Math.min(POLL_INTERVAL_MS, remaining));
+                Thread.sleep(Math.min(backoffMs, remaining));
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 break;
             }
+            backoffMs = Math.min(backoffMs * 2, POLL_MAX_BACKOFF_MS);
         }
 
         // 타임아웃
