@@ -68,10 +68,8 @@ public class SubmissionService {
     private static final Logger log = LoggerFactory.getLogger(SubmissionService.class);
     private static final ZoneId KST_ZONE = ZoneId.of("Asia/Seoul");
     private static final ZoneId UTC_ZONE = ZoneId.of("UTC");
-    // [지수 백오프 → 고정 폴링 변경] 기존 지수 백오프 상수
-    // private static final long POLL_INITIAL_BACKOFF_MS = 500L;
-    // private static final long POLL_MAX_BACKOFF_MS = 3_000L;
-    private static final long POLL_INTERVAL_MS = 1_000L;
+    private static final long POLL_INITIAL_BACKOFF_MS = 500L;
+    private static final long POLL_MAX_BACKOFF_MS = 3_000L;
     private static final String FLOW_ASSIGNMENT_ASYNC = "assignmentAsyncSubmit";
     private static final String FLOW_QUIZ_ASYNC = "quizAsyncSubmit";
     private final SubmissionRepository submissionRepository;
@@ -1057,6 +1055,7 @@ public class SubmissionService {
     private PollingResult<SubmissionOutputResponseDTO> pollForResultOutput(String cid, String submissionId, int maxWaitSeconds) {
         long deadlineMs = System.currentTimeMillis() + maxWaitSeconds * 1000L;
         int attempts = 0;
+        long backoffMs = POLL_INITIAL_BACKOFF_MS;
 
         while (System.currentTimeMillis() < deadlineMs) {
             attempts++;
@@ -1113,16 +1112,14 @@ public class SubmissionService {
             if (remaining <= 0) {
                 break;
             }
-            // [지수 백오프 → 고정 폴링 변경]
-            // long sleepMs = Math.min(backoffMs, remaining);
-            // backoffMs = Math.min(backoffMs * 2, POLL_MAX_BACKOFF_MS);
-            long sleepMs = Math.min(POLL_INTERVAL_MS, remaining);
+            long sleepMs = Math.min(backoffMs, remaining);
             try {
                 Thread.sleep(sleepMs);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 throw new RuntimeException("채점이 중단되었습니다. 잠시 후 다시 시도해 주세요.", e);
             }
+            backoffMs = Math.min(backoffMs * 2, POLL_MAX_BACKOFF_MS);
         }
 
         throw new RuntimeException("채점 결과를 가져오는 데 시간이 초과되었습니다. 제출은 완료되었을 수 있으니 제출 목록에서 확인해 주세요.");
