@@ -19,7 +19,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public class SubmissionSseService {
 
     private static final Logger log = LoggerFactory.getLogger(SubmissionSseService.class);
-    private static final long SSE_EMITTER_TIMEOUT_MS = 60_000L;
+    private static final long SSE_EMITTER_TIMEOUT_MS = 70_000L;
 
     private final ConcurrentHashMap<Long, SseEmitter> emitters = new ConcurrentHashMap<>();
     private final ObjectMapper objectMapper = new ObjectMapper();
