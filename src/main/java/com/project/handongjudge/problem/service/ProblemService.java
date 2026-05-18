@@ -1132,10 +1132,22 @@ public class ProblemService {
         try {
             // 난이도/태그만 변경되는 경우 DOMjudge 작업 건너뛰기
             if (isOnlyMetadataChange) {
-                log.info("난이도/태그만 변경됨: ID={}, DOMjudge 작업 건너뛰기", problemId);
+                log.info("메타데이터 수정 모드: ID={}, DOMjudge 작업 건너뛰기", problemId);
                 // DOMjudge ID는 그대로 유지
                 newDomjudgeProblemId = oldDomjudgeProblemId;
-                newZipFileData = problem.getZipFileData(); // 기존 ZIP 파일 데이터 유지
+                // 설명이 변경된 경우 ZIP의 description.md만 갱신 (DOMjudge 재업로드 없이)
+                String newDesc = request.getDescription();
+                if (newDesc != null && !newDesc.isEmpty() && problem.getZipFileData() != null) {
+                    try {
+                        newZipFileData = updateDescriptionInZip(problem.getZipFileData(), newDesc);
+                        log.info("메타데이터 모드: ZIP description.md 갱신 완료, ID={}", problemId);
+                    } catch (Exception e) {
+                        log.warn("메타데이터 모드: ZIP description.md 갱신 실패 (기존 ZIP 유지), ID={}, error={}", problemId, e.getMessage());
+                        newZipFileData = problem.getZipFileData();
+                    }
+                } else {
+                    newZipFileData = problem.getZipFileData(); // 기존 ZIP 파일 데이터 유지
+                }
             } else {
                 // 1) 기존 Domjudge ID 기억 (이미 oldDomjudgeProblemId에 저장됨)
                 if (oldDomjudgeProblemId == null || oldDomjudgeProblemId.isEmpty()) {
@@ -1404,6 +1416,41 @@ public class ProblemService {
         } catch (Exception e) {
             throw new RuntimeException("문제 필드 업데이트 실패", e);
         }
+    }
+
+    /**
+     * 기존 ZIP 파일의 description.md만 교체하여 새 ZIP 생성 (DOMjudge 재업로드 없이 설명만 수정)
+     */
+    private byte[] updateDescriptionInZip(byte[] existingZipData, String newDescription) throws IOException {
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        try (ZipInputStream zis = new ZipInputStream(new ByteArrayInputStream(existingZipData));
+             ZipOutputStream zos = new ZipOutputStream(baos)) {
+            ZipEntry entry;
+            boolean descriptionReplaced = false;
+            while ((entry = zis.getNextEntry()) != null) {
+                String entryName = entry.getName();
+                if (entryName.toLowerCase().contains("problem_statement") && entryName.endsWith(".md")) {
+                    zos.putNextEntry(new ZipEntry(entryName));
+                    zos.write(newDescription.getBytes(StandardCharsets.UTF_8));
+                    zos.closeEntry();
+                    descriptionReplaced = true;
+                } else {
+                    zos.putNextEntry(new ZipEntry(entryName));
+                    byte[] buffer = new byte[1024];
+                    int len;
+                    while ((len = zis.read(buffer)) > 0) {
+                        zos.write(buffer, 0, len);
+                    }
+                    zos.closeEntry();
+                }
+            }
+            if (!descriptionReplaced) {
+                zos.putNextEntry(new ZipEntry("problem_statement/problem.md"));
+                zos.write(newDescription.getBytes(StandardCharsets.UTF_8));
+                zos.closeEntry();
+            }
+        }
+        return baos.toByteArray();
     }
 
     /**
