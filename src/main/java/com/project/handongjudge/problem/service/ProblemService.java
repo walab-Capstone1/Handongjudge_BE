@@ -1253,8 +1253,9 @@ public class ProblemService {
             }
 
             // 3. DB에 새 정보 저장 (트랜잭션 보장)
-            // 메타데이터만 업데이트하는 경우 description, timeLimit, memoryLimit은 null로 전달하여 기존 값 유지
-            String descriptionToUpdate = isOnlyMetadataChange ? null : request.getDescription();
+            // description은 요청에 포함된 경우 항상 DB 갱신 (DOMjudge 재업로드 없이 설명만 수정 가능)
+            // null이면 updateProblemFields 내부 null 체크에 의해 기존 값 유지
+            String descriptionToUpdate = request.getDescription();
             Double timeLimitToUpdate = isOnlyMetadataChange ? null : request.getTimeLimit();
             Integer memoryLimitToUpdate = isOnlyMetadataChange ? null : request.getMemoryLimit();
             Boolean strictWhitespaceToUpdate = isOnlyMetadataChange ? null
