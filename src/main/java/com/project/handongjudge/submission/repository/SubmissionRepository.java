@@ -176,6 +176,16 @@ public interface SubmissionRepository extends JpaRepository<Submission, Long> {
                               @Param("passed") Integer passed,
                               @Param("total") Integer total);
 
+    /**
+     * outputList 없이 result만 저장 (TC 집계는 건드리지 않음).
+     * TC 데이터가 없는 상태에서 DomJudge 판정만 복구할 때 사용.
+     */
+    @Modifying(clearAutomatically = true)
+    @Transactional
+    @Query("UPDATE Submission s SET s.result = :result WHERE s.id = :id AND s.result IS NULL")
+    int updateResultOnlyIfPending(@Param("id") Long id,
+                                  @Param("result") String result);
+
     /** 퀴즈 제출 기록 목록 (튜터용, 필터/페이지네이션 지원) */
     @Query(
             value = "SELECT s FROM Submission s " +
