@@ -457,26 +457,28 @@ public class SubmissionService {
             if (out == null || isBlankResult(out.getResult())) {
                 return false;
             }
-            // TC도 필요한 경우: outputList까지 완전히 준비되어야 함
-            // TC는 이미 있고 result만 없는 경우: result 필드만 있으면 충분
-            if (needsTc && !isDomjudgeOutputReady(out)) {
-                return false;
-            }
+
+            boolean outputReady = isDomjudgeOutputReady(out);
 
             boolean updated = false;
             if (needsResult) {
-                // TC가 이미 DB에 있으면 기존 값 그대로 유지; 없으면 DomJudge output에서 계산
-                int passedCount, totalCount;
-                if (needsTc) {
+                int rows;
+                if (!needsTc) {
+                    // TC가 이미 DB에 있음: 기존 TC 값 유지하고 result만 저장
+                    int passedCount = submission.getPassedTestCases() != null ? submission.getPassedTestCases() : 0;
+                    int totalCount = submission.getTotalTestCases();
+                    rows = submissionRepository.updateResultIfPending(
+                            submission.getId(), out.getResult(), passedCount, totalCount);
+                } else if (outputReady) {
+                    // TC도 없고 outputList 완전히 준비됨: result + TC 함께 저장
                     int[] counts = computeTestCaseCounts(out);
-                    passedCount = counts[0];
-                    totalCount = counts[1];
+                    rows = submissionRepository.updateResultIfPending(
+                            submission.getId(), out.getResult(), counts[0], counts[1]);
                 } else {
-                    passedCount = submission.getPassedTestCases() != null ? submission.getPassedTestCases() : 0;
-                    totalCount = submission.getTotalTestCases();
+                    // TC도 없고 outputList도 없음: result만 저장 (TC는 NULL 유지)
+                    rows = submissionRepository.updateResultOnlyIfPending(
+                            submission.getId(), out.getResult());
                 }
-                int rows = submissionRepository.updateResultIfPending(
-                        submission.getId(), out.getResult(), passedCount, totalCount);
                 if (rows > 0) {
                     updated = true;
                     Submission latest = submissionRepository.findById(submission.getId()).orElse(null);
@@ -489,7 +491,7 @@ public class SubmissionService {
                 }
             }
 
-            if (needsTc) {
+            if (needsTc && outputReady) {
                 Submission fresh = submissionRepository.findById(submission.getId()).orElse(submission);
                 if (fresh.getTotalTestCases() == null) {
                     applyTestCaseCountsFromOutput(fresh, out);
