@@ -599,7 +599,8 @@ public class DomjudgeService {
     }
 
     /**
-     * 테스트하기용: judgement 한 번 조회 후 CE면 output 호출 없이 result만 반환, 그 외는 output 조회.
+     * judgement 조회 후 output API에서 runs·output_compile을 파싱해 반환.
+     * CE(컴파일 에러)도 output_compile 수집을 위해 output API를 호출한다.
      */
     public SubmissionOutputResponseDTO getResultOutput(String cid, String submissionId) throws JsonProcessingException {
         JudgementInfo info = getJudgementInfo(cid, submissionId);
@@ -608,16 +609,6 @@ public class DomjudgeService {
             return null;
         }
 
-        // CE(컴파일 에러)는 run이 없으므로 output 호출 없이 result만 반환
-        if ("CE".equals(info.result)) {
-            log.info("CE for submission {}, returning without output call: {}", submissionId, info.result);
-            return SubmissionOutputResponseDTO.builder()
-                    .result(info.result)
-                    .outputList(Collections.emptyList())
-                    .build();
-        }
-
-        // AC, WA, TLE 등: judgement id로 output 조회
         try {
             HttpHeaders headers = createAuthHeaders();
             String url = DOMJUDGE_API_URL + "/api/v4/contests/" + cid + "/judgements/" + submissionId + "/output";
@@ -632,34 +623,10 @@ public class DomjudgeService {
                     JsonNode.class
             );
 
-            JsonNode responseBody = response.getBody();
-            if (responseBody == null) {
-                log.warn("Response body is null for submission: {}", submissionId);
-                return SubmissionOutputResponseDTO.builder()
-                        .result(info.result)
-                        .outputList(Collections.emptyList())
-                        .build();
-            }
-
-            JsonNode runsResponse = responseBody.get("runs");
-            List<Output> outputList = new ArrayList<>();
-            ObjectMapper mapper = new ObjectMapper();
-
-            if (runsResponse != null && runsResponse.isArray()) {
-                for (JsonNode runNode : runsResponse) {
-                    Output output = mapper.treeToValue(runNode, Output.class);
-                    outputList.add(output);
-                }
-            }
-
-            return SubmissionOutputResponseDTO.builder()
-                    .result(info.result)
-                    .outputList(outputList)
-                    .build();
+            return buildOutputResponse(response.getBody(), info.result);
 
         } catch (HttpClientErrorException e) {
             if (e.getStatusCode().value() == 404) {
-                // output이 없으면 이미 가진 result로 반환
                 log.info("Output 404 for submission {}, returning result only: {}", submissionId, info.result);
                 return SubmissionOutputResponseDTO.builder()
                         .result(info.result)
@@ -672,6 +639,38 @@ public class DomjudgeService {
             log.error("Error getting result for submission {}: {}", submissionId, e.getMessage());
             throw e;
         }
+    }
+
+    private SubmissionOutputResponseDTO buildOutputResponse(JsonNode responseBody, String judgementResult)
+            throws JsonProcessingException {
+        if (responseBody == null) {
+            return SubmissionOutputResponseDTO.builder()
+                    .result(judgementResult)
+                    .outputList(Collections.emptyList())
+                    .build();
+        }
+
+        String outputCompile = null;
+        if (responseBody.has("output_compile") && !responseBody.get("output_compile").isNull()) {
+            outputCompile = responseBody.get("output_compile").asText();
+        }
+
+        JsonNode runsResponse = responseBody.get("runs");
+        List<Output> outputList = new ArrayList<>();
+        ObjectMapper mapper = new ObjectMapper();
+
+        if (runsResponse != null && runsResponse.isArray()) {
+            for (JsonNode runNode : runsResponse) {
+                Output output = mapper.treeToValue(runNode, Output.class);
+                outputList.add(output);
+            }
+        }
+
+        return SubmissionOutputResponseDTO.builder()
+                .result(judgementResult)
+                .outputList(outputList)
+                .outputCompile(outputCompile)
+                .build();
     }
 
 }

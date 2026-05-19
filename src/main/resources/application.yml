@@ -5,8 +5,8 @@ server:
 spring:
   #.env import
   # below 2 lines are for local development, uncomment when you want to use .env file
-#  config:
-#    import: "optional:file:.env[.properties]"
+  config:
+    import: "optional:file:.env[.properties]"
 
   redis:
     host: ${REDIS_HOST:127.0.0.1}

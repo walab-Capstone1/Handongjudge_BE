@@ -74,7 +74,7 @@ public class SubmissionPollingTask {
 
                     // CE: outputList 없이 즉시 완료 처리
                     if ("CE".equals(result.getResult())) {
-                        submissionSseService.sendCe(submissionDbId);
+                        submissionSseService.sendCe(submissionDbId, result.getOutputCompile());
                         submissionRepository.updateResultIfPending(submissionDbId, "CE", 0, 0);
                         tryFinalizeMetric(submissionDbId);
                         submissionSseService.complete(submissionDbId);
