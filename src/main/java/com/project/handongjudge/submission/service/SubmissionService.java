@@ -452,16 +452,29 @@ public class SubmissionService {
         try {
             SubmissionOutputResponseDTO out =
                     domjudgeService.getResultOutput(cid, submission.getSubmissionId());
-            if (!isDomjudgeOutputReady(out)) {
+
+            // DomJudge가 아직 채점하지 않은 경우
+            if (out == null || isBlankResult(out.getResult())) {
+                return false;
+            }
+            // TC도 필요한 경우: outputList까지 완전히 준비되어야 함
+            // TC는 이미 있고 result만 없는 경우: result 필드만 있으면 충분
+            if (needsTc && !isDomjudgeOutputReady(out)) {
                 return false;
             }
 
-            int[] counts = computeTestCaseCounts(out);
-            int passedCount = counts[0];
-            int totalCount = counts[1];
-
             boolean updated = false;
             if (needsResult) {
+                // TC가 이미 DB에 있으면 기존 값 그대로 유지; 없으면 DomJudge output에서 계산
+                int passedCount, totalCount;
+                if (needsTc) {
+                    int[] counts = computeTestCaseCounts(out);
+                    passedCount = counts[0];
+                    totalCount = counts[1];
+                } else {
+                    passedCount = submission.getPassedTestCases() != null ? submission.getPassedTestCases() : 0;
+                    totalCount = submission.getTotalTestCases();
+                }
                 int rows = submissionRepository.updateResultIfPending(
                         submission.getId(), out.getResult(), passedCount, totalCount);
                 if (rows > 0) {
@@ -476,11 +489,13 @@ public class SubmissionService {
                 }
             }
 
-            Submission fresh = submissionRepository.findById(submission.getId()).orElse(submission);
-            if (fresh.getTotalTestCases() == null) {
-                applyTestCaseCountsFromOutput(fresh, out);
-                submissionRepository.save(fresh);
-                updated = true;
+            if (needsTc) {
+                Submission fresh = submissionRepository.findById(submission.getId()).orElse(submission);
+                if (fresh.getTotalTestCases() == null) {
+                    applyTestCaseCountsFromOutput(fresh, out);
+                    submissionRepository.save(fresh);
+                    updated = true;
+                }
             }
 
             if (updated) {
