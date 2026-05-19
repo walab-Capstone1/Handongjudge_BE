@@ -55,7 +55,7 @@ public class TestOutputPollingTask {
 
                     // CE: 즉시 완료
                     if ("CE".equals(result.getResult())) {
-                        testOutputSseService.sendCe(sessionKey);
+                        testOutputSseService.sendCe(sessionKey, result.getOutputCompile());
                         testOutputSseService.complete(sessionKey);
                         log.info("[TEST-SSE] CE sessionKey={}", sessionKey);
                         return;

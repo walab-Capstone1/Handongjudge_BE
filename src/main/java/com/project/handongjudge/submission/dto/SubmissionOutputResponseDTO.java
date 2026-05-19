@@ -1,6 +1,7 @@
 package com.project.handongjudge.submission.dto;
 
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.project.handongjudge.submission.entity.Output;
 import lombok.Builder;
 import lombok.Getter;
@@ -20,5 +21,9 @@ public class SubmissionOutputResponseDTO {
     private String submissionId;
     private String result;      // 여기에 judgement_type_id ("AC", "WA", ...) 들어가야 함
     private List<Output> outputList;
+
+    @JsonProperty("output_compile")
+    private String outputCompile;
+
     private LocalDateTime submittedAt;
 }
