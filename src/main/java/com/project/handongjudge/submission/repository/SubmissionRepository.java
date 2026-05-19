@@ -201,4 +201,20 @@ public interface SubmissionRepository extends JpaRepository<Submission, Long> {
             @Param("userId") Long userId,
             @Param("result") String result,
             Pageable pageable);
+
+    /** 퀴즈: DomJudge에는 있으나 DB result가 비어 있는 제출 (일괄 동기화용) */
+    @Query(
+            "SELECT s FROM Submission s " +
+                    "JOIN FETCH s.section " +
+                    "JOIN FETCH s.user " +
+                    "JOIN FETCH s.problem " +
+                    "WHERE s.section.id = :sectionId " +
+                    "AND s.problem.id IN (SELECT qp.problem.id FROM QuizProblem qp WHERE qp.quiz.id = :quizId) " +
+                    "AND s.submissionId IS NOT NULL AND s.submissionId <> '' " +
+                    "AND (s.result IS NULL OR s.result = '') " +
+                    "ORDER BY s.submittedAt DESC"
+    )
+    List<Submission> findQuizSubmissionsNeedingResultSync(
+            @Param("sectionId") Long sectionId,
+            @Param("quizId") Long quizId);
 }

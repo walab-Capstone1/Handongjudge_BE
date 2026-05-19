@@ -27,6 +27,7 @@ import com.project.handongjudge.common.time.SubmissionDeadlineComparison;
 import com.project.handongjudge.section.service.SectionRoleService;
 import com.project.handongjudge.mypage.dto.SubmissionCodeDto;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -41,6 +42,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional
@@ -884,9 +886,9 @@ public class QuizService {
     }
 
     /**
-     * 퀴즈 제출 기록 목록 조회 (튜터용)
+     * 퀴즈 제출 기록 목록 조회 (튜터용).
+     * result가 비어 있는 행은 DomJudge에서 보충 시도 후 응답 (현재 페이지만, 최대 size건).
      */
-    @Transactional(readOnly = true)
     public QuizSubmissionListResponse getQuizSubmissions(
             Long sectionId, Long quizId, Long problemId, Long userId, String result,
             int page, int size, Long tutorId) {
@@ -905,7 +907,12 @@ public class QuizService {
         Page<Submission> pageResult = submissionRepository.findQuizSubmissions(
                 sectionId, quizId, problemId, userId, (result != null && !result.isBlank()) ? result : null, pageable);
 
-        List<QuizSubmissionRecordDto> content = pageResult.getContent().stream()
+        List<Submission> rows = pageResult.getContent();
+        for (Submission s : rows) {
+            submissionService.syncSubmissionFromDomjudgeIfNeeded(s);
+        }
+
+        List<QuizSubmissionRecordDto> content = rows.stream()
                 .map(s -> {
                     User u = s.getUser();
                     String sid = u.getStudentId() != null ? u.getStudentId() : (u.getEmail() != null ? u.getEmail() : "");
@@ -933,9 +940,53 @@ public class QuizService {
     }
 
     /**
+     * 퀴즈 제출 중 DB result가 비어 있는 건을 DomJudge에서 일괄 동기화 (튜터용, 이미 종료된 시험 보정).
+     */
+    public QuizSubmissionSyncResponse syncQuizSubmissionResultsFromDomjudge(
+            Long sectionId, Long quizId, Long tutorId) {
+        Quiz quiz = quizRepository.findById(quizId)
+                .orElseThrow(() -> new IllegalArgumentException("Quiz not found"));
+
+        if (!sectionRoleService.isManager(tutorId, quiz.getSection().getId())) {
+            throw new IllegalArgumentException("해당 퀴즈의 제출 기록을 동기화할 권한이 없습니다");
+        }
+
+        if (!quiz.getSection().getId().equals(sectionId)) {
+            throw new IllegalArgumentException("해당 퀴즈는 이 분반에 속하지 않습니다");
+        }
+
+        List<Submission> candidates =
+                submissionRepository.findQuizSubmissionsNeedingResultSync(sectionId, quizId);
+
+        int synced = 0;
+        int stillPending = 0;
+        int failed = 0;
+
+        for (Submission submission : candidates) {
+            try {
+                if (submissionService.syncSubmissionFromDomjudgeIfNeeded(submission)) {
+                    synced++;
+                } else {
+                    stillPending++;
+                }
+            } catch (Exception e) {
+                failed++;
+                log.warn("bulk quiz submission sync failed submissionId={}: {}",
+                        submission.getId(), e.getMessage());
+            }
+        }
+
+        return QuizSubmissionSyncResponse.builder()
+                .totalCandidates(candidates.size())
+                .synced(synced)
+                .stillPending(stillPending)
+                .failed(failed)
+                .build();
+    }
+
+    /**
      * 튜터용 퀴즈 제출 코드 조회 (분반 관리자만 해당 분반 학생의 제출 코드 조회 가능)
      */
-    @Transactional(readOnly = true)
     public SubmissionCodeDto getQuizSubmissionCodeForTutor(Long sectionId, Long quizId, Long submissionId, Long tutorId) {
         Quiz quiz = quizRepository.findById(quizId)
                 .orElseThrow(() -> new IllegalArgumentException("Quiz not found"));
@@ -963,15 +1014,18 @@ public class QuizService {
             throw new RuntimeException("해당 제출은 이 퀴즈의 문제가 아닙니다");
         }
 
+        submissionService.syncSubmissionFromDomjudgeIfNeeded(submission);
+        Submission toShow = submissionRepository.findById(submissionId).orElse(submission);
+
         return SubmissionCodeDto.builder()
-                .submissionId(submission.getId())
-                .problemTitle(submission.getProblem().getTitle())
-                .sectionName(submission.getSection().getCourse().getTitle() + " - " +
-                        (submission.getSection().getSectionNumber() != null ? submission.getSection().getSectionNumber() + "분반" : ""))
-                .language(submission.getLanguage())
-                .code(submission.getCode())
-                .result(submission.getResult())
-                .submittedAt(submission.getSubmittedAt())
+                .submissionId(toShow.getId())
+                .problemTitle(toShow.getProblem().getTitle())
+                .sectionName(toShow.getSection().getCourse().getTitle() + " - " +
+                        (toShow.getSection().getSectionNumber() != null ? toShow.getSection().getSectionNumber() + "분반" : ""))
+                .language(toShow.getLanguage())
+                .code(toShow.getCode())
+                .result(toShow.getResult())
+                .submittedAt(toShow.getSubmittedAt())
                 .build();
     }
 

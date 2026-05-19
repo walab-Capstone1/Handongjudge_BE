@@ -452,6 +452,21 @@ public class QuizController {
     }
 
     /**
+     * 퀴즈 제출: DomJudge 채점 결과를 DB(result, TC 집계)에 일괄 반영 (튜터용, 종료된 시험 보정).
+     */
+    @PostMapping("/{quizId}/submissions/sync-from-domjudge")
+    public ResponseEntity<QuizSubmissionSyncResponse> syncQuizSubmissionsFromDomjudge(
+            @PathVariable Long sectionId,
+            @PathVariable Long quizId,
+            Authentication authentication
+    ) {
+        Long tutorId = Long.parseLong(authentication.getName());
+        QuizSubmissionSyncResponse response =
+                quizService.syncQuizSubmissionResultsFromDomjudge(sectionId, quizId, tutorId);
+        return ResponseEntity.ok(response);
+    }
+
+    /**
      * 퀴즈 제출 기록 목록 조회 (튜터용)
      */
     @GetMapping("/{quizId}/submissions")

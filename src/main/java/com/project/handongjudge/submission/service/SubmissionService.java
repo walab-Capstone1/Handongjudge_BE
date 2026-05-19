@@ -391,36 +391,118 @@ public class SubmissionService {
         submission.setTotalTestCases(total);
     }
 
+    private static boolean isBlankResult(String result) {
+        return result == null || result.trim().isEmpty();
+    }
+
     /**
-     * DB에 total_test_cases가 없는(구 제출) 경우 DomJudge 상세 결과를 조회해 집계 후 저장.
-     * 성적 API 조회 시 한 번 채워지면 이후에는 DB 값을 사용.
+     * DomJudge 채점이 완료된 output인지 (getQuizResult / 비동기 폴링과 동일 기준)
      */
-    public void backfillTestCaseCountsIfMissing(Submission submission) {
+    private boolean isDomjudgeOutputReady(SubmissionOutputResponseDTO outputDTO) {
+        if (outputDTO == null || isBlankResult(outputDTO.getResult())) {
+            return false;
+        }
+        if ("CE".equals(outputDTO.getResult())) {
+            return true;
+        }
+        if (outputDTO.getOutputList() != null && !outputDTO.getOutputList().isEmpty()) {
+            return outputDTO.getOutputList().stream()
+                    .allMatch(o -> o.getResult() != null && !o.getResult().isEmpty());
+        }
+        return false;
+    }
+
+    private int[] computeTestCaseCounts(SubmissionOutputResponseDTO outputDTO) {
+        int passedCount = 0;
+        int totalCount = 0;
+        if (outputDTO.getOutputList() != null && !outputDTO.getOutputList().isEmpty()) {
+            totalCount = outputDTO.getOutputList().size();
+            passedCount = (int) outputDTO.getOutputList().stream()
+                    .filter(o -> "correct".equals(o.getResult()))
+                    .count();
+        }
+        return new int[]{passedCount, totalCount};
+    }
+
+    /**
+     * DB에 result 또는 TC 집계가 비어 있으면 DomJudge에서 조회해 보충.
+     * 채점이 아직이면 false (기존 데이터는 변경하지 않음).
+     *
+     * @return DB가 갱신되었으면 true
+     */
+    public boolean syncSubmissionFromDomjudgeIfNeeded(Submission submission) {
         if (submission == null) {
-            return;
+            return false;
         }
         if (submission.getSubmissionId() == null || submission.getSubmissionId().isBlank()) {
-            return;
-        }
-        if (submission.getTotalTestCases() != null) {
-            return;
+            return false;
         }
         if (submission.getSection() == null) {
-            log.warn("backfill test case counts skipped: submission id={} has no section", submission.getId());
-            return;
+            log.warn("sync from DomJudge skipped: submission id={} has no section", submission.getId());
+            return false;
         }
+
+        boolean needsResult = isBlankResult(submission.getResult());
+        boolean needsTc = submission.getTotalTestCases() == null;
+        if (!needsResult && !needsTc) {
+            return false;
+        }
+
         String cid = String.valueOf(submission.getSection().getId());
         try {
-            SubmissionOutputResponseDTO out = domjudgeService.getResultOutput(cid, submission.getSubmissionId());
-            if (out == null) {
-                return;
+            SubmissionOutputResponseDTO out =
+                    domjudgeService.getResultOutput(cid, submission.getSubmissionId());
+            if (!isDomjudgeOutputReady(out)) {
+                return false;
             }
-            applyTestCaseCountsFromOutput(submission, out);
-            submissionRepository.save(submission);
+
+            int[] counts = computeTestCaseCounts(out);
+            int passedCount = counts[0];
+            int totalCount = counts[1];
+
+            boolean updated = false;
+            if (needsResult) {
+                int rows = submissionRepository.updateResultIfPending(
+                        submission.getId(), out.getResult(), passedCount, totalCount);
+                if (rows > 0) {
+                    updated = true;
+                    Submission latest = submissionRepository.findById(submission.getId()).orElse(null);
+                    if (latest != null) {
+                        maybeClearAssignmentRejectIfAc(latest);
+                        if (!isBlankResult(latest.getResult())) {
+                            finalizeAsyncMetricE2eIfPending(submission.getId());
+                        }
+                    }
+                }
+            }
+
+            Submission fresh = submissionRepository.findById(submission.getId()).orElse(submission);
+            if (fresh.getTotalTestCases() == null) {
+                applyTestCaseCountsFromOutput(fresh, out);
+                submissionRepository.save(fresh);
+                updated = true;
+            }
+
+            if (updated) {
+                Submission latest = submissionRepository.findById(submission.getId()).orElse(submission);
+                submission.setResult(latest.getResult());
+                submission.setPassedTestCases(latest.getPassedTestCases());
+                submission.setTotalTestCases(latest.getTotalTestCases());
+            }
+            return updated;
         } catch (Exception e) {
-            log.warn("backfill test case counts failed domjudgeSubmissionId={}: {}",
-                    submission.getSubmissionId(), e.getMessage());
+            log.warn("sync submission from DomJudge failed id={} domjudgeId={}: {}",
+                    submission.getId(), submission.getSubmissionId(), e.getMessage());
+            return false;
         }
+    }
+
+    /**
+     * DB에 total_test_cases / result가 없는 경우 DomJudge에서 조회해 저장.
+     * 성적 API 조회 시 호출 — 이후에는 DB 값을 사용.
+     */
+    public void backfillTestCaseCountsIfMissing(Submission submission) {
+        syncSubmissionFromDomjudgeIfNeeded(submission);
     }
 
     // for with output.
@@ -959,34 +1041,13 @@ public class SubmissionService {
             recordAsyncPollSample(submissionDbId, System.currentTimeMillis() - pollStartMs);
         }
 
-        if (outputDTO == null || outputDTO.getResult() == null || outputDTO.getResult().isEmpty()) {
+        if (!isDomjudgeOutputReady(outputDTO)) {
             return null; // 아직 채점 중
         }
 
-        // CE는 outputList 없이도 완료 판정
-        boolean isReady;
-        if ("CE".equals(outputDTO.getResult())) {
-            isReady = true;
-        } else if (outputDTO.getOutputList() != null && !outputDTO.getOutputList().isEmpty()) {
-            isReady = outputDTO.getOutputList().stream()
-                    .allMatch(o -> o.getResult() != null && !o.getResult().isEmpty());
-        } else {
-            return null; // 테스트케이스 결과 미완료
-        }
-
-        if (!isReady) {
-            return null;
-        }
-
-        // 테스트케이스 수·정답 수 계산
-        int passedCount = 0;
-        int totalCount = 0;
-        if (outputDTO.getOutputList() != null && !outputDTO.getOutputList().isEmpty()) {
-            totalCount = outputDTO.getOutputList().size();
-            passedCount = (int) outputDTO.getOutputList().stream()
-                    .filter(o -> "correct".equals(o.getResult()))
-                    .count();
-        }
+        int[] counts = computeTestCaseCounts(outputDTO);
+        int passedCount = counts[0];
+        int totalCount = counts[1];
 
         // 조건부 UPDATE (레이스 컨디션 방지: result IS NULL인 경우만 업데이트)
         submissionRepository.updateResultIfPending(
