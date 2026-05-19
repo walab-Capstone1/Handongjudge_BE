@@ -7,6 +7,7 @@ import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -75,9 +76,14 @@ public class SubmissionSseService {
                 Map.of("result", result, "passedCount", passedCount, "totalCount", totalCount));
     }
 
-    /** ce: { result: "CE" } */
-    public void sendCe(Long submissionDbId) {
-        send(submissionDbId, "ce", Map.of("result", "CE"));
+    /** ce: { result: "CE", output_compile?: string } */
+    public void sendCe(Long submissionDbId, String outputCompile) {
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("result", "CE");
+        if (outputCompile != null && !outputCompile.isEmpty()) {
+            data.put("output_compile", outputCompile);
+        }
+        send(submissionDbId, "ce", data);
     }
 
     /** error: { message } */

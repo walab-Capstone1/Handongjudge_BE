@@ -93,9 +93,14 @@ public class TestOutputSseService {
         send(sessionKey, "complete", Map.of("result", result));
     }
 
-    /** ce: { result: "CE" } */
-    public void sendCe(String sessionKey) {
-        send(sessionKey, "ce", Map.of("result", "CE"));
+    /** ce: { result: "CE", output_compile?: string } */
+    public void sendCe(String sessionKey, String outputCompile) {
+        Map<String, Object> data = new java.util.LinkedHashMap<>();
+        data.put("result", "CE");
+        if (outputCompile != null && !outputCompile.isEmpty()) {
+            data.put("output_compile", outputCompile);
+        }
+        send(sessionKey, "ce", data);
     }
 
     /** error: { message } */

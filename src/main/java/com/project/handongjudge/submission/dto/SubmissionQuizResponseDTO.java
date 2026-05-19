@@ -1,5 +1,6 @@
 package com.project.handongjudge.submission.dto;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.project.handongjudge.submission.entity.Output;
 import lombok.Builder;
 import lombok.Getter;
@@ -23,6 +24,10 @@ public class SubmissionQuizResponseDTO {
     private String submissionId;
     private String result;
     private List<Output> outputList;
+
+    @JsonProperty("output_compile")
+    private String outputCompile;
+
     private LocalDateTime submittedAt;
 
     // 퀴즈 scoring 필드
