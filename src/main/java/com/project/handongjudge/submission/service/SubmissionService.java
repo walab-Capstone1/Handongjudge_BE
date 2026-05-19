@@ -603,6 +603,7 @@ public class SubmissionService {
                 .submittedAt(LocalDateTime.now(KST_ZONE))
                 .result(responseDTO.getResult())
                 .outputList(responseDTO.getOutputList())
+                .outputCompile(responseDTO.getOutputCompile())
                 .sectionId(section.getId())
                 .build();
     }
@@ -711,6 +712,7 @@ public class SubmissionService {
                     .submissionId(outputDTO.getSubmissionId())
                     .result(outputDTO.getResult())
                     .outputList(outputDTO.getOutputList())
+                    .outputCompile(outputDTO.getOutputCompile())
                     .submittedAt(outputDTO.getSubmittedAt())
                     .passedCount(passedCount)
                     .totalCount(totalCount)

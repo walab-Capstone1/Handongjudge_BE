@@ -96,7 +96,7 @@ public class SubmissionController {
      * 이벤트 타입:
      *   testcase — { index, result }
      *   complete — { result, passedCount, totalCount }
-     *   ce       — { result: "CE" }
+     *   ce       — { result: "CE", output_compile?: string }
      *   error    — { message }
      */
     @GetMapping(value = "/stream/{submissionDbId}", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
@@ -127,7 +127,7 @@ public class SubmissionController {
      * 이벤트 타입:
      *   testcase — { index, result, output, outputError, outputDiff, testcaseInput, expectedOutput, runtime, memoryUsed }
      *   complete — { result }
-     *   ce       — { result: "CE" }
+     *   ce       — { result: "CE", output_compile?: string }
      *   error    — { message }
      */
     @GetMapping(value = "/test/stream/{sessionKey}", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
