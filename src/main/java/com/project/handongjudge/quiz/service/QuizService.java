@@ -74,10 +74,7 @@ public class QuizService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다: " + userId));
 
-        boolean isAuthorized = section.getInstructor().getId().equals(userId) ||
-                user.getRole() == User.Role.SUPER_ADMIN;
-
-        if (!isAuthorized) {
+        if (!canManageQuizzesInSection(section, user)) {
             throw new IllegalArgumentException("해당 분반의 코딩 테스트를 생성할 권한이 없습니다");
         }
 
@@ -138,12 +135,11 @@ public class QuizService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다: " + userId));
 
-        // 권한 확인
-        boolean isInstructor = section.getInstructor().getId().equals(userId) ||
-                user.getRole() == User.Role.SUPER_ADMIN;
+        // 비관리자(학생 등)는 공개(active) 코딩테스트만 목록에 표시
+        boolean canSeeAllQuizzes = canManageQuizzesInSection(section, user);
 
         List<Quiz> quizzes;
-        if (isInstructor) {
+        if (canSeeAllQuizzes) {
             quizzes = quizRepository.findBySectionIdOrderByStartTimeDesc(sectionId);
         } else {
             quizzes = quizRepository.findActiveQuizzesBySectionId(sectionId);
@@ -173,12 +169,8 @@ public class QuizService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다: " + userId));
 
-        // 권한 확인
-        boolean isInstructor = section.getInstructor().getId().equals(userId) ||
-                user.getRole() == User.Role.SUPER_ADMIN;
-
-        // 학생이고 Quiz가 비활성화되어 있으면 접근 불가
-        if (!isInstructor && !quiz.getActive()) {
+        // 학생 등: 비공개(active=false) 코딩테스트는 접근 불가 (관리자·담당 교수는 조회 가능)
+        if (!canManageQuizzesInSection(section, user) && !Boolean.TRUE.equals(quiz.getActive())) {
             throw new IllegalArgumentException("해당 코딩 테스트는 비활성화되어 있어 접근할 수 없습니다");
         }
 
@@ -258,10 +250,7 @@ public class QuizService {
 
         // 권한 확인
         Section section = quiz.getSection();
-        boolean isAuthorized = section.getInstructor().getId().equals(userId) ||
-                user.getRole() == User.Role.SUPER_ADMIN;
-
-        if (!isAuthorized) {
+        if (!canManageQuizzesInSection(section, user)) {
             throw new IllegalArgumentException("해당 코딩 테스트를 수정할 권한이 없습니다");
         }
 
@@ -324,10 +313,7 @@ public class QuizService {
 
         // 권한 확인
         Section section = quiz.getSection();
-        boolean isAuthorized = section.getInstructor().getId().equals(userId) ||
-                user.getRole() == User.Role.SUPER_ADMIN;
-
-        if (!isAuthorized) {
+        if (!canManageQuizzesInSection(section, user)) {
             throw new IllegalArgumentException("해당 코딩 테스트를 삭제할 권한이 없습니다");
         }
 
@@ -1027,6 +1013,21 @@ public class QuizService {
                 .result(toShow.getResult())
                 .submittedAt(toShow.getSubmittedAt())
                 .build();
+    }
+
+    /**
+     * 해당 분반의 코딩테스트를 관리·전체 조회(비공개 포함)할 수 있는지.
+     * 담당 교수, 수업 ADMIN/TUTOR, 전역 SUPER_ADMIN.
+     */
+    private boolean canManageQuizzesInSection(Section section, User user) {
+        if (user.getRole() == User.Role.SUPER_ADMIN) {
+            return true;
+        }
+        if (section.getId() != null && sectionRoleService.isManager(user.getId(), section.getId())) {
+            return true;
+        }
+        User instructor = section.getInstructor();
+        return instructor != null && instructor.getId().equals(user.getId());
     }
 
     private QuizResponse toResponse(Quiz quiz) {
