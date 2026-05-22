@@ -662,6 +662,9 @@ public class DomjudgeService {
         if (runsResponse != null && runsResponse.isArray()) {
             for (JsonNode runNode : runsResponse) {
                 Output output = mapper.treeToValue(runNode, Output.class);
+                if (runNode.has("runtime") && !runNode.get("runtime").isNull()) {
+                    output.setRuntime(secondsToRuntimeMs(runNode.get("runtime").asDouble()));
+                }
                 outputList.add(output);
             }
         }
@@ -671,6 +674,11 @@ public class DomjudgeService {
                 .outputList(outputList)
                 .outputCompile(outputCompile)
                 .build();
+    }
+
+    /** DOMjudge runtime(초) → API/SSE용 밀리초 */
+    private static int secondsToRuntimeMs(double runtimeSec) {
+        return (int) Math.round(runtimeSec * 1000);
     }
 
 }
