@@ -18,6 +18,7 @@ public class Output {
     @JsonProperty("result")
     private String result;
 
+    /** 실행 시간(ms). DOMjudge는 초 단위이며 DomjudgeService에서 ms로 변환 후 설정 */
     @JsonProperty("runtime")
     private int runtime;
 
