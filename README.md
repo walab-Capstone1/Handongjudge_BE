@@ -300,6 +300,6 @@ docker build -f Dockerfile-backend -t handongjudge-be .
 
 ### CI/CD
 
-`deploy-hj` 브랜치 push 시 GitHub Actions가 서버에 SSH 접속 후 Docker Compose로 Backend를 재배포합니다.
+`deploy-hj`,`deploy` 브랜치 push 시 GitHub Actions가 서버에 SSH 접속 후 Docker Compose로 Backend를 재배포합니다.
 
 ---
